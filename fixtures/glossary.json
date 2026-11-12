@@ -1,0 +1,182 @@
+{
+ "cases": [
+  {
+   "id": "g01",
+   "text": "Please confirm the FCL booking before Friday.",
+   "badSuggestion": "Please confirm the Full Container Load booking before Friday.",
+   "expect": "drop",
+   "why": "FCL 被展开成 Full Container Load"
+  },
+  {
+   "id": "g02",
+   "text": "Kindly send the BL draft today.",
+   "badSuggestion": "Kindly send the Bill of Lading draft today.",
+   "expect": "drop",
+   "why": "BL 被展开"
+  },
+  {
+   "id": "g03",
+   "text": "The ETD is next Monday.",
+   "badSuggestion": "The E.T.D is next Monday.",
+   "expect": "drop",
+   "why": "ETD 被加点"
+  },
+  {
+   "id": "g04",
+   "text": "We need the ATA for the last shipment.",
+   "badSuggestion": "We need the for the last shipment.",
+   "expect": "drop",
+   "why": "ATA 被删掉"
+  },
+  {
+   "id": "g05",
+   "text": "The LCL cargo will be consolidated at CFS.",
+   "badSuggestion": "The Less-than-Container-Load cargo will be consolidated at CFS.",
+   "expect": "drop",
+   "why": "LCL 被展开"
+  },
+  {
+   "id": "g06",
+   "text": "We booked 2 TEU for the next vessel.",
+   "badSuggestion": "We booked 2 TEUs for the next vessel.",
+   "expect": "drop",
+   "why": "TEU 被加复数"
+  },
+  {
+   "id": "g07",
+   "text": "The POD is Hamburg.",
+   "badSuggestion": "The PDO is Hamburg.",
+   "expect": "drop",
+   "why": "POD 被打错成 PDO"
+  },
+  {
+   "id": "g08",
+   "text": "Please confirm the CY is open.",
+   "badSuggestion": "Please confirm the Container Yard is open.",
+   "expect": "drop",
+   "why": "CY 被展开"
+  },
+  {
+   "id": "g09",
+   "text": "Our price is DAP Shanghai.",
+   "badSuggestion": "Our price is DDP Shanghai.",
+   "expect": "drop",
+   "why": "DAP 被换成 DDP（改变贸易术语）"
+  },
+  {
+   "id": "g10",
+   "text": "The CIF price includes insurance.",
+   "badSuggestion": "The C.I.F price includes insurance.",
+   "expect": "drop",
+   "why": "CIF 被加点"
+  },
+  {
+   "id": "g11",
+   "text": "Please sign the B/L and send back.",
+   "badSuggestion": "Please sign the BL and send back.",
+   "expect": "drop",
+   "why": "B/L 变成 BL（形态改变）"
+  },
+  {
+   "id": "g12",
+   "text": "We will send the HBL copy tomorrow.",
+   "badSuggestion": "We will send the House B/L copy tomorrow.",
+   "expect": "drop",
+   "why": "HBL 被展开"
+  },
+  {
+   "id": "g13",
+   "text": "The VGM must be submitted before cut-off.",
+   "badSuggestion": "The must be submitted before cut-off.",
+   "expect": "drop",
+   "why": "VGM 被删"
+  },
+  {
+   "id": "g14",
+   "text": "The DAP price excludes the THC.",
+   "badSuggestion": "The DAP price excludes the Terminal Handling Charge.",
+   "expect": "drop",
+   "why": "THC 被展开"
+  },
+  {
+   "id": "g15",
+   "text": "We shipped the FCL cargo yesterday.",
+   "badSuggestion": "We shipped the fcl cargo yesterday.",
+   "expect": "drop",
+   "why": "FCL→fcl 大小写被改（D3-1）"
+  },
+  {
+   "id": "g16",
+   "text": "The ETD changed to Wednesday.",
+   "badSuggestion": "The Etd changed to Wednesday.",
+   "expect": "drop",
+   "why": "ETD→Etd 大小写被改（D3-1）"
+  },
+  {
+   "id": "g17",
+   "text": "Please confirm the FCL booking, we needs it today.",
+   "badSuggestion": "Please confirm the FCL booking, we need it today.",
+   "expect": "pass",
+   "why": "正常语法修，术语原样"
+  },
+  {
+   "id": "g18",
+   "text": "The LCL cargo is ready.",
+   "badSuggestion": "The LCL cargo is ready.",
+   "expect": "drop",
+   "why": "无改动（忽略空白）"
+  },
+  {
+   "id": "g19",
+   "text": "i has received your booking for FCL shipment.",
+   "badSuggestion": "I have received your booking for FCL shipment.",
+   "expect": "pass",
+   "why": "i→I 大小写修正必须放行（D3-2）"
+  },
+  {
+   "id": "g20",
+   "text": "we will ship from china next week.",
+   "badSuggestion": "We will ship from China next week.",
+   "expect": "pass",
+   "why": "china→China 必须放行（D3-2）"
+  },
+  {
+   "id": "g21",
+   "text": "Please confirm the SO number.",
+   "badSuggestion": "Please confirm the S/O number.",
+   "expect": "drop",
+   "why": "SO 被改成 S/O"
+  },
+  {
+   "id": "g22",
+   "text": "So we needs the BL now.",
+   "badSuggestion": "So we need the BL now.",
+   "expect": "pass",
+   "why": "小写普通词 so 不算术语，动词修好放行"
+  }
+ ],
+ "live": [
+  "Please kindly confirm the BL draft, we needs it before the cargo arrive.",
+  "The ETD of this FCL shipment are next Monday, please arrange the trucking.",
+  "Our customer ask for the ATA of the last shipment, please advise.",
+  "We has booked 2 TEU for the next vessel, please confirm the SO.",
+  "The LCL cargo will be consolidated at the CFS, we need the CFS cut-off time.",
+  "Please send us the HBL copy once the MBL are issued.",
+  "The DAP price do not include the THC, please check again.",
+  "According to the CIF terms, insurance is cover by the seller.",
+  "POD will be Hamburg, please confirm if the CY are open.",
+  "We needs the VGM before the cut-off, otherwise the container can not be loaded.",
+  "There is three mistakes in the B/L, please correct it and send back.",
+  "Our agent at POL Shanghai will contact with you tomorrow.",
+  "Please advice the ETD and ETA of the next sailing.",
+  "The cargo is ready since last Friday, but we have no booking yet.",
+  "Kindly note that the ATA is delayed two days because of the typhoon.",
+  "We will arrange the SI before 12:00 tomorrow, please to confirm.",
+  "If the DG cargo need special stowage, please inform us in advance.",
+  "The FCL container has been released, you can pick up it from the CY.",
+  "Please double check the marks on the BL, there have some typos.",
+  "According to the booking, the SO number should shown on the BL.",
+  "The buyer request a FOB price instead of CIF, please re-quote.",
+  "We has received your SI, the draft BL will be sent today."
+ ]
+}

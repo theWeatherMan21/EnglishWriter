@@ -1,0 +1,31 @@
+#!/bin/bash
+# ./selftest --cjk | --glossary | --faults | --live
+# DoD 固定命令口径：所有验收都用这四条，不再出现 --selftest 前缀。
+set -uo pipefail
+cd "$(dirname "$0")"
+
+NAME="英文写作助手"
+BIN="build/$NAME"
+[ -x "$BIN" ] || ./scripts/build.sh >/dev/null || { echo "构建失败"; exit 1; }
+
+mkdir -p out
+ARGS=("$@")
+if [ ${#ARGS[@]} -eq 0 ]; then ARGS=(--cjk --glossary --faults); fi
+
+pids=()
+cleanup() {
+  for p in "${pids[@]:-}"; do kill "$p" 2>/dev/null || true; done
+}
+trap cleanup EXIT
+
+for a in "${ARGS[@]:-}"; do
+  if [ "$a" = "--faults" ]; then
+    python3 scripts/fault_server.py >/dev/null 2>&1 &
+    pids+=($!)
+    sleep 0.8
+    export EW_FAULT_SERVER="http://127.0.0.1:18731/v1"
+  fi
+done
+
+# --live 走环境变量提供的真接口（EW_BASE_URL / EW_API_KEY / EW_MODEL）
+"$BIN" --selftest "${ARGS[@]}" 2>&1 | tee "out/selftest-$(echo "${ARGS[*]}" | tr ' -' '__').log"
