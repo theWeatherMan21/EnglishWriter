@@ -4,7 +4,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p out
-PID="${1:-$(pgrep -f "英文写作助手" | head -1)}"
+PID="${1:-$(pgrep -x "英文写作助手" | head -1)}"
 if [ -z "${PID:-}" ]; then echo "找不到进程：先启动 App"; exit 1; fi
 
 OUT="out/idle-cpu.txt"

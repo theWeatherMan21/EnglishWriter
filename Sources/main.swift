@@ -35,6 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in menu.items { item.target = self }
         statusItem.menu = menu
 
+        // 无头探针：EW_PROBE_EXIT=1 时跑一次探针、打印 JSON、退出（给验收 / 自动化用）
+        if ProcessInfo.processInfo.environment["EW_PROBE_EXIT"] == "1" {
+            let report = Probe.run(model: model)
+            if let d = try? JSONEncoder().encode(report),
+               let s = String(data: d, encoding: .utf8) { print(s) }
+            exit(report.permission ? 0 : 3)
+        }
+
         // 首次运行且未配置：直接把设置窗口摆出来（用户点一下就完成配置）
         // EW_NO_WINDOW=1 用于无头测量，绝不弹窗
         if !SettingsStore.load().isComplete, ProcessInfo.processInfo.environment["EW_NO_WINDOW"] != "1" {
