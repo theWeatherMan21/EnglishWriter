@@ -1,0 +1,75 @@
+{
+  "app" : "TextEdit",
+  "bodyRectQuartz" : [
+    213,
+    213,
+    586,
+    346
+  ],
+  "bodyRole" : "AXTextArea",
+  "caret" : 93,
+  "diag" : "checks=1 requests=0 cjkSkip=0 dedupe=0 fallback=0 rects=3 elapsed=49ms err=-",
+  "items" : [
+    [
+      "grammar",
+      "There is many reasons",
+      "There are many reasons",
+      "0",
+      "21",
+      "Did you mean “There are many reasons”?"
+    ],
+    [
+      "grammar",
+      "sent",
+      "send",
+      "36",
+      "4",
+      "The modal verb ‘should’ requires the verb’s base form."
+    ],
+    [
+      "spelling",
+      "immediatly",
+      "immediately",
+      "82",
+      "10",
+      "Possible spelling mistake found."
+    ]
+  ],
+  "layer" : "A",
+  "method" : "AXValue 直写正文 → checkNow(pid, element) → 读 overlay.specs（键盘\/截屏均未使用）",
+  "notes" : [
+    "【--spawn】爹地已批准：临时空白文档（40107），跑完杀进程、删临时文件",
+    "正文=「There is many reasons why we should sent the booking confirm」",
+    "--notify：不代调 checkNow，只等 AXObserver + 800ms 去抖自己触发",
+    "最小化时拿不到矩形 → 已短暂还原窗口重取一次，随后立刻最小化"
+  ],
+  "ok" : true,
+  "pid" : 40107,
+  "reason" : "",
+  "rects" : [
+    [
+      218,
+      213,
+      122,
+      14
+    ],
+    [
+      425,
+      213,
+      23,
+      14
+    ],
+    [
+      672,
+      213,
+      56,
+      14
+    ]
+  ],
+  "snapshot" : "\/Users\/russospencer\/.hermes\/cache\/scratch\/ew-axcheck\/axcheck-underlines.png",
+  "textLength" : 93,
+  "textSet" : true,
+  "timestamp" : "2026-11-16T07:34:12Z",
+  "underlineCount" : 3,
+  "windowTitle" : "Untitled"
+}
