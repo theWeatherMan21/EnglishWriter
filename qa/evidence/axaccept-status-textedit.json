@@ -3,7 +3,7 @@
   "afterText" : "There is many reasons why we should sent the booking confirmation to the customer immediately.",
   "app" : "TextEdit",
   "beforeText" : "There is many reasons why we should sent the booking confirmation to the customer immediatly.",
-  "diag" : "checks=3 requests=0 cjkSkip=0 dedupe=0 fallback=0 rects=3 elapsed=34ms err=-",
+  "diag" : "checks=3 requests=0 cjkSkip=0 dedupe=0 fallback=0 rects=3 elapsed=32ms err=-",
   "expectedAfter" : "There is many reasons why we should sent the booking confirmation to the customer immediately.",
   "itemCount" : 3,
   "layer" : "写回",
@@ -15,12 +15,12 @@
   ],
   "ok" : true,
   "original" : "immediatly",
-  "pid" : 44117,
+  "pid" : 53169,
   "reason" : "",
   "replacement" : "immediately",
   "targetIndex" : 2,
   "textSet" : true,
-  "timestamp" : "2026-11-16T07:38:18Z",
+  "timestamp" : "2026-11-16T07:47:15Z",
   "undoOK" : true,
   "undoneText" : "There is many reasons why we should sent the booking confirmation to the customer immediatly."
 }

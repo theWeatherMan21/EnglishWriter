@@ -28,6 +28,7 @@ enum ChromeProbe {
         var writeBackOK = false        // AXValue 直写
         var selWriteOK = false         // 选区 + AXSelectedText 写（我们接受建议走的就是这条路）
         var inWeb = false              // 是否在 AXWebArea 子树里（= 网页内容，不是 Chrome 自己的地址栏）
+        var clipWriteOK = false        // 剪贴板 ⌘V 兜底能不能写进去
     }
 
     struct Report: Codable {
@@ -90,6 +91,8 @@ enum ChromeProbe {
         p.executableURL = URL(fileURLWithPath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
         p.arguments = ["--user-data-dir=\(profile)", "--no-first-run", "--no-default-browser-check",
                        "--disable-features=Translate", "--window-size=1000,700",
+                       // 探针专用：让 Chromium 一上来就把 web 内容挂进 AX 树（真实使用时由 AT 客户端触发，冷启时快时慢）
+                       "--force-renderer-accessibility",
                        "file://" + page]
         do { try p.run() } catch {
             st.verdict = "Chrome 起不来：\(error)"; finish(5)
@@ -118,13 +121,24 @@ enum ChromeProbe {
         let eui = AXUIElementSetAttributeValue(appEl, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
         let mani = AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         st.notes.append("AXEnhancedUserInterface=\(eui.rawValue) AXManualAccessibility=\(mani.rawValue)")
-        try? await Task.sleep(nanoseconds: 2_000_000_000)     // 等 Chromium 把 web 内容挂进 AX 树
+        // Chromium 挂 web 内容进 AX 树是异步的、且时快时慢：轮询最多 12s，别一次取样就下结论
+        var webAreaMaybe: AXUIElement? = nil
+        for _ in 0..<12 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            _ = AXUIElementSetAttributeValue(appEl, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+            if let w = windows(pid).first,
+               let found = descendants(w, depth: 10).first(where: { (attrString($0, kAXRoleAttribute as String) ?? "") == "AXWebArea" }) {
+                webAreaMaybe = found
+                break
+            }
+        }
+        if webAreaMaybe == nil { st.notes.append("轮询 12s 仍未出现 AXWebArea") }
 
         let win = windows(pid).first
         st.notes.append("窗口标题=「\(win.flatMap { attrString($0, kAXTitleAttribute as String) } ?? "")」")
 
         // 找 WebArea 与文字面
-        var webArea: AXUIElement? = nil
+        var webArea: AXUIElement? = webAreaMaybe
         var areas: [AXUIElement] = []
         if let w = win {
             for el in descendants(w, depth: 10) {
@@ -182,6 +196,19 @@ enum ChromeProbe {
                     a.selWriteOK = true
                 }
             }
+            // 兜底：选区 + 剪贴板 ⌘V（Chromium 里 AX 写不进时的唯一出路）
+            if a.inWeb, a.valueLen >= 6, let r = axRangeValue(0, 6) {
+                NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows])
+                usleep(900_000)
+                _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, r)
+                _ = AXUIElementPerformAction(el, kAXPressAction as CFString)
+                if pasteViaClipboard("EWPASTE", to: pid) {
+                    usleep(500_000)
+                    if (attrString(el, kAXValueAttribute as String) ?? "").hasPrefix("EWPASTE") {
+                        a.clipWriteOK = true
+                    }
+                }
+            }
             st.areas.append(a)
         }
 
@@ -192,12 +219,15 @@ enum ChromeProbe {
         let selWritable = web.contains { $0.selWriteOK }
         let bounded = web.contains { $0.boundsOK }
         let coNotBounded = web.contains { $0.valueLen > 0 && !$0.boundsOK }
+        let clipWritable = web.contains { $0.clipWriteOK }
         if !st.webAreaFound {
             st.verdict = "没找到 AXWebArea（Chromium 可能未开辅助功能支持，或页面未渲染完）"
         } else if readable && writable && bounded {
             st.verdict = "原生可用：AXValue 读写 + AXBoundsForRange 出矩形，AppKit 那套可直接跑"
         } else if readable && !writable && !selWritable {
-            st.verdict = "只读：网页字段 AXValue 与 AXSelectedText 都写不进 → 接受建议必须走剪贴板 ⌘V / CDP 兜底（本项目未实现）"
+            st.verdict = clipWritable
+                ? "只读(AX)：网页字段 AXValue/AXSelectedText 写不进，但剪贴板 ⌘V 兜底**已验证可写**"
+                : "只读：网页字段 AXValue/AXSelectedText/剪贴板 ⌘V 全部写不进 → 只能改走 CDP"
             if coNotBounded { st.verdict += "；且部分字段（contenteditable）AXBoundsForRange 拿不到矩形" }
         } else if readable && !bounded {
             st.verdict = "能读能写、但 AXBoundsForRange 给不全 → 下划线需按 WebText 文本块兜底"
@@ -244,6 +274,28 @@ enum ChromeProbe {
             out.append(contentsOf: descendants(c, depth: depth - 1))
         }
         return out
+    }
+
+    /// 剪贴板 ⌘V（探针用；写进去就还原爹地的剪贴板）
+    private static func pasteViaClipboard(_ text: String, to pid: pid_t) -> Bool {
+        let pb = NSPasteboard.general
+        let saved = pb.string(forType: .string)
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        let src = CGEventSource(stateID: .combinedSessionState)
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false) else { return false }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        // 先发给指定 pid，再补一发全局 HID（有些 WebKit/Chromium 只认全局事件）
+        down.postToPid(pid)
+        up.postToPid(pid)
+        usleep(120_000)
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        usleep(700_000)
+        if let s = saved { pb.clearContents(); pb.setString(s, forType: .string) }
+        return true
     }
 
     private static func axRangeValue(_ loc: Int, _ len: Int) -> CFTypeRef? {

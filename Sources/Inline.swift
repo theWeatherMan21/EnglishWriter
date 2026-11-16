@@ -568,9 +568,22 @@ final class InlineController {
             _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
             ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, it.replacement as CFTypeRef) == .success
             if ok { lastAccept = (it, -1, el) }
+            // Chromium 网页字段：AXValue 与 AXSelectedText 实测都写不进（2026-11-16 探测），
+            // 剪贴板 ⌘V 兜底 —— 只在 AX 写失败时走，原生 AppKit 路径行为不变。
+            if !ok {
+                _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+                if pasteViaClipboard(it.replacement, to: currentPid) {
+                    usleep(450_000)
+                    if (attrString(el, kAXValueAttribute as String) ?? "").contains(it.replacement) {
+                        ok = true
+                        lastAccept = (it, -1, el)
+                        Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
+                    }
+                }
+            }
         }
         diag.lastError = ok ? "已接受：\(it.original) → \(it.replacement)" : "写回失败：这个输入框不接受 AX 写入"
-        if ok { Diag.shared.applyMethod = "AX 写回" }
+        if ok, Diag.shared.applyMethod != "剪贴板 ⌘V 兜底" { Diag.shared.applyMethod = "AX 写回" }
         refresh()
         return ok
     }
@@ -587,6 +600,13 @@ final class InlineController {
         } else if let el = last.element, let v = axRangeValue(last.item.start, replLen) {
             _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
             ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, last.item.original as CFTypeRef) == .success
+            if !ok {     // Chromium 兜底：剪贴板 ⌘V
+                _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+                if pasteViaClipboard(last.item.original, to: currentPid) {
+                    usleep(450_000)
+                    ok = (attrString(el, kAXValueAttribute as String) ?? "").contains(last.item.original)
+                }
+            }
         }
         if ok {
             lastAccept = nil
@@ -615,6 +635,30 @@ final class InlineController {
         DictStore.add(it.original)
         diag.lastError = "已加入词典：\(it.original)"
         refresh()
+    }
+
+    /// 写回兜底：剪贴板 ⌘V。Chromium 网页字段实测 AXValue / AXSelectedText 都写不进，
+    /// 只有合成键击能进去。用完 0.6s 把爹地的剪贴板原样还原，长期占用为零。
+    private func pasteViaClipboard(_ text: String, to pid: pid_t) -> Bool {
+        guard pid > 0 else { return false }
+        let pb = NSPasteboard.general
+        let saved = pb.string(forType: .string)
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        let src = CGEventSource(stateID: .combinedSessionState)
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false) else {
+            if let s = saved { pb.clearContents(); pb.setString(s, forType: .string) }
+            return false
+        }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.postToPid(pid)
+        up.postToPid(pid)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            if let s = saved { pb.clearContents(); pb.setString(s, forType: .string) }
+        }
+        return true
     }
 
     /// 重新检查刷新（LT 热态 20ms，比本地改状态更可靠）
