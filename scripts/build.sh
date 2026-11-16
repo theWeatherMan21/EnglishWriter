@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 NAME="英文写作助手"
 BUNDLE_ID="com.wanyi.englishwriter"
 SIGN_ID="${SIGN_ID:-SOALedger Dev}"
-VERSION="0.2.0"
+VERSION="${RELEASE_VERSION:-0.2.0}"
 
 rm -rf build
 mkdir -p build

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  selftest:
+    # 自测要 AppKit 离屏渲染（卡片快照），所以必须是 macOS runner
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swiftc --version
+
+      - name: Build + selftest
+        run: bash scripts/ci-test.sh
+
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: out
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 1

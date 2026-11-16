@@ -42,7 +42,7 @@ enum SelfTest {
         if wantAll || argv.contains("--glossary") { glossaryTests() }
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
-        if argv.contains("--m3") { m3Tests() }
+        if argv.contains("--m3") { m3Tests(); mergeTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
         if argv.contains("--lt") { ltTests() }
@@ -466,6 +466,92 @@ enum SelfTest {
         }
         if shot { ok("M3·卡片离线渲染", "out/m3-card.png（红色删除线原词 + 绿色建议 + 接受/忽略/加入词典）") }
         else { bad("M3·卡片离线渲染", "渲染 PNG 失败") }
+    }
+
+    // MARK: 三类合并去重（M3.3）
+    //
+    // 不变量（每条都必须成立，坏了就是线上会画出重叠线/漏画的根因）：
+    //   I1 输出按 start 严格升序
+    //   I2 任意两条不重叠
+    //   I3 重叠处留下的是严重度更高的那条（拼写 > 语法 > 清晰度 > 风格）
+    //   I4 完全重复只留一条；首尾相接不算重叠；越界一律丢弃
+
+    static func mergeTests() {
+        print("\n--- 三类合并去重（M3.3）---")
+        let text = "There is many reasons why we should sent the booking confirmation immediatly."
+        let ns = text as NSString
+        func r(_ s: String) -> (Int, Int) {
+            let r = ns.range(of: s)
+            return (r.location, r.length)
+        }
+        func item(_ s: String, _ repl: String, _ type: String) -> DiffItem {
+            let (st, ln) = r(s)
+            return DiffItem(start: st, length: ln, original: s, replacement: repl, type: type, reason: "t")
+        }
+
+        // I4-a 完全重复
+        let dup = [item("immediatly", "immediately", "spelling"),
+                   item("immediatly", "immediately", "spelling")]
+        let outDup = DiffSanitize.consolidate(dup, in: text)
+        if outDup.count == 1 { ok("合并·完全重复去重", "2 条同段同建议 → 1 条") }
+        else { bad("合并·完全重复去重", "得到 \(outDup.count) 条") }
+
+        // I3 拼写 vs 语法同段 → 留拼写
+        let clash = [item("immediatly", "immediately", "grammar"),
+                     item("immediatly", "immediately", "spelling")]
+        let outClash = DiffSanitize.consolidate(clash, in: text)
+        if outClash.count == 1, outClash[0].kind == .spelling {
+            ok("合并·重叠留高严重度", "拼写压过语法 → spelling")
+        } else {
+            bad("合并·重叠留高严重度", "count=\(outClash.count) kind=\(outClash.first?.kind.rawValue ?? "nil")")
+        }
+
+        // 反过来给顺序也要同一结果（输入顺序不影响判定）
+        let outClashRev = DiffSanitize.consolidate(clash.reversed(), in: text)
+        if outClashRev.count == 1, outClashRev[0].kind == .spelling {
+            ok("合并·与输入顺序无关", "倒序输入仍留 spelling")
+        } else {
+            bad("合并·与输入顺序无关", "count=\(outClashRev.count)")
+        }
+
+        // I4-b 首尾相接不算重叠
+        let (sentAt, sentLen) = r("sent")
+        let (sentSpAt, _) = r("sent")
+        let touching = [
+            DiffItem(start: sentAt, length: sentLen, original: "sent", replacement: "send", type: "spelling", reason: "t"),
+            DiffItem(start: sentSpAt + sentLen, length: sentLen, original: " the", replacement: " the", type: "style", reason: "t"),
+        ]
+        let outTouch = DiffSanitize.consolidate(touching, in: text)
+        if outTouch.count == 2 { ok("合并·相接不算重叠", "end == next.start → 两条都留") }
+        else { bad("合并·相接不算重叠", "得到 \(outTouch.count) 条") }
+
+        // I4-c 越界丢弃
+        let oob = [DiffItem(start: ns.length - 2, length: 99, original: "zz", replacement: "z", type: "spelling", reason: "t")]
+        if DiffSanitize.consolidate(oob, in: text).isEmpty { ok("合并·越界丢弃", "start+length 超全文 → 丢") }
+        else { bad("合并·越界丢弃", "越界条目被保留") }
+
+        // I1 输出升序
+        let jumbled = [item("confirmation", "confirmation", "style"),
+                       item("many", "much", "grammar"),
+                       item("booking", "booking", "clarity")]
+        let outSorted = DiffSanitize.consolidate(jumbled, in: text)
+        let ascending = zip(outSorted, outSorted.dropFirst()).allSatisfy { $0.start < $1.start }
+        if outSorted.count == 3, ascending { ok("合并·输出升序", "3 条不重叠且 start 递增") }
+        else { bad("合并·输出升序", "count=\(outSorted.count) ascending=\(ascending)") }
+
+        // 全链路：clean 出来的结果必须满足 I1+I2（不重叠、升序）
+        let chain = [item("immediatly", "immediately", "spelling"),
+                     item("immediatly", "immediately", "grammar"),      // 重复段
+                     item("many", "much", "grammar"),
+                     item("should sent", "should send", "grammar")]      // 与 sent 那条重叠
+        let cleaned = DiffSanitize.clean(chain, in: text)
+        let noOverlap = zip(cleaned, cleaned.dropFirst()).allSatisfy { $0.start + $0.length <= $1.start }
+        let sortedOK = cleaned == cleaned.sorted { $0.start < $1.start }
+        if noOverlap && sortedOK && cleaned.count == 3 {
+            ok("合并·clean 端到端", "重复+重叠输入 → 3 条，升序且两两不重叠")
+        } else {
+            bad("合并·clean 端到端", "count=\(cleaned.count) noOverlap=\(noOverlap) sorted=\(sortedOK)")
+        }
     }
 
     // MARK: 工具

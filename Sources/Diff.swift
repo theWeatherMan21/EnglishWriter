@@ -97,12 +97,58 @@ enum DiffSanitize {
             // 找不到就丢：宁可少一条线，也不画在错位置
         }
         out.sort { $0.start < $1.start }
-        var merged: [DiffItem] = []
-        for it in out {
-            if let last = merged.last, it.start < last.start + last.length { continue }  // 重叠跳过
-            merged.append(it)
+        return consolidate(out, in: text)
+    }
+
+    // MARK: 三类合并去重（M3.3）
+    //
+    // 一次检查里同一段文本经常被三类引擎同时命中（LT 给 spelling，模型给 grammar，
+    // 风格规则又给 style）。散着全画上会叠成一条粗线、卡片也打架，所以统一在这里收口：
+    //   1) 完全重复（start+length+replacement 全同）直接去掉
+    //   2) 任何重叠只留一条：拼写 > 语法 > 清晰度 > 风格；同级取更长的，再同级取更早的
+    //   3) 只是首尾相接（end == next.start）不算重叠，两条都留
+    //   4) 越界（start+length > 全文长度）丢弃 —— 少一条线也不许画在错位置
+    // 输出恒按 start 升序、两两不重叠。
+
+    static func severity(_ k: UnderlineKind) -> Int {
+        switch k {
+        case .spelling: return 4
+        case .grammar:  return 3
+        case .clarity:  return 2
+        case .style:    return 1
         }
-        return merged
+    }
+
+    static func consolidate(_ items: [DiffItem], in text: String) -> [DiffItem] {
+        let len = (text as NSString).length
+        var byKey: [String: Int] = [:]
+        var pool: [DiffItem] = []
+        for it in items {
+            guard it.length > 0, it.start >= 0, it.start + it.length <= len else { continue }
+            let key = "\(it.start):\(it.length):\(it.replacement)"
+            if let i = byKey[key] {
+                // 同段同建议只留一条，但类型要取更严重的那个：
+                // 否则「先来的 grammar」会把后来的 spelling 吃掉（合并·重叠留高严重度 就是栽在这）
+                if severity(it.kind) > severity(pool[i].kind) { pool[i] = it }
+                continue
+            }
+            byKey[key] = pool.count
+            pool.append(it)
+        }
+        // 严重度高者先占位，保证重叠时留下的是拼写/语法，而不是风格建议
+        pool.sort { a, b in
+            if severity(a.kind) != severity(b.kind) { return severity(a.kind) > severity(b.kind) }
+            if a.length != b.length { return a.length > b.length }
+            return a.start < b.start
+        }
+        var accepted: [DiffItem] = []
+        for it in pool {
+            let lo = it.start, hi = it.start + it.length
+            let clash = accepted.contains { $0.start < hi && lo < $0.start + $0.length }
+            if clash { continue }
+            accepted.append(it)
+        }
+        return accepted.sorted { $0.start < $1.start }
     }
 }
 
