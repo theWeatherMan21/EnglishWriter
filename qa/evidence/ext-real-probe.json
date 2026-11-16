@@ -3,30 +3,82 @@
     "edits": 3,
     "rects": 3,
     "engine": "languagetool",
-    "ms": 13,
-    "notes": [
+    "ms": 21,
+    "notes_all": [
       "no token",
       "token updated"
     ],
+    "token_retry": {
+      "had_skip_before_success": true,
+      "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
+    },
+    "before": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "before_len": 77,
+    "after": "There is many reasons why we should sent the booking confirmation immediately.",
+    "after_len": 78,
+    "undone": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "undone_len": 77,
+    "diff_window": {
+      "first_diff_at": 74,
+      "a": "onfirmation immediatly.",
+      "b": "onfirmation immediately.",
+      "a_len": 77,
+      "b_len": 78
+    },
+    "compared": "after vs before（accept）；undone vs before（undo）",
+    "assertions": {
+      "after_has_immediately": true,
+      "after_no_immediatly": true,
+      "after_differs_from_before": true,
+      "undone_equals_before": true,
+      "undone_len_equals_before": true,
+      "accept_api_returned": true,
+      "undo_api_returned": true
+    },
     "accept_changed": true,
-    "undo_restored": true,
-    "before": "There is many reasons why we should sent the booking confirmation imme",
-    "after": "There is many reasons why we should sent the booking confirmation imme",
-    "undone": "There is many reasons why we should sent the booking confirmation imme"
+    "undo_restored": true
   },
   "contenteditable": {
     "edits": 3,
     "rects": 3,
     "engine": "languagetool",
-    "ms": 24,
-    "notes": [
+    "ms": 23,
+    "notes_all": [
+      "no token",
+      "token updated",
+      "run target=TEXTAREA#ta",
+      "text=78 sent=78",
       "run target=TEXTAREA#ta",
       "text=77 sent=77"
     ],
+    "token_retry": {
+      "had_skip_before_success": true,
+      "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
+    },
+    "before": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "before_len": 77,
+    "after": "There is many reasons why we should sent the booking confirmation immediately.",
+    "after_len": 78,
+    "undone": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "undone_len": 77,
+    "diff_window": {
+      "first_diff_at": 74,
+      "a": "onfirmation immediatly.",
+      "b": "onfirmation immediately.",
+      "a_len": 77,
+      "b_len": 78
+    },
+    "compared": "after vs before（accept）；undone vs before（undo）",
+    "assertions": {
+      "after_has_immediately": true,
+      "after_no_immediatly": true,
+      "after_differs_from_before": true,
+      "undone_equals_before": true,
+      "undone_len_equals_before": true,
+      "accept_api_returned": true,
+      "undo_api_returned": true
+    },
     "accept_changed": true,
-    "undo_restored": true,
-    "before": "There is many reasons why we should sent the booking confirmation imme",
-    "after": "There is many reasons why we should sent the booking confirmation imme",
-    "undone": "There is many reasons why we should sent the booking confirmation imme"
+    "undo_restored": true
   }
 }

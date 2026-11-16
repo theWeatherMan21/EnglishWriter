@@ -138,6 +138,18 @@ def evaluate(ws, expr, await_promise=True, context_id=None):
     return res.get("value")
 
 
+def diff_window(a, b, pad=20):
+    """首个不同字符前后各 pad 字，用来一眼看出 immediatly → immediately"""
+    i = 0
+    n = min(len(a), len(b))
+    while i < n and a[i] == b[i]:
+        i += 1
+    lo = max(0, i - pad)
+    return {"first_diff_at": i,
+            "a": a[lo:i + pad], "b": b[lo:i + pad],
+            "a_len": len(a), "b_len": len(b)}
+
+
 def ext_id_for_path(path):
     h = hashlib.sha256(os.path.abspath(path).encode()).hexdigest()[:32]
     return "".join(chr(ord("a") + int(c, 16)) for c in h)
@@ -221,20 +233,48 @@ def main():
         edits = dbg.get("lastEdits", [])
         rects = dbg.get("lastRects", [])
         report[label] = {"edits": len(edits), "rects": len(rects), "engine": dbg.get("engine"),
-                         "ms": dbg.get("elapsedMs"), "notes": dbg.get("notes", [])[-2:]}
+                         "ms": dbg.get("elapsedMs"),
+                         "notes_all": dbg.get("notes", []),
+                         "token_retry": {
+                             "had_skip_before_success": any("no token" in n for n in dbg.get("notes", [])),
+                             "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
+                         }}
 
         if edits:
-            before = evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}")
-            evaluate(ws, "window.__EW_TEST__.acceptByOriginal('immediatly')", context_id=iso_id)
+            read = (lambda: evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}"))
+            before = (read() or "")
+            accept_ret = evaluate(ws, "window.__EW_TEST__.acceptByOriginal('immediatly')", context_id=iso_id)
             time.sleep(1.2)
-            after = evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}")
-            evaluate(ws, "window.__EW_TEST__.undo()", context_id=iso_id)
+            after = (read() or "")
+            undo_ret = evaluate(ws, "window.__EW_TEST__.undo()", context_id=iso_id)
             time.sleep(1.2)
-            undone = evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}")
+            undone = (read() or "")
+
+            # 硬断言：每条写清判据，不用「看起来对」的布尔
+            a_has_new = "immediately" in after
+            a_no_old = "immediatly" not in after
+            u_eq_before = (undone == before)
+            u_len_eq = (len(undone) == len(before))
+            changed_vs_before = (after != before)
+
             report[label].update({
-                "accept_changed": "immediately" in (after or ""),
-                "undo_restored": "immediatly" in (undone or "") and "immediately" not in (undone or ""),
-                "before": (before or "")[:70], "after": (after or "")[:70], "undone": (undone or "")[:70],
+                # 三态原文全给，不截断（上一版截 70 字符正好把改动点切掉，证据看起来三态一样）
+                "before": before, "before_len": len(before),
+                "after": after, "after_len": len(after),
+                "undone": undone, "undone_len": len(undone),
+                "diff_window": diff_window(before, after),
+                "compared": "after vs before（accept）；undone vs before（undo）",
+                "assertions": {
+                    "after_has_immediately": a_has_new,
+                    "after_no_immediatly": a_no_old,
+                    "after_differs_from_before": changed_vs_before,
+                    "undone_equals_before": u_eq_before,
+                    "undone_len_equals_before": u_len_eq,
+                    "accept_api_returned": bool(accept_ret),
+                    "undo_api_returned": bool(undo_ret),
+                },
+                "accept_changed": a_has_new and a_no_old and changed_vs_before,
+                "undo_restored": u_eq_before and u_len_eq,
             })
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
