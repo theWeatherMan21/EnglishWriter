@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 NAME="英文写作助手"
 BUNDLE_ID="com.wanyi.englishwriter"
 SIGN_ID="${SIGN_ID:-SOALedger Dev}"
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 rm -rf build
 mkdir -p build
@@ -18,6 +18,8 @@ APP="build/$NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "build/$NAME" "$APP/Contents/MacOS/$NAME"
 cp fixtures/glossary.json "$APP/Contents/Resources/glossary.json"
+cp scripts/languagetool-up.sh "$APP/Contents/Resources/languagetool-up.sh"
+chmod +x "$APP/Contents/Resources/languagetool-up.sh"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

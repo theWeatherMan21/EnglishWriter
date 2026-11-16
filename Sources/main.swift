@@ -1,11 +1,47 @@
 // main.swift — 入口：菜单栏常驻，无 Dock 图标、无主窗口
-// 无 Timer 轮询 / 无 AXObserver / 无 CGEventTap —— 只在用户点菜单那一刻读一次 AX。
+// v0.2：常驻 + AXObserver 输入感知 + 行内下划线（《Grammarly 同款》口径）
 
 import AppKit
+
+// MARK: - 本地引擎自举（静默，不弹窗）
+
+enum LocalEngineBootstrap {
+    static func scriptPath() -> String? {
+        var candidates: [String] = []
+        if let res = Bundle.main.resourcePath { candidates.append(res + "/languagetool-up.sh") }
+        candidates.append(NSHomeDirectory() + "/dev/EnglishWriter/scripts/languagetool-up.sh")
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// 已经在跑就什么都不做；没装也不打扰用户（回落模型接口）
+    static func ensureRunning() {
+        Task.detached {
+            if await LocalEngine.available(force: true) { return }
+            guard let script = scriptPath() else { return }
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = [script]
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = pipe
+            do {
+                try p.run()
+                p.waitUntilExit()
+                let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                if !out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    FileHandle.standardError.write(("[lt] " + out + "\n").data(using: .utf8)!)
+                }
+            } catch {
+                FileHandle.standardError.write(("[lt] spawn failed: \(error)\n").data(using: .utf8)!)
+            }
+        }
+    }
+}
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var model: AppModel!
+    private var demo: DemoController?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         model = AppModel()
@@ -15,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: "英文写作助手")
             button.image?.isTemplate = true
-            button.toolTip = "英文写作助手（选中文字后点这里）"
+            button.toolTip = "英文写作助手（常驻检查，错误处自动画线）"
         }
 
         let menu = NSMenu()
@@ -25,7 +61,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let undoItem = NSMenuItem(title: "撤销上次替换", action: #selector(undoAction), keyEquivalent: "")
         menu.addItem(undoItem)
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "立即检查当前段落", action: #selector(checkNowAction), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "清掉下划线", action: #selector(clearAction), keyEquivalent: ""))
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "跑探针（验 Mail 可读/可写）", action: #selector(probeAction), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "行内渲染自测…", action: #selector(demoAction), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "设置…", action: #selector(settingsAction), keyEquivalent: ","))
         if !AXPermission.granted() {
             menu.addItem(NSMenuItem(title: "授辅助功能权限…", action: #selector(permissionAction), keyEquivalent: ""))
@@ -43,11 +83,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(report.permission ? 0 : 3)
         }
 
+        // 常驻输入感知（M2）：AXObserver + 800ms 去抖；无授权时静默降级
+        if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1" {
+            LocalEngineBootstrap.ensureRunning()     // 本地引擎没起就悄悄拉起来（不弹窗）
+            InlineController.shared.start()
+        }
+
         // 首次运行且未配置：直接把设置窗口摆出来（用户点一下就完成配置）
         // EW_NO_WINDOW=1 用于无头测量，绝不弹窗
         if !SettingsStore.load().isComplete, ProcessInfo.processInfo.environment["EW_NO_WINDOW"] != "1" {
             SettingsWindowController.shared.show(model: model)
         }
+    }
+
+    @MainActor @objc private func checkNowAction() { InlineController.shared.checkNow() }
+    @MainActor @objc private func clearAction() { InlineController.shared.clearUnderlines() }
+
+    @MainActor @objc private func demoAction() {
+        let d = DemoController()
+        demo = d
+        let opts = DemoController.DemoOptions(shotPath: nil)
+        _ = d.run(opts)
     }
 
     @MainActor @objc private func triggerAction() { model.trigger() }
@@ -83,6 +139,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 let argv = CommandLine.arguments
 if argv.contains("--selftest") {
     exit(SelfTest.run(argv))
+}
+
+// M1 渲染自测台：--demo / --demo-selfcheck / --ax-selftest / --snapshot <path> / --shot <path>
+if argv.contains("--demo") || argv.contains("--demo-selfcheck")
+    || argv.contains("--ax-selftest") || argv.contains("--snapshot") {
+    var opts = DemoController.DemoOptions()
+    opts.selfCheckOnly = argv.contains("--demo-selfcheck")
+    opts.axSelfCheck = argv.contains("--ax-selftest")
+    if let i = argv.firstIndex(of: "--snapshot"), i + 1 < argv.count { opts.snapshotPath = argv[i + 1] }
+    if let i = argv.firstIndex(of: "--shot"), i + 1 < argv.count { opts.shotPath = argv[i + 1] }
+    let demoApp = NSApplication.shared
+    demoApp.setActivationPolicy(.accessory)
+    var code: Int32 = 0
+    var controller: DemoController?
+    MainActor.assumeIsolated {
+        let c = DemoController()
+        controller = c
+        code = c.run(opts)
+    }
+    if opts.shotPath == nil { exit(code) }      // 断言/快照模式：跑完就退，不留窗口
+    demoApp.run()                               // 屏幕截图模式：等回调里 terminate
+    exit(code)
 }
 
 let appDelegate = AppDelegate()
