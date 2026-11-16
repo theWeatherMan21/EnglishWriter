@@ -18,13 +18,6 @@ jobs:
       - name: Build + selftest
         run: bash scripts/ci-test.sh
 
-      - name: Upload snapshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: out
-          path: |
-            out/
-            qa/evidence/settings-selftest.json
-          if-no-files-found: ignore
-          retention-days: 1
+      # 不上传 artifact：GitHub 免费额度 500MB 配额一满，整个 job 会被 upload 步骤判红，
+      # 与测试结论无关（2026-11-16 实测：PASS 70 / FAIL 0，却因 "Artifact storage quota has been hit" 失败）。
+      # 证据文件在仓库里（qa/evidence/），日志留在 run 页面。
