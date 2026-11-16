@@ -9,19 +9,22 @@ final class SettingsWindowController {
 
     func show(model: AppModel) {
         if let w = window {
+            Audit.show()
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         let view = SettingsView(model: model)
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
                          styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
+        Audit.window()
         w.title = "英文写作助手 · 设置"
         w.contentView = NSHostingView(rootView: view)
         w.center()
         w.isReleasedWhenClosed = false
         window = w
+        Audit.show()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -43,6 +46,52 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Button("保存") { save() }
                     Text(badge.text).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+
+                Divider()
+                Text("本地引擎（LanguageTool）").font(.system(size: 13, weight: .semibold))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("引擎地址").font(.system(size: 12, weight: .medium))
+                    TextField("", text: $prefs.ltBase)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospaced())
+                        .onChange(of: prefs.ltBase) { _ in prefs.saveLT() }
+                    Text("留空 = 本机默认 \(EnginePrefs.defaultLTBase)").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    Text("方言").font(.system(size: 12, weight: .medium))
+                    Picker("", selection: $prefs.language) {
+                        ForEach(EnginePrefs.languages, id: \.code) { l in
+                            Text(l.label).tag(l.code)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 180)
+                    .onChange(of: prefs.language) { v in prefs.saveLanguage(v) }
+                    Text("决定拼写口径（英式 colour / 美式 color）").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+
+                Divider()
+                Text("App 排除（这些 App 里一个字都不查）").font(.system(size: 13, weight: .semibold))
+                HStack(spacing: 8) {
+                    TextField("", text: $prefs.newExclusion)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospaced())
+                        .frame(width: 240)
+                    Button("添加") { prefs.addExclusion() }
+                        .disabled(prefs.newExclusion.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Text("填 bundle id 或应用名，例如 com.apple.mail / Mail").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                if prefs.exclusions.isEmpty {
+                    Text("（空：不预设排除任何 App）").font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    ForEach(prefs.exclusions, id: \.self) { a in
+                        HStack(spacing: 8) {
+                            Text(a).font(.system(size: 12).monospaced())
+                            Spacer()
+                            Button("删除") { prefs.removeExclusion(a) }.buttonStyle(.link)
+                        }
+                    }
                 }
 
                 Divider()
@@ -104,7 +153,7 @@ struct SettingsView: View {
             }
             .padding(18)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 560, height: 640)
     }
 
     private func field(_ title: String, text: Binding<String>, hint: String) -> some View {
@@ -144,6 +193,11 @@ final class PrefsModel: ObservableObject {
     @Published var words: [String] = DictStore.words
     @Published var ignoreCount: Int = IgnoreStore.shared.count
     @Published var newWord: String = ""
+    // 引擎地址 / 方言 / App 排除（都存在 com.wanyi.englishwriter 域里）
+    @Published var ltBase: String = (SettingsStore.store.string(forKey: SettingsStore.kLTBase) ?? "")
+    @Published var language: String = EnginePrefs.language()
+    @Published var exclusions: [String] = EnginePrefs.excludedApps()
+    @Published var newExclusion: String = ""
 
     func addWord() {
         DictStore.add(newWord)
@@ -161,8 +215,29 @@ final class PrefsModel: ObservableObject {
         reload()
     }
 
+    func saveLT() {
+        EnginePrefs.setLTBaseURL(ltBase)
+    }
+
+    func saveLanguage(_ code: String) {
+        EnginePrefs.setLanguage(code)
+        language = EnginePrefs.language()
+    }
+
+    func addExclusion() {
+        EnginePrefs.addExcludedApp(newExclusion)
+        newExclusion = ""
+        reload()
+    }
+
+    func removeExclusion(_ v: String) {
+        EnginePrefs.removeExcludedApp(v)
+        reload()
+    }
+
     func reload() {
         words = DictStore.words
         ignoreCount = IgnoreStore.shared.count
+        exclusions = EnginePrefs.excludedApps()
     }
 }

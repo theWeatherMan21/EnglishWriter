@@ -172,12 +172,18 @@ final class AppModel: ObservableObject {
 // MARK: - 设置存储（三项全手填，零预设默认值）
 
 enum SettingsStore {
-    private static let kBase = "llm.baseURL"
-    private static let kKey = "llm.apiKey"
-    private static let kModel = "llm.model"
+    /// 设置域钉死成 bundle id：.app 与命令行裸二进制读写同一份，验收能直接 defaults read
+    static let bundleId = "com.wanyi.englishwriter"
+    static var store: UserDefaults { UserDefaults(suiteName: bundleId) ?? .standard }
 
-    static func load() -> LLMConfig {
-        let d = UserDefaults.standard
+    static let kBase = "llm.baseURL"
+    static let kKey = "llm.apiKey"
+    static let kModel = "llm.model"
+    static let kLTBase = "lt.baseURL"
+    static let kLTLanguage = "lt.language"
+    static let kExcludedApps = "exclude.apps"
+
+    static func load(_ d: UserDefaults = SettingsStore.store) -> LLMConfig {
         return LLMConfig(
             baseURL: d.string(forKey: kBase) ?? "",
             apiKey: d.string(forKey: kKey) ?? "",
@@ -185,8 +191,7 @@ enum SettingsStore {
         )
     }
 
-    static func save(_ c: LLMConfig) {
-        let d = UserDefaults.standard
+    static func save(_ c: LLMConfig, _ d: UserDefaults = SettingsStore.store) {
         d.set(c.baseURL, forKey: kBase)
         d.set(c.apiKey, forKey: kKey)
         d.set(c.model, forKey: kModel)
@@ -208,6 +213,7 @@ final class CardPanel: NSPanel {
 
     init(model: AppModel) {
         self.model = model
+        Audit.window()
         super.init(contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
                    styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
                    backing: .buffered, defer: false)
@@ -239,7 +245,10 @@ final class CardPanel: NSPanel {
             y = min(max(y, vis.minY + 8), vis.maxY - size.height - 8)
         }
         setFrameOrigin(NSPoint(x: x, y: y))
-        orderFrontRegardless()
+        if !UnderlineOverlay.globallySilent {
+            Audit.show()
+            orderFrontRegardless()
+        }
     }
 }
 

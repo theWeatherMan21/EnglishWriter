@@ -1,0 +1,79 @@
+{
+  "assertions" : [
+    {
+      "detail" : "全新域：baseURL\/apiKey\/model 均空，isComplete=false",
+      "name" : "零预设·三件套全空",
+      "pass" : true
+    },
+    {
+      "detail" : "未配置时走默认 http:\/\/127.0.0.1:8081 \/ en-GB \/ 排除表为空",
+      "name" : "零预设·引擎地址\/方言\/排除",
+      "pass" : true
+    },
+    {
+      "detail" : "baseURL=https:\/\/selftest.invalid\/v1 model=selftest-model",
+      "name" : "保存·同进程读回三件套",
+      "pass" : true
+    },
+    {
+      "detail" : "lt.baseURL \/ lt.language \/ exclude.apps 三项一致",
+      "name" : "保存·同进程读回引擎设置",
+      "pass" : true
+    },
+    {
+      "detail" : "独立进程读到 6 项，值与保存一致",
+      "name" : "冷读·defaults read 六项齐全",
+      "pass" : true
+    },
+    {
+      "detail" : "加词前 1 条 → 加词后 0 条",
+      "name" : "词典·加词后同词 0 条",
+      "pass" : true
+    },
+    {
+      "detail" : "删词后 1 条",
+      "name" : "词典·删词后恢复 1 条",
+      "pass" : true
+    },
+    {
+      "detail" : "com.apple.mail → 排除",
+      "name" : "排除·bundle id 命中",
+      "pass" : true
+    },
+    {
+      "detail" : "Notes → 排除",
+      "name" : "排除·应用名命中",
+      "pass" : true
+    },
+    {
+      "detail" : "Other → 正常检查",
+      "name" : "排除·无关 App 不误伤",
+      "pass" : true
+    }
+  ],
+  "check" : "settings-selftest",
+  "defaultsRead" : {
+    "exclude.apps" : "(\n    \"com.apple.mail\",\n    Notes\n)",
+    "llm.apiKey" : "sk-selftest-0000-not-a-real-key",
+    "llm.baseURL" : "https:\/\/selftest.invalid\/v1",
+    "llm.model" : "selftest-model",
+    "lt.baseURL" : "http:\/\/127.0.0.1:18081",
+    "lt.language" : "en-US"
+  },
+  "domain" : "com.wanyi.englishwriter",
+  "generatedAt" : "2026-11-16T09:16:45Z",
+  "note" : "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。",
+  "pass" : true,
+  "plistPath" : "\/Users\/russospencer\/Library\/Preferences\/com.wanyi.englishwriter.plist",
+  "savedValues" : {
+    "exclude.apps" : [
+      "com.apple.mail",
+      "Notes"
+    ],
+    "llm.apiKey" : "sk-selftest-0000-not-a-real-key（测试值，测完已还原）",
+    "llm.baseURL" : "https:\/\/selftest.invalid\/v1",
+    "llm.model" : "selftest-model",
+    "lt.baseURL" : "http:\/\/127.0.0.1:18081",
+    "lt.language" : "en-US"
+  }
+}

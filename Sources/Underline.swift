@@ -132,6 +132,7 @@ final class UnderlineOverlay: NSPanel {
     static var globallySilent = false
 
     init() {
+        Audit.window()
         super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
@@ -164,7 +165,10 @@ final class UnderlineOverlay: NSPanel {
                           kind: $0.kind, itemID: $0.itemID)
         }
         canvas.needsDisplay = true
-        if !silent && !Self.globallySilent { orderFrontRegardless() }
+        if !silent && !Self.globallySilent {
+            Audit.show()
+            orderFrontRegardless()
+        }
     }
 
     func clear() {

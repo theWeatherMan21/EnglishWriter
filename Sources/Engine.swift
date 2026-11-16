@@ -5,7 +5,7 @@ import Foundation
 
 // MARK: - 配置
 
-struct LLMConfig: Codable {
+struct LLMConfig: Codable, Equatable {
     var baseURL: String
     var apiKey: String
     var model: String

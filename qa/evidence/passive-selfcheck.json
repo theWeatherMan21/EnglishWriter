@@ -1,0 +1,83 @@
+{
+  "audit" : {
+    "pasteboardWrites" : 0,
+    "windowsCreated" : 0,
+    "windowShows" : 0,
+    "writeCalls" : {
+
+    },
+    "writeTotal" : 0
+  },
+  "check" : "passive-selfcheck",
+  "generatedAt" : "2026-11-16T09:16:56Z",
+  "instrumentedSites" : [
+    "applyEdits",
+    "WebText.replace",
+    "AXSelectedText",
+    "AXSelectedText.undo",
+    "Inline.accept",
+    "Inline.undo",
+    "pasteboard(AXTarget|Inline)",
+    "window: UnderlineOverlay\/CardPanel\/HoverCardPanel\/Settings\/Demo"
+  ],
+  "logPath" : "\/Users\/russospencer\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl",
+  "note" : "A 段正控后已 reset；B 段所有计数都是 reset 之后的实测值。覆盖窗口对象在进程启动时分配、从不 orderFront，所以「创建对象数」按启动前基线比对、上屏计数单独统计。",
+  "pass" : true,
+  "pid" : 32578,
+  "requiredFields" : [
+    "ts",
+    "pid",
+    "app",
+    "role",
+    "textLen",
+    "rects",
+    "elapsed"
+  ],
+  "results" : [
+    {
+      "detail" : "applyEdits 后 writeTotal=1，期望 1",
+      "name" : "正控·写回计数器是活的",
+      "pass" : true
+    },
+    {
+      "detail" : "writeCalls=[:]",
+      "name" : "只读·写回计数为 0",
+      "pass" : true
+    },
+    {
+      "detail" : "pasteboardWrites=0",
+      "name" : "只读·剪贴板写入为 0",
+      "pass" : true
+    },
+    {
+      "detail" : "windowShows=0",
+      "name" : "只读·窗口上屏计数为 0",
+      "pass" : true
+    },
+    {
+      "detail" : "windows 3 → 3",
+      "name" : "只读·没有新建窗口对象",
+      "pass" : true
+    },
+    {
+      "detail" : "除常驻菜单栏项（NSStatusBarWindow）外无可见窗口",
+      "name" : "只读·没有任何内容窗口可见",
+      "pass" : true
+    },
+    {
+      "detail" : "overlay.isVisible=false",
+      "name" : "只读·overlay 未上屏",
+      "pass" : true
+    },
+    {
+      "detail" : "\/Users\/russospencer\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl 共 1 行",
+      "name" : "日志·有落盘行",
+      "pass" : true
+    },
+    {
+      "detail" : "每行含 ts\/pid\/app\/role\/textLen\/rects\/elapsed",
+      "name" : "日志·七字段齐全",
+      "pass" : true
+    }
+  ]
+}

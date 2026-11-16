@@ -232,6 +232,7 @@ enum InlineEngine {
 
 /// 按逐条 diff 应用到原文（从后往前改写，偏移不会串）
 func applyEdits(_ items: [DiffItem], to text: String, only itemID: Int? = nil) -> String {
+    Audit.write("applyEdits")        // 只读自证：这条纯函数也算写回入口，调用即计数
     let ns = NSMutableString(string: text)
     let targets = items.enumerated()
         .filter { itemID == nil || $0.offset == itemID }

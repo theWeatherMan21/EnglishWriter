@@ -326,17 +326,45 @@ final class InlineController {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
         self.observer = observer
         observedPid = pid
+        emit(CheckEvent(kind: "attach-app", pid: pid, app: appName(pid), role: "-", textLen: 0, sentenceLen: 0,
+                        itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
         attachElementObserver(pid: pid)
     }
 
     private func attachElementObserver(pid: pid_t) {
-        guard let observer, let el = AXInline.focusedElement(pid: pid) else { return }
+        guard let observer else { return }
+        // 焦点可能落在窗口/工具栏（AXWindow）上而不是文本区：那样 valueChanged 永远不会来。
+        // 真机实测（TextEdit）：刚激活时 focusedElement 就是 AXWindow → 必须改挂窗口里最大的可读 AXTextArea。
+        if var cand = AXInline.focusedElement(pid: pid) {
+            let role = attrString(cand, kAXRoleAttribute as String) ?? ""
+            if role != "AXTextArea" && role != "AXTextField" && role != "AXWebArea" {
+                if let better = AXInline.biggestTextArea(pid: pid) { cand = better }
+            }
+            let refcon2 = Unmanaged.passUnretained(self).toOpaque()
+            if let old = observedElement, CFEqual(old, cand) { return }
+            for n in [kAXValueChangedNotification, kAXSelectedTextChangedNotification] {
+                AXObserverAddNotification(observer, cand, n as CFString, refcon2)
+            }
+            observedElement = cand
+            emit(CheckEvent(kind: "attach-el", pid: pid, app: appName(pid),
+                            role: attrString(cand, kAXRoleAttribute as String) ?? "?", textLen: 0, sentenceLen: 0,
+                            itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
+            return
+        }
+        guard let el = AXInline.focusedElement(pid: pid) else {
+            emit(CheckEvent(kind: "attach-el-fail", pid: pid, app: appName(pid), role: "-", textLen: 0,
+                            sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-", err: "没有焦点元素", at: Date()))
+            return
+        }
         if let old = observedElement, CFEqual(old, el) { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for n in [kAXValueChangedNotification, kAXSelectedTextChangedNotification] {
             AXObserverAddNotification(observer, el, n as CFString, refcon)
         }
         observedElement = el
+        emit(CheckEvent(kind: "attach-el", pid: pid, app: appName(pid),
+                        role: attrString(el, kAXRoleAttribute as String) ?? "?", textLen: 0, sentenceLen: 0,
+                        itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
     }
 
     private func detachObserver() {
@@ -382,6 +410,14 @@ final class InlineController {
         guard enabled else { return }
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
         guard pid > 0 else { return }
+        // App 排除：命中的 App 一个请求都不发（只记一条 skip，便于事后核「确实没查」）
+        if EnginePrefs.isExcluded(bundleId: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+                                  appName: appName(pid)) {
+            emit(CheckEvent(kind: "skip-excluded", pid: pid, app: appName(pid), role: "",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "-", at: Date()))
+            return
+        }
         guard var el = explicit ?? AXInline.focusedElement(pid: pid) else { diag.lastError = "没有焦点文本框"; return }
         var full = AXInline.fullText(of: el)
         if full == nil {
@@ -442,7 +478,7 @@ final class InlineController {
             let ltOK = await LocalEngine.available()
             if ltOK {
                 do {
-                    let out = try await LocalEngine.review(text: sentence, language: "en-GB")
+                    let out = try await LocalEngine.review(text: sentence, language: EnginePrefs.language())
                     await MainActor.run {
                         guard let self else { return }
                         self.diag.lastElapsed = String(format: "%.0fms", out.elapsed * 1000)
@@ -521,7 +557,7 @@ final class InlineController {
                 if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
                 guard ltOK else { firstError = "本地引擎未启动"; continue }
                 do {
-                    let out = try await LocalEngine.review(text: t, language: "en-GB")
+                    let out = try await LocalEngine.review(text: t, language: EnginePrefs.language())
                     let t0 = Date()
                     await MainActor.run {
                         self.diag.lastElapsed = String(format: "%.0fms", Date().timeIntervalSince(t0) * 1000)
@@ -601,6 +637,7 @@ final class InlineController {
             if ok { lastAccept = (it, bi, nil) }
         } else if let el = currentElement, let v = axRangeValue(it.start, it.length) {
             _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+            Audit.write("Inline.accept")
             ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, it.replacement as CFTypeRef) == .success
             if ok { lastAccept = (it, -1, el) }
             // Chromium 网页字段：AXValue 与 AXSelectedText 实测都写不进（2026-11-16 探测），
@@ -634,6 +671,7 @@ final class InlineController {
                                  with: last.item.original, in: blocks[last.blockIndex])
         } else if let el = last.element, let v = axRangeValue(last.item.start, replLen) {
             _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+            Audit.write("Inline.undo")
             ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, last.item.original as CFTypeRef) == .success
             if !ok {     // Chromium 兜底：剪贴板 ⌘V
                 _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
@@ -680,6 +718,7 @@ final class InlineController {
         let saved = pb.string(forType: .string)
         pb.clearContents()
         pb.setString(text, forType: .string)
+        Audit.pasteboard()
         let src = CGEventSource(stateID: .combinedSessionState)
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true),
               let up = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false) else {

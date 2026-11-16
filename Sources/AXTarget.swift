@@ -165,6 +165,7 @@ final class AXTarget {
             return ApplyResult(ok: false, method: .failed, detail: AXReadError.noPermission.message)
         }
         // 1) AX 直写
+        Audit.write("AXSelectedText")
         let setErr = AXUIElementSetAttributeValue(snap.element, kAXSelectedTextAttribute as CFString, newText as CFTypeRef)
         if setErr == .success, verifyReplaced(snap, newText) {
             return ApplyResult(ok: true, method: .axAttribute, detail: "AXSelectedText 写入成功")
@@ -195,6 +196,7 @@ final class AXTarget {
         let saved = pb.string(forType: .string)
         pb.clearContents()
         pb.setString(newText, forType: .string)
+        Audit.pasteboard()
 
         // 让目标 App 成为前台（面板是 nonactivating，本 App 并未抢走激活）
         if let app = NSRunningApplication(processIdentifier: snap.pid), !app.isActive {
@@ -242,6 +244,7 @@ final class AXTarget {
             _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
         }
         let err = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, snapshot.text as CFTypeRef)
+        Audit.write("AXSelectedText.undo")
         if err == .success {
             return ApplyResult(ok: true, method: .axAttribute, detail: "已还原")
         }

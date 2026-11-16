@@ -83,6 +83,7 @@ enum WebText {
 
     /// 块内替换（写回：选中块内 range → 写 AXSelectedText，保留撤销栈）
     static func replace(range: NSRange, with newText: String, in block: Block) -> Bool {
+        Audit.write("WebText.replace")   // 只读自证：往 WebKit 正文写，一次都算
         guard let v = axRangeValue(range.location, range.length) else { return false }
         let selErr = AXUIElementSetAttributeValue(block.element, kAXSelectedTextRangeAttribute as CFString, v)
         guard selErr == .success else { return false }

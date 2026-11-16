@@ -43,6 +43,7 @@ enum SelfTest {
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
         if argv.contains("--m3") { m3Tests(); mergeTests() }
+        if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
         if argv.contains("--lt") { ltTests() }
@@ -552,6 +553,171 @@ enum SelfTest {
         } else {
             bad("合并·clean 端到端", "count=\(cleaned.count) noOverlap=\(noOverlap) sorted=\(sortedOK)")
         }
+    }
+
+    // MARK: M4 #8 设置面板（持久化 + 零预设 + 引擎侧过滤）
+
+    /// 设置面板的验收不走 UI 点击：面板保存的每一条都落到 com.wanyi.englishwriter 域，
+    /// 用独立进程 `defaults read` 冷读回来比对；词典过滤用引擎的纯函数 buildItems 断言。
+    static func settingsTests() {
+        print("\n--- 设置面板（M4 #8：三件套 / 引擎地址 / 方言 / App 排除 / 词典）---")
+        let d = SettingsStore.store
+        let keys = [SettingsStore.kBase, SettingsStore.kKey, SettingsStore.kModel,
+                    SettingsStore.kLTBase, SettingsStore.kLTLanguage, SettingsStore.kExcludedApps,
+                    "dict.words"]
+        var snapshot: [String: Any] = [:]
+        for k in keys { if let v = d.object(forKey: k) { snapshot[k] = v } }
+        defer {
+            for k in keys {
+                if let v = snapshot[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) }
+            }
+            d.synchronize()
+        }
+
+        var evidence: [String: Any] = [:]
+        var assertions: [[String: Any]] = []
+        func check(_ name: String, _ pass: Bool, _ detail: String) {
+            assertions.append(["name": name, "pass": pass, "detail": detail])
+            if pass { ok(name, detail) } else { bad(name, detail) }
+        }
+
+        // 1) 零预设：一个全新域读回来必须全空 / 全走默认
+        let freshName = "com.wanyi.englishwriter.selftest.\(getpid())"
+        let fresh = UserDefaults(suiteName: freshName) ?? .standard
+        fresh.removePersistentDomain(forName: freshName)
+        let freshCfg = SettingsStore.load(fresh)
+        check("零预设·三件套全空",
+              freshCfg.baseURL.isEmpty && freshCfg.apiKey.isEmpty && freshCfg.model.isEmpty && !freshCfg.isComplete,
+              "全新域：baseURL/apiKey/model 均空，isComplete=false")
+        check("零预设·引擎地址/方言/排除",
+              EnginePrefs.ltBaseURL(fresh) == EnginePrefs.defaultLTBase
+              && EnginePrefs.language(fresh) == EnginePrefs.defaultLanguage
+              && EnginePrefs.excludedApps(fresh).isEmpty,
+              "未配置时走默认 \(EnginePrefs.defaultLTBase) / \(EnginePrefs.defaultLanguage) / 排除表为空")
+        fresh.removePersistentDomain(forName: freshName)
+
+        // 2) 保存 → 真落盘 → 独立进程冷读
+        let cfg = LLMConfig(baseURL: "https://selftest.invalid/v1",
+                            apiKey: "sk-selftest-0000-not-a-real-key",
+                            model: "selftest-model")
+        SettingsStore.save(cfg, d)
+        EnginePrefs.setLTBaseURL("http://127.0.0.1:18081", d)
+        EnginePrefs.setLanguage("en-US", d)
+        EnginePrefs.setExcludedApps(["com.apple.mail", "Notes"], d)
+        d.synchronize()
+
+        let reloaded = SettingsStore.load(d)
+        check("保存·同进程读回三件套",
+              reloaded == cfg, "baseURL=\(reloaded.baseURL) model=\(reloaded.model)")
+        check("保存·同进程读回引擎设置",
+              EnginePrefs.ltBaseURL(d) == "http://127.0.0.1:18081"
+              && EnginePrefs.language(d) == "en-US"
+              && EnginePrefs.excludedApps(d) == ["com.apple.mail", "Notes"],
+              "lt.baseURL / lt.language / exclude.apps 三项一致")
+
+        // 冷启动口径：另起一个进程读同一个域（defaults read），不是本进程缓存
+        let reads: [String: String] = [
+            SettingsStore.kBase: defaultsRead(SettingsStore.kBase) ?? "<nil>",
+            SettingsStore.kKey: defaultsRead(SettingsStore.kKey) ?? "<nil>",
+            SettingsStore.kModel: defaultsRead(SettingsStore.kModel) ?? "<nil>",
+            SettingsStore.kLTBase: defaultsRead(SettingsStore.kLTBase) ?? "<nil>",
+            SettingsStore.kLTLanguage: defaultsRead(SettingsStore.kLTLanguage) ?? "<nil>",
+            SettingsStore.kExcludedApps: defaultsRead(SettingsStore.kExcludedApps) ?? "<nil>",
+        ]
+        evidence["defaultsRead"] = reads
+        let need: [(String, String)] = [
+            (SettingsStore.kBase, "https://selftest.invalid/v1"),
+            (SettingsStore.kKey, "sk-selftest-0000-not-a-real-key"),
+            (SettingsStore.kModel, "selftest-model"),
+            (SettingsStore.kLTBase, "http://127.0.0.1:18081"),
+            (SettingsStore.kLTLanguage, "en-US"),
+        ]
+        var missing: [String] = []
+        for (k, want) in need where (reads[k] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) != want {
+            missing.append("\(k)=\(reads[k] ?? "<nil>")（期望 \(want)）")
+        }
+        let exclRaw = reads[SettingsStore.kExcludedApps] ?? ""
+        if !(exclRaw.contains("com.apple.mail") && exclRaw.contains("Notes")) {
+            missing.append("\(SettingsStore.kExcludedApps)=\(exclRaw)")
+        }
+        check("冷读·defaults read 六项齐全", missing.isEmpty,
+              missing.isEmpty ? "独立进程读到 \(need.count + 1) 项，值与保存一致" : "不一致/缺失：\(missing)")
+
+        // 3) 个人词典 → 引擎侧过滤（纯函数，不依赖 LanguageTool 在线）
+        let text = "There is many reasons why we should sent the booking confirmation immediatly."
+        let off = (text as NSString).range(of: "immediatly").location
+        let matchJSON = """
+        {"matches":[{"message":"Possible spelling mistake","offset":\(off),"length":10,\
+        "replacements":[{"value":"immediately"}],\
+        "rule":{"id":"MORFOLOGIK_RULE_EN_GB","category":{"id":"TYPOS"},"issueType":"misspelling"}}]}
+        """
+        func items() -> [DiffItem] {
+            guard let data = matchJSON.data(using: .utf8),
+                  let parsed = try? JSONDecoder().decode(LTResponse.self, from: data) else { return [] }
+            return LocalEngine.buildItems(matches: parsed.matches, text: text)
+        }
+        let before = items().count
+        DictStore.add("immediatly")
+        let after = items().count
+        check("词典·加词后同词 0 条", before == 1 && after == 0, "加词前 \(before) 条 → 加词后 \(after) 条")
+        DictStore.remove("immediatly")
+        let restored = items().count
+        check("词典·删词后恢复 1 条", restored == 1, "删词后 \(restored) 条")
+
+        // 4) App 排除匹配（bundle id 与 应用名 都认；无关 App 不误伤）
+        EnginePrefs.setExcludedApps(["com.apple.mail", "Notes"], d)
+        check("排除·bundle id 命中",
+              EnginePrefs.isExcluded(bundleId: "com.apple.mail", appName: "Mail", d),
+              "com.apple.mail → 排除")
+        check("排除·应用名命中",
+              EnginePrefs.isExcluded(bundleId: "com.apple.Notes", appName: "Notes", d),
+              "Notes → 排除")
+        check("排除·无关 App 不误伤",
+              !EnginePrefs.isExcluded(bundleId: "com.example.other", appName: "Other", d),
+              "Other → 正常检查")
+
+        // 5) 证据落盘
+        evidence["check"] = "settings-selftest"
+        evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())
+        evidence["assertions"] = assertions
+        evidence["pass"] = assertions.allSatisfy { ($0["pass"] as? Bool) == true }
+        evidence["domain"] = SettingsStore.bundleId
+        evidence["plistPath"] = NSHomeDirectory() + "/Library/Preferences/\(SettingsStore.bundleId).plist"
+        evidence["savedValues"] = [
+            SettingsStore.kBase: cfg.baseURL,
+            SettingsStore.kKey: "sk-selftest-0000-not-a-real-key（测试值，测完已还原）",
+            SettingsStore.kModel: cfg.model,
+            SettingsStore.kLTBase: "http://127.0.0.1:18081",
+            SettingsStore.kLTLanguage: "en-US",
+            SettingsStore.kExcludedApps: ["com.apple.mail", "Notes"],
+        ]
+        evidence["note"] = "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。"
+        writeEvidence("settings-selftest.json", evidence)
+    }
+
+    /// 独立进程读设置域（真正的「冷启动读回」）
+    static func defaultsRead(_ key: String) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        p.arguments = ["read", SettingsStore.bundleId, key]
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = Pipe()
+        do { try p.run() } catch { return nil }
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func writeEvidence(_ name: String, _ obj: [String: Any]) {
+        let dir = FileManager.default.currentDirectoryPath + "/qa/evidence"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        guard let d = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) else { return }
+        let path = dir + "/" + name
+        try? d.write(to: URL(fileURLWithPath: path))
+        print("证据：\(path)")
     }
 
     // MARK: 工具

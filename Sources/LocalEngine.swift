@@ -103,8 +103,11 @@ struct LTResponse: Decodable {
 }
 
 enum LocalEngine {
-    /// 可在设置里改（默认本机 8081）
-    static var baseURLString: String = "http://127.0.0.1:8081"
+    /// 引擎地址：设置面板可改；没填就是本机 8081（默认值不落进配置）
+    static var baseURLString: String {
+        get { EnginePrefs.ltBaseURL() }
+        set { EnginePrefs.setLTBaseURL(newValue) }
+    }
 
     private static var lastProbe: (ok: Bool, at: Date) = (false, .distantPast)
 
@@ -161,16 +164,26 @@ enum LocalEngine {
             throw ReviewFailure.badJSON(String(data: data, encoding: .utf8) ?? "")
         }
 
-        // 过滤：护住区间内的、没有替换建议的、签名之后的
+        // 过滤：护住区间内的、没有替换建议的、签名之后的、个人词典里的
+        let items = buildItems(matches: parsed.matches, text: text)
+        return InlineOutcome(items: DiffSanitize.clean(items, in: text),
+                             endpoint: url.absoluteString,
+                             model: "languagetool (\(language))",
+                             elapsed: elapsed)
+    }
+
+    /// 原始命中 → 可上屏条目。纯函数：不碰网络、不碰 UI，单测直接喂构造数据。
+    /// 四条丢弃规则都在这里，别在别处复制：签名块之后 / 护栏区间 / 词典词 / 越界或无替换。
+    static func buildItems(matches: [LTMatch], text: String) -> [DiffItem] {
+        let ns = text as NSString
         let guarded = SpanGuard.guardedRanges(in: text)
         let sigStart = SpanGuard.signatureStart(in: text)
-        let items: [DiffItem] = parsed.matches.compactMap { m in
+        return matches.compactMap { m in
             let r = NSRange(location: m.offset, length: m.length)
             if let s = sigStart, r.location >= s { return nil }
             if guarded.contains(where: { SpanGuard.intersects($0, r) }) { return nil }
             guard let repl = m.replacements?.first?.value, !repl.isEmpty else { return nil }
-            let ns = text as NSString
-            guard r.location + r.length <= ns.length else { return nil }
+            guard r.location >= 0, r.location + r.length <= ns.length else { return nil }
             let original = ns.substring(with: r)
             if original == repl { return nil }
             if DictStore.contains(original) { return nil }   // 个人词典：用户加过的词不再报
@@ -180,10 +193,6 @@ enum LocalEngine {
                             type: kindFor(m).rawValue,
                             reason: m.message)
         }
-        return InlineOutcome(items: DiffSanitize.clean(items, in: text),
-                             endpoint: url.absoluteString,
-                             model: "languagetool (\(language))",
-                             elapsed: elapsed)
     }
 
     private static func kindFor(_ m: LTMatch) -> UnderlineKind {

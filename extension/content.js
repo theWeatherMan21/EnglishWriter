@@ -20,7 +20,8 @@
   let lastAccept = null;
   let ignoreList = new Set();
 
-  window.__EW_DEBUG = { ready: false, lastEdits: [], lastRects: [], engine: '', elapsedMs: 0, accepted: 0, undone: 0, notes: [] };
+  window.__EW_DEBUG = { ready: false, lastEdits: [], lastRects: [], engine: '', elapsedMs: 0,
+                        accepted: 0, undone: 0, notes: [], rectSource: 'none', lastTarget: null };
 
   function readToken(cb) {
     chrome.storage.local.get(['token', 'ignore'], (v) => {
@@ -124,15 +125,54 @@
 
   // ---------- 矩形：DOM 侧自己算，不依赖任何宿主接口 ----------
   // contenteditable 用 Range；input/textarea 用镜像 div（同字体、同 padding、同宽）
+  function setRectSource(s) { window.__EW_DEBUG.rectSource = s; }
+
+  function rangeRects(container, start, end) {
+    const range = rangeForOffsets(container, start, end);
+    if (!range) return [];
+    const out = [];
+    for (const r of range.getClientRects()) {
+      if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    return out;
+  }
+
+  // contenteditable 兜底：Chromium 的 AX 侧不给 AXBoundsForRange 矩形，DOM 侧也不是所有结构
+  // 都能一次 Range.getClientRects 出矩形（跨 <br>、空行、嵌套段落都会返回空）。
+  // 这里逐个文本节点算：落在目标区间里的节点各自取 rect，再并起来；仍为 0 才退元素级 rect。
+  function childUnionRects(el, absStart, length) {
+    const targetEnd = absStart + length;
+    const out = [];
+    let acc = 0;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = walker.nextNode())) {
+      const len = n.nodeValue.length;
+      const nodeStart = acc, nodeEnd = acc + len;
+      acc = nodeEnd;
+      if (nodeEnd <= absStart || nodeStart >= targetEnd) continue;
+      const r = document.createRange();
+      try {
+        r.setStart(n, Math.max(0, absStart - nodeStart));
+        r.setEnd(n, Math.min(len, targetEnd - nodeStart));
+      } catch (e) { continue; }
+      for (const rect of r.getClientRects()) {
+        if (rect.width > 0 && rect.height > 0) out.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height });
+      }
+    }
+    if (out.length) return out;
+    const box = el.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) { setRectSource('element'); return [{ x: box.left, y: box.top, w: box.width, h: box.height }]; }
+    return [];
+  }
+
   function rectsFor(el, absStart, length) {
     if (el.isContentEditable) {
-      const range = rangeForOffsets(el, absStart, absStart + length);
-      if (!range) return [];
-      const out = [];
-      for (const r of range.getClientRects()) {
-        if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
-      }
-      return out;
+      const primary = rangeRects(el, absStart, absStart + length);
+      if (primary.length) { setRectSource('range'); return primary; }
+      const fallback = childUnionRects(el, absStart, length);
+      if (window.__EW_DEBUG.rectSource !== 'element') setRectSource(fallback.length ? 'child-union' : 'none');
+      return fallback;
     }
     const mirror = mirrorFor(el);
     if (!mirror) return [];
@@ -146,6 +186,7 @@
     for (const r of range.getClientRects()) {
       if (r.width > 0 && r.height > 0) out.push({ x: r.left + dx - (el.offsetWidth - el.clientWidth), y: r.top + dy - (el.offsetHeight - el.clientHeight), w: r.width, h: r.height });
     }
+    setRectSource('mirror');
     return out;
   }
 
@@ -202,6 +243,11 @@
   function drawUnderlines(el, edits, sentStart) {
     ensureLayer();
     layer.innerHTML = '';
+    window.__EW_DEBUG.lastTarget = {
+      tag: el.tagName, id: el.id || '',
+      contenteditable: !!el.isContentEditable,
+      textLen: textOf(el).length
+    };
     const rects = [];
     edits.forEach((e) => {
       const rs = rectsFor(el, sentStart + e.start, e.length);

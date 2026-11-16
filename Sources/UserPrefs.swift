@@ -9,10 +9,12 @@ import Foundation
 
 enum DictStore {
     private static let key = "dict.words"
+    /// 与设置同一个域（com.wanyi.englishwriter）：命令行裸二进制与 .app 读写一致
+    private static var d: UserDefaults { SettingsStore.store }
 
     static var words: [String] {
-        get { (UserDefaults.standard.array(forKey: key) as? [String]) ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: key) }
+        get { (d.array(forKey: key) as? [String]) ?? [] }
+        set { d.set(newValue, forKey: key) }
     }
 
     static func add(_ word: String) {
@@ -51,7 +53,7 @@ final class IgnoreStore {
     private func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
-        let raw = (UserDefaults.standard.array(forKey: Self.key) as? [[String]]) ?? []
+        let raw = (SettingsStore.store.array(forKey: Self.key) as? [[String]]) ?? []
         rules = raw.compactMap { pair in
             guard pair.count == 2 else { return nil }
             return (pair[0], pair[1])
@@ -59,7 +61,7 @@ final class IgnoreStore {
     }
 
     private func persist() {
-        UserDefaults.standard.set(rules.map { [$0.original, $0.replacement] }, forKey: Self.key)
+        SettingsStore.store.set(rules.map { [$0.original, $0.replacement] }, forKey: Self.key)
     }
 
     func isIgnored(original: String, replacement: String) -> Bool {

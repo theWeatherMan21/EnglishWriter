@@ -176,6 +176,7 @@ final class HoverCardPanel: NSPanel {
     private(set) var shownItemID: Int = -1
 
     init() {
+        Audit.window()
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
                    styleMask: [.nonactivatingPanel, .borderless],
                    backing: .buffered, defer: false)
@@ -221,7 +222,10 @@ final class HoverCardPanel: NSPanel {
         }
         setFrame(ScreenGeom.toAppKit(box), display: true)
         shownItemID = itemID
-        orderFrontRegardless()
+        if !UnderlineOverlay.globallySilent {
+            Audit.show()
+            orderFrontRegardless()
+        }
     }
 
     func dismiss() {
@@ -262,7 +266,11 @@ final class HoverCoordinator {
         panel.dismiss()
     }
 
+    /// 自检专用：走一次真实命中流程（全局静默时应当在第一行就返回，不建卡不上屏）
+    func tickForAudit() { onMouseMoved() }
+
     private func onMouseMoved() {
+        if UnderlineOverlay.globallySilent { return }   // 只读模式：悬停卡片一律不许出现
         let mouseAppKit = NSEvent.mouseLocation
         let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: mouseAppKit, size: .zero)).origin
         let specs = InlineController.shared.overlay.currentRects()

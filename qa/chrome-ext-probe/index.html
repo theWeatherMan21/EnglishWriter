@@ -13,8 +13,8 @@
 <body>
   <h3>1) textarea</h3>
   <textarea id="ta" rows="3"></textarea>
-  <h3>2) contenteditable</h3>
-  <div id="ce" contenteditable="true"></div>
+  <h3>2) contenteditable（嵌套 <p>：验 DOM Range 兜底路径）</h3>
+  <div id="ce" contenteditable="true"><p id="ce-p"></p></div>
   <h3>3) input</h3>
   <input id="in" size="90">
 </body>

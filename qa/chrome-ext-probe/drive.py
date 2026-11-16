@@ -212,18 +212,43 @@ def main():
     iso_id = iso.get("id") if iso else None
 
     report = {}
+    sentence = "There is many reasons why we should sent the booking confirmation immediatly."
+
+    def click_center(sel):
+        """真点一下元素中心：contenteditable 光 focus() 不一定落光标，点了才算真焦点"""
+        box = evaluate(ws, f"""(() => {{
+          const el = document.querySelector('{sel}');
+          const r = el.getBoundingClientRect();
+          return {{x: Math.round(r.left + Math.min(20, Math.max(4, r.width / 2))),
+                   y: Math.round(r.top + Math.min(12, Math.max(4, r.height / 2)))}};
+        }})()""")
+        if not isinstance(box, dict) or "x" not in box:
+            return None
+        for t in ("mousePressed", "mouseReleased"):
+            mid = ws.send("Input.dispatchMouseEvent", {"type": t, "x": box["x"], "y": box["y"],
+                                                       "button": "left", "clickCount": 1})
+            ws.recv_until(mid)
+        return box
+
     for sel, kind, label in [("#ta", "textarea", "textarea"), ("#ce", "contenteditable", "contenteditable")]:
+        # 每个用例前清干净：元素内容 + 扩展调试态（否则上一轮的 lastEdits 会被当成本轮结果）
         clear = f"""(() => {{
           const el = document.querySelector('{sel}');
-          el.focus();
-          if ('{kind}' === 'textarea') {{ el.value = ''; }} else {{ el.innerHTML = ''; }}
-          const r = document.createRange(); r.selectNodeContents(el);
+          if ('{kind}' === 'textarea') {{ el.value = ''; }} else {{ el.innerHTML = '<p></p>'; }}
+          const node = '{kind}' === 'contenteditable' ? (el.querySelector('p') || el) : el;
+          const r = document.createRange(); r.selectNodeContents(node);
           const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
           return true;
         }})()"""
         evaluate(ws, clear)
+        evaluate(ws, "(() => { const d = window.__EW_DEBUG; d.lastEdits = []; d.lastRects = []; "
+                     "d.notes = []; d.lastTarget = null; d.rectSource = 'none'; return true; })()",
+                 context_id=iso_id)
         time.sleep(0.2)
-        sentence = "There is many reasons why we should sent the booking confirmation immediatly."
+        click_center(sel)
+        time.sleep(0.2)
+        active = evaluate(ws, "(() => { const a = document.activeElement; "
+                              "return a ? ((a.id ? '#' + a.id : '') + a.tagName) : 'none'; })()")
         # 真实键入路径（Input.insertText，走浏览器输入管线）
         mid = ws.send("Input.insertText", {"text": sentence})
         ws.recv_until(mid)
@@ -232,13 +257,25 @@ def main():
         dbg = json.loads(dbg) if isinstance(dbg, str) else (dbg or {})
         edits = dbg.get("lastEdits", [])
         rects = dbg.get("lastRects", [])
-        report[label] = {"edits": len(edits), "rects": len(rects), "engine": dbg.get("engine"),
-                         "ms": dbg.get("elapsedMs"),
-                         "notes_all": dbg.get("notes", []),
-                         "token_retry": {
-                             "had_skip_before_success": any("no token" in n for n in dbg.get("notes", [])),
-                             "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
-                         }}
+        target = dbg.get("lastTarget") or {}
+        read_expr = f"document.querySelector('{sel}').{'value' if kind == 'textarea' else 'innerText'}"
+        landed = evaluate(ws, read_expr) or ""
+        typed_ok = "immediatly" in landed
+        report[label] = {
+            "edits": len(edits), "rects": len(rects), "engine": dbg.get("engine"),
+            "ms": dbg.get("elapsedMs"),
+            "rect_source": dbg.get("rectSource"),
+            "target": target,
+            "active_element": active,
+            "typed_text_len": len(landed),
+            "typed_into_expected": typed_ok,
+            "rect_list": rects[:3],
+            "notes_all": dbg.get("notes", []),
+            "token_retry": {
+                "had_skip_before_success": any("no token" in n for n in dbg.get("notes", [])),
+                "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
+            },
+        }
 
         if edits:
             read = (lambda: evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}"))
@@ -272,6 +309,11 @@ def main():
                     "undone_len_equals_before": u_len_eq,
                     "accept_api_returned": bool(accept_ret),
                     "undo_api_returned": bool(undo_ret),
+                    # 本轮新增：证明 rects 真的来自目标元素，而不是上一轮 textarea 的残留
+                    "rects_positive": len(rects) > 0,
+                    "rect_source_reported": dbg.get("rectSource") in ("range", "child-union", "element", "mirror"),
+                    "target_is_expected": bool(target.get("contenteditable")) == (kind == "contenteditable"),
+                    "typed_into_expected": typed_ok,
                 },
                 "accept_changed": a_has_new and a_no_old and changed_vs_before,
                 "undo_restored": u_eq_before and u_len_eq,
@@ -281,7 +323,22 @@ def main():
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ext-probe-report.json")
     open(out, "w").write(json.dumps(report, ensure_ascii=False, indent=2))
     print("报告:", out)
-    ok = all(v.get("edits", 0) > 0 and v.get("rects", 0) > 0 for v in report.values())
+    need = ["rects_positive", "rect_source_reported", "target_is_expected",
+            "typed_into_expected", "accept_changed", "undo_restored"]
+    failures = {}
+    for label, v in report.items():
+        bad = [k for k in need if not (v.get(k) if k in ("accept_changed", "undo_restored")
+                                       else (v.get("assertions", {}) or {}).get(k))]
+        if v.get("edits", 0) <= 0:
+            bad.append("edits_positive")
+        if bad:
+            failures[label] = bad
+    ok = not failures
+    print("判据:", {label: {k: (v.get(k) if k in ("accept_changed", "undo_restored")
+                                else (v.get("assertions", {}) or {}).get(k))
+                            for k in need} for label, v in report.items()})
+    if failures:
+        print("未过项:", failures)
     print("RESULT:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

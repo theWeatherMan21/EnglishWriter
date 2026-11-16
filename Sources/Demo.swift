@@ -103,6 +103,7 @@ final class DemoController: NSObject, NSWindowDelegate {
         window = NSWindow(contentRect: rect,
                           styleMask: [.titled, .closable, .fullSizeContentView],
                           backing: .buffered, defer: false)
+        Audit.window()
         window.title = "英文写作助手 · M1 行内下划线自测"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
@@ -134,6 +135,7 @@ final class DemoController: NSObject, NSWindowDelegate {
         textView = tv
 
         window.contentView = scroll
+        Audit.show()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
