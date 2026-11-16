@@ -1,0 +1,310 @@
+// AXCheck.swift — A 层真机验收：不建窗口 / 不激活 / 不敲键 / 不截屏
+//
+// 为什么要这一层：realshot（B 层）靠 CGEvent 点击 + ⌘A + 逐字敲，只要靶子不是真正前台，
+// 击键就落到别处，正文空格 → underlineCount=0，看上去像「M2 挂了」，其实是「文本没进去」。
+// 2026-11-16 out/realshot-status.json 就是这种假阴性：textSet=false textLength=0。
+//
+// A 层把键盘这一环彻底摘掉：AXValue 直写正文（TextEdit 的 AXTextArea 实测 valueSettable=true）
+// → 读回核对 → checkNow(pid, element) → 读 overlay 的 specs/rects。
+// 下划线只算不上屏（UnderlineOverlay.silent），像素零上屏；合成图走离屏位图。
+//
+// 用法（必须由 App 自己发起，TCC 授权只认这个二进制）：
+//   open -a "/Applications/Selfmade/英文写作助手.app" --args --axcheck <outDir> \
+//        [--bundle com.apple.TextEdit] [--text "…"] [--text-file <path>]
+// 产物：<outDir>/axcheck-status.json + <outDir>/axcheck-underlines.png
+//
+// 铁律：目标 App 没在跑就报错退出，绝不 launch（launch 会弹窗）。
+
+import AppKit
+import ApplicationServices
+
+enum AXCheck {
+
+    struct Status: Codable {
+        var layer = "A"
+        var method = "AXValue 直写正文 → checkNow(pid, element) → 读 overlay.specs（键盘/截屏均未使用）"
+        var ok = false
+        var reason = ""
+        var timestamp = ""
+        var app = ""
+        var pid: Int32 = 0
+        var windowTitle = ""
+        var bodyRole = ""
+        var bodyRectQuartz: [Int] = []
+        var textSet = false
+        var textLength = 0
+        var caret = -1
+        var underlineCount = 0
+        var rects: [[Int]] = []
+        var items: [[String]] = []
+        var diag = ""
+        var notes: [String] = []
+        var snapshot = ""
+    }
+
+    static let marker = "immediatly"
+
+    static let defaultText = """
+    There is many reasons why we should sent the booking confirmation to the customer immediatly.
+    """
+
+    // MARK: 入口
+
+    @MainActor
+    static func run(_ argv: [String]) async {
+        var st = Status()
+        st.timestamp = ISO8601DateFormatter().string(from: Date())
+
+        let outDir = value(argv, "--axcheck") ?? (NSHomeDirectory() + "/dev/EnglishWriter/out")
+        let bundle = value(argv, "--bundle") ?? "com.apple.TextEdit"
+        var text = defaultText
+        if let f = value(argv, "--text-file"), let s = try? String(contentsOfFile: f, encoding: .utf8) {
+            text = s.trimmingCharacters(in: .newlines)
+        }
+        if let t = value(argv, "--text"), !t.isEmpty { text = t }
+        try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+
+        func finish(_ code: Int32) -> Never {
+            st.diag = InlineController.shared.diag.description
+            write(st, to: outDir)
+            print("[axcheck] \(st.ok ? "OK" : "FAIL") rects=\(st.underlineCount) reason=\(st.reason)")
+            InlineController.shared.clearUnderlines()
+            exit(code)
+        }
+
+        guard AXPermission.granted() else {
+            st.reason = "无辅助功能权限（必须 open -a 起 App，终端直接 exec 二进制恒 false）"
+            finish(3)
+        }
+
+        // 1) 目标必须在跑 —— 不 launch，launch 会弹窗
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first else {
+            st.reason = "目标 \(bundle) 未运行（A 层不自己拉起，避免产生窗口）"
+            st.app = bundle
+            finish(8)
+        }
+        st.app = app.localizedName ?? bundle
+        st.pid = app.processIdentifier
+        st.notes.append("未激活、未新建窗口、未发键击、未截屏")
+
+        // 2) 找一个可写的正文容器（最大的 AXTextArea）
+        guard let found = body(pid: st.pid, minArea: 4000) else {
+            st.reason = "目标没有可写的 AXTextArea（窗口数=\(windowCount(st.pid))）"
+            finish(5)
+        }
+        let el = found.element
+        st.bodyRole = attrString(el, kAXRoleAttribute as String) ?? "?"
+        st.bodyRectQuartz = rects(frameOf(el))
+        st.windowTitle = found.window.flatMap { attrString($0, kAXTitleAttribute as String) } ?? ""
+
+        // 3) AXValue 直写 → 读回核对
+        let okWrite = setText(text, in: el)
+        let back = attrString(el, kAXValueAttribute as String) ?? ""
+        st.textLength = (back as NSString).length
+        st.textSet = okWrite && back.contains(marker)
+        if !st.textSet {
+            st.reason = "文本没写进去（valueSettable=\(isSettable(el) ? "true" : "false"), 读回 \(st.textLength) 字）"
+            st.notes.append("正文=「\(back.prefix(60))」")
+            finish(6)
+        }
+        st.caret = setCaret(at: (back as NSString).length, in: el)
+        st.notes.append("正文=「\(back.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))」")
+
+        // 4) 只算不上屏，再 checkNow
+        InlineController.shared.overlay.silent = true
+        InlineController.shared.checkNow(for: st.pid, element: el)
+
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if !InlineController.shared.overlay.specs.isEmpty { break }
+            let d = InlineController.shared.diag
+            if d.checks > 0 && d.lastError != "-" { break }
+        }
+
+        let specs = InlineController.shared.overlay.specs
+        st.underlineCount = specs.count
+        st.rects = specs.map { rects($0.rect) }
+        st.items = InlineController.shared.items.map {
+            ["\($0.kind.rawValue)", $0.original, $0.replacement, "\($0.start)", "\($0.length)", $0.reason]
+        }
+        st.diag = InlineController.shared.diag.description
+        st.ok = !specs.isEmpty
+
+        if st.ok == false {
+            let d = InlineController.shared.diag
+            if d.checks == 0 { st.reason = "checkNow 一次都没跑（观察者/焦点未触发）" }
+            else if d.lastError != "-" { st.reason = "引擎侧报错：\(d.lastError)" }
+            else { st.reason = "检查跑了但产出 0 个矩形" }
+        }
+
+        // 5) 离屏合成图（不截屏：白底 + 正文区框 + 下划线矩形）
+        let png = outDir + "/axcheck-underlines.png"
+        st.snapshot = composite(specs: specs, body: CGRectFromArray(st.bodyRectQuartz), to: png) ? png : ""
+        if st.snapshot.isEmpty { st.notes.append("离屏合成失败") }
+
+        finish(st.ok ? 0 : 7)
+    }
+
+    // MARK: 参数
+
+    private static func value(_ argv: [String], _ flag: String) -> String? {
+        guard let i = argv.firstIndex(of: flag), i + 1 < argv.count else { return nil }
+        let v = argv[i + 1]
+        return v.isEmpty ? nil : v
+    }
+
+    // MARK: 找正文容器
+
+    struct Body { var element: AXUIElement; var window: AXUIElement? }
+
+    private static func windowCount(_ pid: pid_t) -> Int { windows(pid).count }
+
+    private static func windows(_ pid: pid_t) -> [AXUIElement] {
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 1.5)
+        return (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+    }
+
+    private static func body(pid: pid_t, minArea: CGFloat) -> Body? {
+        var best: (area: CGFloat, body: Body)?
+        for win in windows(pid) {
+            for el in textAreas(in: win, depth: 8) {
+                let f = frameOf(el)
+                let area = f.width * f.height
+                guard area >= minArea, isSettable(el) else { continue }
+                if best == nil || area > best!.area { best = (area, Body(element: el, window: win)) }
+            }
+        }
+        return best?.body
+    }
+
+    private static func textAreas(in el: AXUIElement, depth: Int) -> [AXUIElement] {
+        guard depth > 0 else { return [] }
+        var out: [AXUIElement] = []
+        for c in (attr(el, kAXChildrenAttribute as String) as? [AXUIElement]) ?? [] {
+            let role = attrString(c, kAXRoleAttribute as String) ?? ""
+            if role == "AXTextArea" || role == "AXTextField" || role == "AXWebArea" {
+                out.append(c)
+            }
+            out.append(contentsOf: textAreas(in: c, depth: depth - 1))
+        }
+        return out
+    }
+
+    // MARK: AX 读写
+
+    private static func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success else { return nil }
+        return v
+    }
+
+    private static func attrString(_ el: AXUIElement, _ name: String) -> String? {
+        attr(el, name) as? String
+    }
+
+    private static func isSettable(_ el: AXUIElement) -> Bool {
+        var b = DarwinBoolean(false)
+        let ok = AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &b) == .success
+        return ok && b.boolValue
+    }
+
+    private static func setText(_ text: String, in el: AXUIElement) -> Bool {
+        if AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, text as CFTypeRef) == .success,
+           (attrString(el, kAXValueAttribute as String) ?? "").contains(marker) {
+            return true
+        }
+        // 退化：全选 + 写选区
+        let len = (attrString(el, kAXValueAttribute as String) as NSString?)?.length ?? 0
+        var r = CFRange(location: 0, length: max(1, len))
+        if let v = AXValueCreate(.cfRange, &r) {
+            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+        }
+        _ = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef)
+        return (attrString(el, kAXValueAttribute as String) ?? "").contains(marker)
+    }
+
+    @discardableResult
+    private static func setCaret(at offset: Int, in el: AXUIElement) -> Int {
+        var r = CFRange(location: offset, length: 0)
+        if let v = AXValueCreate(.cfRange, &r) {
+            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+        }
+        var cur = CFRange(location: -1, length: 0)
+        if let back = attr(el, kAXSelectedTextRangeAttribute as String),
+           CFGetTypeID(back) == AXValueGetTypeID(),
+           AXValueGetValue(back as! AXValue, .cfRange, &cur) {
+            return cur.location
+        }
+        return -1
+    }
+
+    // MARK: 几何
+
+    private static func frameOf(_ el: AXUIElement) -> CGRect {
+        var rect = CGRect.zero
+        if let p = attr(el, kAXPositionAttribute as String), CFGetTypeID(p) == AXValueGetTypeID() {
+            var pt = CGPoint.zero
+            if AXValueGetValue(p as! AXValue, .cgPoint, &pt) { rect.origin = pt }
+        }
+        if let s = attr(el, kAXSizeAttribute as String), CFGetTypeID(s) == AXValueGetTypeID() {
+            var sz = CGSize.zero
+            if AXValueGetValue(s as! AXValue, .cgSize, &sz) { rect.size = sz }
+        }
+        return rect
+    }
+
+    private static func rects(_ r: CGRect) -> [Int] {
+        [Int(r.origin.x.rounded()), Int(r.origin.y.rounded()),
+         Int(r.size.width.rounded()), Int(r.size.height.rounded())]
+    }
+
+    private static func CGRectFromArray(_ a: [Int]) -> CGRect {
+        guard a.count == 4 else { return .zero }
+        return CGRect(x: a[0], y: a[1], width: a[2], height: a[3])
+    }
+
+    // MARK: 离屏合成（零截屏）
+
+    private static func composite(specs: [UnderlineSpec], body: CGRect, to path: String) -> Bool {
+        guard body.width > 10, body.height > 10 else { return false }
+        let size = NSSize(width: body.width, height: body.height)
+        let w = Int(size.width), h = Int(size.height)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return false }
+        rep.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        NSColor(calibratedWhite: 0.85, alpha: 1).setStroke()
+        let framePath = NSBezierPath(rect: NSRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5))
+        framePath.lineWidth = 1
+        framePath.stroke()
+        // 下划线 rect 是 Quartz（左上原点）全局坐标 → 转成正文区局部
+        let cg = NSGraphicsContext.current!.cgContext
+        cg.saveGState()
+        cg.translateBy(x: 0, y: size.height)
+        cg.scaleBy(x: 1, y: -1)
+        for s in specs {
+            UnderlinePainter.stroke(s.rect.offsetBy(dx: -body.minX, dy: -body.minY), s.kind)
+        }
+        cg.restoreGState()
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = rep.representation(using: .png, properties: [:]) else { return false }
+        return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+    }
+
+    // MARK: 落盘
+
+    private static func write(_ st: Status, to dir: String) {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let d = try? enc.encode(st) {
+            try? d.write(to: URL(fileURLWithPath: dir + "/axcheck-status.json"))
+        }
+    }
+}

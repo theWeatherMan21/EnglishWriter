@@ -11,11 +11,13 @@
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
 | M1 行内下划线渲染器 | **已交付（待真机复核）** | `--demo-selfcheck` → PASS，5 处错误 5 个矩形；快照 `out/m1-snapshot.png` |
-| M2 输入即检查 | 代码就绪（待授权后实测） | `--selftest --lt` 全绿；App 启动自动拉起本地引擎（12s 内 8081 就绪，无窗口） |
-| M3 悬停卡片 + 接受/忽略/撤销 | 未开工（卡片与写回层已在 v0.1 存在，改造成逐条即可） | — |
-| M4 设置/词典/开源发布 | 未开工 | — |
+| M2 输入即检查 | 代码就绪（待真机复核） | `--selftest --lt` 全绿；App 启动自动拉起本地引擎（12s 内 8081 就绪，无窗口） |
+| M3 悬停卡片 + 接受/忽略/撤销 + 词典 | **已交付（待真机复核）** | `--selftest --m3` → **PASS 53/0**；卡片离线渲染 `out/m3-card.png`（320×147）；commit `2a30293` |
+| M4 设置/词典/开源发布 | 词典与忽略规则已进设置面板；开源 public 化等爹地点头 | — |
 
-唯一阻塞：辅助功能授权（TCC，只能爹地本人勾）。勾完我 `killall` 重启自验，不再找他第二次。
+唯一阻塞：A 层真机验收需要一个真实靶子窗口（爹地红线禁止我们弹窗），要他开一个 TextEdit 空白文档放那儿。
+工具已就绪：`--axcheck`（AXValue 直写正文 → checkNow → 读 overlay.specs，不激活/不敲键/不截屏，下划线只算不上屏，合成图走离屏位图）。
+纪律：`--realshot`（B 层，CGEvent 敲键）在 `textSet=false` 时一律以退出码 9 收尾，标注「无效验收」——不得拿它当 M2 结论。
 
 ---
 
@@ -69,7 +71,7 @@ $ ./build/英文写作助手 --selftest --lt
   LT·有错句#1  3 条 1686ms（冷启）：There is many reasons→There are many reasons | sent→send | immediatly→immediately
   LT·有错句#2  1 条 27ms
   LT·有错句#3  2 条 17ms
-  LT·干净句#1..#5  全部 0 条误报（含 MSKU1234567 / CNTAO / CNSHTA / 202612345678 / demurrage 等）
+  LT·干净句#1..#5  全部 0 条误报（含合成箱号 TCLU9999996 / CNTAO / CNSHTA / 202612345678 / demurrage 等）
   LT·签名块不检查
 
 $ ./build/英文写作助手 --demo-selfcheck

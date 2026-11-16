@@ -123,6 +123,10 @@ final class UnderlineOverlay: NSPanel {
     private let canvas = UnderlineCanvas()
     private(set) var specs: [UnderlineSpec] = []
 
+    /// 静默模式：只算 specs、绝不上屏（A 层真机验收用 —— 屏幕上不许出现任何像素）
+    /// 默认 false，生产行为不变；清空时自动复位。
+    var silent = false
+
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -156,13 +160,14 @@ final class UnderlineOverlay: NSPanel {
                           kind: $0.kind, itemID: $0.itemID)
         }
         canvas.needsDisplay = true
-        orderFrontRegardless()
+        if !silent { orderFrontRegardless() }
     }
 
     func clear() {
         specs = []
         canvas.specs = []
         orderOut(nil)
+        silent = false          // 一次静默只对一次检查生效，别让后面的真机画线被静默掉
     }
 
     /// 当前下划线矩形（全局坐标），M3 悬停命中测试用

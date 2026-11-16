@@ -160,6 +160,11 @@ enum RealShot {
             st.notes.append("原生输入框：\(typed.count) 字")
         }
         st.textSet = typed.contains("immediatly") || typed.contains("many reasons")
+        if !st.textSet {
+            // 防线：文本没进输入框时，underlineCount=0 是必然结果，不能当「M2 挂了」的证据。
+            // 2026-11-16 就是拿这条假阴性当成 M2 结论，白走一轮；这里钉死并在退出码上区分（9）。
+            st.notes.insert("【无效验收】正文没敲进输入框 → 本结果不构成 M2 结论（改用 --axcheck A 层：AXValue 直写）", at: 0)
+        }
         st.textLength = (typed as NSString).length
         st.notes.append("正文=「\(typed.prefix(90))」")
         st.bodyRectQuartz = rectArray(WebText.frame(freshBody))
@@ -185,7 +190,7 @@ enum RealShot {
 
         // 7) 停住给外面抓图（面板留在屏幕上）
         try? await Task.sleep(nanoseconds: UInt64(max(0.5, o.hold) * 1_000_000_000))
-        finish(st.ok ? 0 : 6)
+        finish(st.textSet ? (st.ok ? 0 : 6) : 9)     // 9 = 无效验收（文本没进去），别拿去下 M2 结论
     }
 
     // MARK: - AX 树导出（调试用）
