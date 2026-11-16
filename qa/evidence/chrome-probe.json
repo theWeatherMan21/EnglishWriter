@@ -1,0 +1,81 @@
+{
+  "areas" : [
+    {
+      "boundsOK" : false,
+      "boundsRect" : [
+
+      ],
+      "depth" : 0,
+      "hasSelectedRange" : true,
+      "inWeb" : false,
+      "role" : "AXTextField",
+      "sample" : "\/var\/folders\/_5\/5hgsccf50qvfhthngb2_3zqr0000gn\/T",
+      "selWriteOK" : true,
+      "valueLen" : 80,
+      "valueSettable" : true,
+      "writeBackOK" : true
+    },
+    {
+      "boundsOK" : true,
+      "boundsRect" : [
+        110,
+        244,
+        40,
+        16
+      ],
+      "depth" : 0,
+      "hasSelectedRange" : true,
+      "inWeb" : true,
+      "role" : "AXTextArea",
+      "sample" : "There is many reasons why we should sent it imme",
+      "selWriteOK" : false,
+      "valueLen" : 55,
+      "valueSettable" : true,
+      "writeBackOK" : false
+    },
+    {
+      "boundsOK" : true,
+      "boundsRect" : [
+        111,
+        349,
+        36,
+        16
+      ],
+      "depth" : 0,
+      "hasSelectedRange" : true,
+      "inWeb" : true,
+      "role" : "AXTextField",
+      "sample" : "He go to school every days.",
+      "selWriteOK" : false,
+      "valueLen" : 27,
+      "valueSettable" : true,
+      "writeBackOK" : false
+    },
+    {
+      "boundsOK" : false,
+      "boundsRect" : [
+
+      ],
+      "depth" : 0,
+      "hasSelectedRange" : true,
+      "inWeb" : true,
+      "role" : "AXTextArea",
+      "sample" : "They was very happy about the news last week.",
+      "selWriteOK" : false,
+      "valueLen" : 45,
+      "valueSettable" : true,
+      "writeBackOK" : false
+    }
+  ],
+  "blockCount" : 5,
+  "chrome" : "Google Chrome（独立 profile）",
+  "notes" : [
+    "AXEnhancedUserInterface=-25208 AXManualAccessibility=-25205",
+    "窗口标题=「EW Chrome Probe - Google Chrome」"
+  ],
+  "ok" : true,
+  "pid" : 48470,
+  "timestamp" : "2026-11-16T07:42:43Z",
+  "verdict" : "只读：网页字段 AXValue 与 AXSelectedText 都写不进 → 接受建议必须走剪贴板 ⌘V \/ CDP 兜底（本项目未实现）；且部分字段（contenteditable）AXBoundsForRange 拿不到矩形｜AXEnhancedUserInterface=-25208 AXManualAccessibility=-25205；窗口标题=「EW Chrome Probe - Google Chrome」",
+  "webAreaFound" : true
+}

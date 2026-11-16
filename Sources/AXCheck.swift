@@ -217,6 +217,160 @@ enum AXCheck {
         finish(st.ok ? 0 : 7)
     }
 
+    // MARK: - 真机写回 + 撤销（--axaccept）：点卡片按钮走的是同一条代码路径
+    //
+    // 验收口径（知澜 15:35 定）：读回宿主 App 的 AXValue 比对，不信自己的日志。
+    //   ok = 接受成功 && 读回正文 == 原文该段被替换后的结果 && 撤销成功 && 读回正文 == 原文
+
+    struct AcceptStatus: Codable {
+        var layer = "写回"
+        var method = "InlineController.accept(itemID:) / undoLastAccept()（卡片按钮同一条路径）→ 读回宿主 AXValue 比对"
+        var ok = false
+        var reason = ""
+        var timestamp = ""
+        var app = ""
+        var pid: Int32 = 0
+        var textSet = false
+        var itemCount = 0
+        var targetIndex = -1
+        var original = ""
+        var replacement = ""
+        var beforeText = ""
+        var afterText = ""
+        var undoneText = ""
+        var expectedAfter = ""
+        var acceptOK = false
+        var undoOK = false
+        var matchAccepted = false
+        var matchUndone = false
+        var diag = ""
+        var notes: [String] = []
+    }
+
+    @MainActor
+    static func acceptRun(_ argv: [String]) async {
+        var st = AcceptStatus()
+        st.timestamp = ISO8601DateFormatter().string(from: Date())
+        let outDir = value(argv, "--axaccept") ?? (NSHomeDirectory() + "/dev/EnglishWriter/out")
+        let bundle = value(argv, "--bundle") ?? "com.apple.TextEdit"
+        let spawn = argv.contains("--spawn")
+        let text = value(argv, "--text") ?? defaultText
+        try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+        var temp: String? = nil
+
+        func finish(_ code: Int32) -> Never {
+            st.diag = InlineController.shared.diag.description
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let d = try? enc.encode(st) { try? d.write(to: URL(fileURLWithPath: outDir + "/axaccept-status.json")) }
+            print("[axaccept] \(st.ok ? "OK" : "FAIL") accept=\(st.acceptOK) undo=\(st.undoOK) matchAccepted=\(st.matchAccepted) matchUndone=\(st.matchUndone) reason=\(st.reason)")
+            InlineController.shared.clearUnderlines()
+            if let t = temp {
+                if let p = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
+                    let pid = p.processIdentifier
+                    kill(pid, SIGTERM); usleep(500_000)
+                    if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+                    usleep(200_000)
+                }
+                try? FileManager.default.removeItem(atPath: t)
+            }
+            exit(code)
+        }
+
+        guard AXPermission.granted() else { st.reason = "无辅助功能权限"; finish(3) }
+
+        var target = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first
+        if target == nil {
+            guard spawn else { st.reason = "目标 \(bundle) 未运行"; finish(8) }
+            let tmp = NSTemporaryDirectory() + "ew-axaccept-\(getpid()).rtf"
+            try? "".write(toFile: tmp, atomically: true, encoding: .utf8)
+            temp = tmp
+            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else {
+                st.reason = "找不到 \(bundle)"; finish(8)
+            }
+            let sem = DispatchSemaphore(value: 0)
+            NSWorkspace.shared.open([URL(fileURLWithPath: tmp)], withApplicationAt: appURL,
+                                    configuration: NSWorkspace.OpenConfiguration()) { _, _ in sem.signal() }
+            _ = sem.wait(timeout: .now() + 10)
+            for _ in 0..<20 {
+                if let a = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first,
+                   windowCount(a.processIdentifier) > 0 { target = a; break }
+                usleep(500_000)
+            }
+            guard let a = target, windowCount(a.processIdentifier) > 0 else {
+                st.reason = "起了 \(bundle) 但没等到窗口"; finish(8)
+            }
+            if let win = windows(a.processIdentifier).first { setMinimized(win, true) }
+            st.notes.append("【--spawn】临时空白文档，跑完杀掉、删临时文件")
+        }
+        guard let app = target else { st.reason = "目标未运行"; finish(8) }
+        st.app = app.localizedName ?? bundle
+        st.pid = app.processIdentifier
+
+        guard let found = body(pid: st.pid, minArea: 4000) else {
+            st.reason = "没有可写的 AXTextArea"; finish(5)
+        }
+        let el = found.element
+        var win = found.window
+        if temp != nil, let w = win { setMinimized(w, false) }        // 最小化拿不到矩形，写回前先还原
+        defer { if temp != nil, let w = win { setMinimized(w, true) } }
+
+        guard setText(text, in: el) else { st.reason = "文本没写进去"; finish(6) }
+        st.textSet = true
+        setCaret(at: (text as NSString).length, in: el)
+
+        InlineController.shared.overlay.silent = true
+        InlineController.shared.checkNow(for: st.pid, element: el)
+
+        var items: [DiffItem] = []
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            items = InlineController.shared.items
+            if !items.isEmpty { break }
+        }
+        st.itemCount = items.count
+        guard !items.isEmpty else {
+            st.reason = "检查没产出条目（checks=\(InlineController.shared.diag.checks) err=\(InlineController.shared.diag.lastError)）"
+            finish(7)
+        }
+
+        // 优先挑拼写那条（immediatly），结果最好比对
+        var idx = items.firstIndex { $0.original.lowercased().contains("immediatly") } ?? 0
+        if idx >= items.count { idx = 0 }
+        let it = items[idx]
+        st.targetIndex = idx
+        st.original = it.original
+        st.replacement = it.replacement
+
+        func readBack() -> String { attrString(el, kAXValueAttribute as String) ?? "" }
+        st.beforeText = readBack()
+        let ns = st.beforeText as NSString
+        if it.start + it.length <= ns.length {
+            st.expectedAfter = ns.replacingCharacters(in: NSRange(location: it.start, length: it.length), with: it.replacement)
+        }
+
+        st.acceptOK = InlineController.shared.accept(itemID: idx)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        st.afterText = readBack()
+        st.matchAccepted = !st.expectedAfter.isEmpty && st.afterText == st.expectedAfter
+
+        st.undoOK = InlineController.shared.undoLastAccept()
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        st.undoneText = readBack()
+        st.matchUndone = !st.beforeText.isEmpty && st.undoneText == st.beforeText
+
+        st.ok = st.acceptOK && st.matchAccepted && st.undoOK && st.matchUndone
+        if !st.ok {
+            if !st.acceptOK { st.reason = "接受写回 API 返回 false（\(InlineController.shared.diag.lastError)）" }
+            else if !st.matchAccepted { st.reason = "接受后读回正文与期望不一致" }
+            else if !st.undoOK { st.reason = "撤销 API 返回 false" }
+            else { st.reason = "撤销后读回正文与原文不一致" }
+        }
+        _ = win
+        finish(st.ok ? 0 : 9)
+    }
+
     // MARK: 参数
 
     private static func value(_ argv: [String], _ flag: String) -> String? {

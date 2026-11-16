@@ -1,0 +1,26 @@
+{
+  "acceptOK" : true,
+  "afterText" : "There is many reasons why we should sent the booking confirmation to the customer immediately.",
+  "app" : "TextEdit",
+  "beforeText" : "There is many reasons why we should sent the booking confirmation to the customer immediatly.",
+  "diag" : "checks=3 requests=0 cjkSkip=0 dedupe=0 fallback=0 rects=3 elapsed=34ms err=-",
+  "expectedAfter" : "There is many reasons why we should sent the booking confirmation to the customer immediately.",
+  "itemCount" : 3,
+  "layer" : "写回",
+  "matchAccepted" : true,
+  "matchUndone" : true,
+  "method" : "InlineController.accept(itemID:) \/ undoLastAccept()（卡片按钮同一条路径）→ 读回宿主 AXValue 比对",
+  "notes" : [
+    "【--spawn】临时空白文档，跑完杀掉、删临时文件"
+  ],
+  "ok" : true,
+  "original" : "immediatly",
+  "pid" : 44117,
+  "reason" : "",
+  "replacement" : "immediately",
+  "targetIndex" : 2,
+  "textSet" : true,
+  "timestamp" : "2026-11-16T07:38:18Z",
+  "undoOK" : true,
+  "undoneText" : "There is many reasons why we should sent the booking confirmation to the customer immediatly."
+}
