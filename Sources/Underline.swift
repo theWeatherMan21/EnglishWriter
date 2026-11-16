@@ -127,6 +127,10 @@ final class UnderlineOverlay: NSPanel {
     /// 默认 false，生产行为不变；清空时自动复位。
     var silent = false
 
+    /// 全局静默（--passive 被动观察用）：与 silent 的区别是 clear() 不会把它复位，
+    /// 意味着整段会话内一个像素都不上屏。
+    static var globallySilent = false
+
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -160,7 +164,7 @@ final class UnderlineOverlay: NSPanel {
                           kind: $0.kind, itemID: $0.itemID)
         }
         canvas.needsDisplay = true
-        if !silent { orderFrontRegardless() }
+        if !silent && !Self.globallySilent { orderFrontRegardless() }
     }
 
     func clear() {

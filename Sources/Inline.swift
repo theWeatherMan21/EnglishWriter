@@ -12,6 +12,11 @@ import ApplicationServices
 
 // MARK: - AX 文本 → 屏幕矩形
 
+/// pid → 应用名（只用于观察日志，取不到就是 "?"）
+func appName(_ pid: pid_t) -> String {
+    pid > 0 ? (NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?") : "?"
+}
+
 enum AXInline {
     /// 焦点文本框里的全文
     static func fullText(of el: AXUIElement) -> String? {
@@ -226,6 +231,25 @@ final class InlineController {
     private var focusObserver: Any?
     private var suppressing = false
 
+    /// 被动观察事件（--passive 模式落 JSONL；只存元信息，不存正文）
+    struct CheckEvent {
+        var kind: String            // check / skip-cjk / no-text / render
+        var pid: pid_t
+        var app: String
+        var role: String
+        var textLen: Int
+        var sentenceLen: Int
+        var itemCount: Int
+        var rectCount: Int
+        var elapsed: String
+        var err: String
+        var at: Date
+    }
+    /// 外部注册的观察者（--passive 用）。默认 nil = 零开销。
+    var onCheck: ((CheckEvent) -> Void)?
+
+    private func emit(_ e: CheckEvent) { onCheck?(e) }
+
     struct InlineDiag: CustomStringConvertible {
         var checks = 0
         var requests = 0
@@ -368,6 +392,11 @@ final class InlineController {
                 diag.fallbackTextArea += 1
             }
         }
+        if full == nil {
+            emit(CheckEvent(kind: "no-text", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-",
+                            err: "读不到文本框内容", at: Date()))
+        }
         guard let full else { diag.lastError = "读不到文本框内容"; return }
         currentElement = el
         currentPid = pid
@@ -388,6 +417,9 @@ final class InlineController {
         // 语言门控：中文占比超阈值 → 一个请求都不发
         if shouldSkipAsChinese(sentence) {
             diag.skippedChinese += 1
+            emit(CheckEvent(kind: "skip-cjk", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
+                            itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
             overlay.clear(); items = []
             return
         }
@@ -398,6 +430,9 @@ final class InlineController {
 
         diag.checks += 1
         lastText = full
+        emit(CheckEvent(kind: "check", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+                        textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
+                        itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
 
         let cfg = SettingsStore.load()
 
@@ -670,6 +705,12 @@ final class InlineController {
     // MARK: 渲染
 
     private func apply(items newItems: [DiffItem], sentenceRange: NSRange, element el: AXUIElement, pid: pid_t) {
+        defer {
+            emit(CheckEvent(kind: "render", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: (lastText as NSString).length, sentenceLen: sentenceRange.length,
+                            itemCount: items.count, rectCount: overlay.specs.count,
+                            elapsed: diag.lastElapsed, err: diag.lastError, at: Date()))
+        }
         let cleaned = DiffSanitize.clean(newItems, in: lastText)
         guard !cleaned.isEmpty else {
             overlay.clear(); items = []

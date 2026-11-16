@@ -103,12 +103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 真机验收器（Mail 下划线截图）：必须由 App 自己跑，才有辅助功能授权
         if let args = realShotArgs {
-            if args.contains("--axcheck") || args.contains("--axwatch") || args.contains("--axaccept") || args.contains("--axprobe-chrome") {
+            if args.contains("--axcheck") || args.contains("--axwatch") || args.contains("--axaccept")
+                || args.contains("--axprobe-chrome") || args.contains("--passive") {
                 // A 层：AXValue 直写 → checkNow；B 层：只监听真人键入。两都不建窗口/不激活/不敲键/不截屏
                 Task { @MainActor in
                     if args.contains("--axwatch") { await AXCheck.watch(args) }
                     else if args.contains("--axaccept") { await AXCheck.acceptRun(args) }
                     else if args.contains("--axprobe-chrome") { await ChromeProbe.run(args) }
+                    else if args.contains("--passive") { await Passive.run(args) }
                     else { await AXCheck.run(args) }
                 }
             } else {
@@ -192,7 +194,7 @@ application.setActivationPolicy(.accessory)
 
 // 真机验收器：--realshot <outDir> …，由 App 自己发起（TCC 授权只认这个二进制）
 if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--axprobe")
-    || argv.contains("--axcheck") || argv.contains("--axwatch") || argv.contains("--axaccept")
+    || argv.contains("--axcheck") || argv.contains("--axwatch") || argv.contains("--axaccept") || argv.contains("--passive")
     || argv.contains("--axprobe-chrome") {
     appDelegate.realShotArgs = argv
 }

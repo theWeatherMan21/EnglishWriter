@@ -1,0 +1,3 @@
+{"pid":25152,"textLen":0,"err":"读不到文本框内容","itemCount":0,"elapsed":"-","at":"2026-11-16T08:35:14Z","sentenceLen":0,"rectCount":0,"kind":"no-text","app":"Safari","role":"AXGroup"}
+{"pid":699,"role":"AXTextArea","at":"2026-11-16T08:35:24Z","elapsed":"-","rectCount":0,"textLen":0,"sentenceLen":0,"kind":"no-text","app":"Telegram Lite","itemCount":0,"err":"读不到文本框内容"}
+{"pid":699,"role":"AXTextArea","at":"2026-11-16T08:35:26Z","elapsed":"-","rectCount":0,"textLen":0,"sentenceLen":0,"kind":"no-text","app":"Telegram Lite","itemCount":0,"err":"读不到文本框内容"}

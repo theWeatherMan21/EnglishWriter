@@ -89,3 +89,13 @@ MIT，见 [LICENSE](LICENSE)。
 Grammarly 在浏览器里走扩展而不是辅助功能接口；本项目的 Chrome 支持同样是一个 MV3 扩展，
 见 [`extension/README.md`](extension/README.md)。它通过本机 `http://127.0.0.1:17817` 调 App 的检查接口
 （token 鉴权、只绑回环），取文本与矩形全部走 DOM，接受/撤销直接改 DOM。
+
+## 被动观察（真机取证，不上屏）
+
+```bash
+open -a 英文写作助手.app --args --passive ~/dev/EnglishWriter/qa/evidence/passive.jsonl --seconds 600
+```
+
+只读：不写宿主、不敲键、不截屏、下划线全程不上屏、不弹卡片；日志只记元信息
+（pid / 应用名 / role / 文本长度 / 句子长度 / 命中数 / 矩形数 / 耗时 / 错误），**正文一个字都不落盘**。
+用来在 Mail / Notes 这类真实宿主里取证「真人打字会不会触发」。
