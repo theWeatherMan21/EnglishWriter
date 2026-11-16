@@ -154,6 +154,98 @@ enum AXCheck {
         return v.isEmpty ? nil : v
     }
 
+    // MARK: - B 层观察器（--axwatch）：只监听，不敲键、不上屏
+    //
+    // 用法：爹地自己在 TextEdit 里敲；本模式每 500ms 把 diag/specs 落盘，
+    // 用来回答「AXObserver 挂上没有 / 800ms 去抖触发没有 / 有没有产出矩形」。
+    // 铁律：overlay 全程 silent（一个像素都不上屏），不发送任何事件。
+
+    struct WatchEvent: Codable {
+        var t: Double
+        var diag: String
+        var rects: Int
+        var pid: Int32
+        var sentenceApprox: String
+    }
+
+    @MainActor
+    static func watch(_ argv: [String]) async {
+        let outDir = value(argv, "--axwatch") ?? (NSHomeDirectory() + "/dev/EnglishWriter/out")
+        let seconds = Double(value(argv, "--seconds") ?? "") ?? 120
+        let bundle = value(argv, "--bundle") ?? "com.apple.TextEdit"
+        try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+        let jsonPath = outDir + "/axwatch-status.json"
+        let logPath = outDir + "/axwatch-events.log"
+
+        var started = Status()
+        started.layer = "B"
+        started.method = "AXObserver + 800ms 去抖（爹地真人敲键，我只监听；无键击、无截屏、下划线不上屏）"
+        started.timestamp = ISO8601DateFormatter().string(from: Date())
+        started.app = bundle
+        started.notes.append("观察窗口 \(Int(seconds))s；看到的就是常驻感知层的真实反应")
+
+        func flush(_ st: Status, events: [WatchEvent]) {
+            var s = st
+            s.diag = InlineController.shared.diag.description
+            let specs = InlineController.shared.overlay.specs
+            s.underlineCount = specs.count
+            s.rects = specs.map { rects($0.rect) }
+            s.items = InlineController.shared.items.map {
+                ["\($0.kind.rawValue)", $0.original, $0.replacement, "\($0.start)", "\($0.length)", $0.reason]
+            }
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let d = try? enc.encode(s) { try? d.write(to: URL(fileURLWithPath: jsonPath)) }
+            if let le = try? JSONEncoder().encode(events) {
+                try? le.write(to: URL(fileURLWithPath: logPath))
+            }
+        }
+
+        guard AXPermission.granted() else {
+            started.reason = "无辅助功能权限（必须 open -a 起 App）"
+            started.ok = false
+            flush(started, events: [])
+            exit(3)
+        }
+
+        var events: [WatchEvent] = []
+        var lastDiag = ""
+        let t0 = Date()
+        print("[axwatch] 开始监听 \(Int(seconds))s —— 去 \(bundle) 里正常打字即可")
+
+        while Date().timeIntervalSince(t0) < seconds {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            InlineController.shared.overlay.silent = true      // clear() 会复位，每拍补一次
+            let d = InlineController.shared.diag
+            let desc = d.description
+            if desc != lastDiag {
+                lastDiag = desc
+                let el = InlineController.shared.currentElement
+                let approx = el.flatMap { attrString($0, kAXValueAttribute as String) }
+                    .map { String($0.suffix(60)) } ?? ""
+                events.append(WatchEvent(t: Date().timeIntervalSince(t0),
+                                         diag: desc,
+                                         rects: InlineController.shared.overlay.specs.count,
+                                         pid: InlineController.shared.currentPid,
+                                         sentenceApprox: approx))
+                flush(started, events: events)
+            }
+        }
+
+        let d = InlineController.shared.diag
+        started.ok = d.checks > 0
+        started.textSet = d.checks > 0
+        started.reason = d.checks == 0
+            ? "整段观察期 checks 仍为 0 —— AXObserver 没触发（挂载或通知问题，不是引擎问题）"
+            : "checks=\(d.checks) requests=\(d.requests) dedupe=\(d.dedupedHits) rects=\(InlineController.shared.overlay.specs.count)"
+        started.diag = d.description
+        started.underlineCount = InlineController.shared.overlay.specs.count
+        started.rects = InlineController.shared.overlay.specs.map { rects($0.rect) }
+        flush(started, events: events)
+        print("[axwatch] 结束：\(started.reason)")
+        exit(started.ok ? 0 : 11)
+    }
+
     // MARK: 找正文容器
 
     struct Body { var element: AXUIElement; var window: AXUIElement? }

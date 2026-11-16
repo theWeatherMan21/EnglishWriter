@@ -100,9 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 真机验收器（Mail 下划线截图）：必须由 App 自己跑，才有辅助功能授权
         if let args = realShotArgs {
-            if args.contains("--axcheck") {
-                // A 层：不建窗口/不激活/不敲键/不截屏
-                Task { @MainActor in await AXCheck.run(args) }
+            if args.contains("--axcheck") || args.contains("--axwatch") {
+                // A 层：AXValue 直写 → checkNow；B 层：只监听真人键入。两都不建窗口/不激活/不敲键/不截屏
+                Task { @MainActor in
+                    if args.contains("--axwatch") { await AXCheck.watch(args) }
+                    else { await AXCheck.run(args) }
+                }
             } else {
                 Task { @MainActor in await RealShot.run(args) }
             }
@@ -184,7 +187,7 @@ application.setActivationPolicy(.accessory)
 
 // 真机验收器：--realshot <outDir> …，由 App 自己发起（TCC 授权只认这个二进制）
 if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--axprobe")
-    || argv.contains("--axcheck") {
+    || argv.contains("--axcheck") || argv.contains("--axwatch") {
     appDelegate.realShotArgs = argv
 }
 application.run()
