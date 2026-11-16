@@ -31,6 +31,7 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var diag = Diag.shared
     @ObservedObject var badge = SaveBadge()
+    @ObservedObject var prefs = PrefsModel.shared
 
     var body: some View {
         ScrollView {
@@ -42,6 +43,37 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Button("保存") { save() }
                     Text(badge.text).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+
+                Divider()
+                Text("个人词典（自己加的词一律不报）").font(.system(size: 13, weight: .semibold))
+                HStack(spacing: 8) {
+                    TextField("", text: $prefs.newWord)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospaced())
+                        .frame(width: 200)
+                    Button("添加") { prefs.addWord() }.disabled(prefs.newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Spacer()
+                    Text("共 \(prefs.words.count) 个词").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                if prefs.words.isEmpty {
+                    Text("（空：不预设任何词，全部由你自己加）").font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    ForEach(prefs.words, id: \.self) { w in
+                        HStack(spacing: 8) {
+                            Text(w).font(.system(size: 12).monospaced())
+                            Spacer()
+                            Button("删除") { prefs.removeWord(w) }.buttonStyle(.link)
+                        }
+                    }
+                }
+
+                Divider()
+                Text("忽略规则（同一条「原词→建议」不再提示）").font(.system(size: 13, weight: .semibold))
+                HStack(spacing: 8) {
+                    Text("已忽略 \(prefs.ignoreCount) 条").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("全部清空") { prefs.clearIgnores() }.disabled(prefs.ignoreCount == 0)
                 }
 
                 Divider()
@@ -67,7 +99,7 @@ struct SettingsView: View {
                     row("撤销次数", "\(diag.undoCount)")
                     row("最后一条错误", diag.lastError)
                 }
-                Text("纪律：无 Timer 轮询、无 AXObserver、无 CGEventTap —— 只在被点的那一刻读一次 AX。")
+                Text("纪律：无轮询 Timer；只给焦点 App 挂一个 AXObserver；800ms 去抖；同一句 hash 不重复请求；打字时绝不出网。")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             .padding(18)
@@ -103,4 +135,34 @@ struct SettingsView: View {
 /// 避免 @State 宏（CLT 工具链没有 SwiftUIMacros 插件）
 final class SaveBadge: ObservableObject {
     @Published var text = ""
+}
+
+/// 词典 / 忽略规则的界面模型（零预设：初始就是空）
+@MainActor
+final class PrefsModel: ObservableObject {
+    static let shared = PrefsModel()
+    @Published var words: [String] = DictStore.words
+    @Published var ignoreCount: Int = IgnoreStore.shared.count
+    @Published var newWord: String = ""
+
+    func addWord() {
+        DictStore.add(newWord)
+        newWord = ""
+        reload()
+    }
+
+    func removeWord(_ w: String) {
+        DictStore.remove(w)
+        reload()
+    }
+
+    func clearIgnores() {
+        IgnoreStore.shared.clear()
+        reload()
+    }
+
+    func reload() {
+        words = DictStore.words
+        ignoreCount = IgnoreStore.shared.count
+    }
 }

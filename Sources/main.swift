@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var model: AppModel!
     private var demo: DemoController?
+    /// --realshot 传进来的参数（真机验收器在 didFinishLaunching 之后跑）
+    var realShotArgs: [String]?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         model = AppModel()
@@ -91,8 +93,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 首次运行且未配置：直接把设置窗口摆出来（用户点一下就完成配置）
         // EW_NO_WINDOW=1 用于无头测量，绝不弹窗
-        if !SettingsStore.load().isComplete, ProcessInfo.processInfo.environment["EW_NO_WINDOW"] != "1" {
+        if realShotArgs == nil, !SettingsStore.load().isComplete,
+           ProcessInfo.processInfo.environment["EW_NO_WINDOW"] != "1" {
             SettingsWindowController.shared.show(model: model)
+        }
+
+        // 真机验收器（Mail 下划线截图）：必须由 App 自己跑，才有辅助功能授权
+        if let args = realShotArgs {
+            Task { @MainActor in await RealShot.run(args) }
         }
     }
 
@@ -109,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func triggerAction() { model.trigger() }
 
     @MainActor @objc private func undoAction() {
+        if InlineController.shared.undoLastAccept() { return }
         if model.canUndo { model.undo() }
         else { model.showPanel(phase: .info("没有可撤销的替换（只记录本次运行内的最后一次）")) }
     }
@@ -167,4 +176,9 @@ let appDelegate = AppDelegate()
 let application = NSApplication.shared
 application.delegate = appDelegate
 application.setActivationPolicy(.accessory)
+
+// 真机验收器：--realshot <outDir> …，由 App 自己发起（TCC 授权只认这个二进制）
+if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--axprobe") {
+    appDelegate.realShotArgs = argv
+}
 application.run()

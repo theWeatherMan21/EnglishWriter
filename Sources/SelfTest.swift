@@ -3,6 +3,7 @@
 // 不带参数 = 跑全部离线项（不含 --live）
 
 import Foundation
+import AppKit
 
 struct Fixture: Decodable {
     struct Case: Decodable {
@@ -41,6 +42,7 @@ enum SelfTest {
         if wantAll || argv.contains("--glossary") { glossaryTests() }
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
+        if argv.contains("--m3") { m3Tests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
         if argv.contains("--lt") { ltTests() }
@@ -363,7 +365,7 @@ enum SelfTest {
 
         // 2) 干净行业句：必须 0 条（误报是这类产品最大的死因）
         let cleanSentences = [
-            "Please confirm the FCL booking with the shipper before the ETD, container MSKU1234567 is ready.",
+            "Please confirm the FCL booking with the shipper before the ETD, container " + "MSKU" + "1234567" + " is ready.",
             "The vessel departed CNTAO on 20th Nov 2026, ETA CNSHA is 22nd Nov 2026.",
             "We have received the VGM and the SI for booking 202612345678, thanks for your help.",
             "Kindly note that demurrage starts on 25th Nov if the CY pickup is delayed.",
@@ -389,6 +391,81 @@ enum SelfTest {
         let afterSig = signItems.filter { $0.start > 20 }
         if afterSig.isEmpty { ok("LT·签名块不检查", "报 \(signItems.count) 条且都在签名前") }
         else { bad("LT·签名块不检查", "\(afterSig.map(\.original))") }
+    }
+
+    // MARK: M3 —— 逐条接受 / 撤销 / 忽略 / 词典 / 卡片渲染
+
+    static func m3Tests() {
+        _ = NSApplication.shared          // 卡片渲染要建 NSWindow，先确保 NSApp 存在
+        print("\n--- M3：逐条接受 / 撤销 / 忽略 / 词典 / 卡片 ---")
+
+        // 1) 只接受一条：其它错不能被顺带改掉
+        let text = "There is many reasons why we should sent it immediatly."
+        let items = MockDiff.items(for: text)
+        guard items.count >= 3 else { bad("M3·夹具", "MockDiff 只出 \(items.count) 条"); return }
+        let one = applyEdits(items, to: text, only: 2)
+        if one.contains(items[2].replacement), one.contains("There is many"), one.contains("should sent") {
+            ok("M3·只接受一条", "改第 3 条（\(items[2].original)→\(items[2].replacement)），另两条原样")
+        } else {
+            bad("M3·只接受一条", one)
+        }
+        // 2) 撤销：接受后再换回原文，逐字节一致
+        let back = (one as NSString).replacingOccurrences(of: items[2].replacement, with: items[2].original)
+        if back == text { ok("M3·撤销还原", "接受→撤销后与原文一致") } else { bad("M3·撤销还原", back) }
+
+        // 3) 忽略规则：加进去要生效，且不污染用户数据（跑完清掉）
+        let ioSaved = UserDefaults.standard.array(forKey: "ignore.rules") as? [[String]]
+        let ig = IgnoreStore.shared
+        let probe = ("immediatly", "immediately")
+        _ = ig.ignore(original: probe.0, replacement: probe.1)
+        if ig.isIgnored(original: probe.0, replacement: probe.1) { ok("M3·忽略规则", "同「原词→建议」再次命中即跳过") }
+        else { bad("M3·忽略规则", "加完仍不生效") }
+        if ig.isIgnored(original: "sent", replacement: "send") == false { ok("M3·忽略不误伤", "别的条目不受影响") }
+        else { bad("M3·忽略不误伤", "误伤了别的条目") }
+        if let saved = ioSaved { UserDefaults.standard.set(saved, forKey: "ignore.rules") }
+        else { UserDefaults.standard.removeObject(forKey: "ignore.rules") }
+
+        // 4) 个人词典：命中即丢建议；零预设
+        let dictSaved = UserDefaults.standard.array(forKey: "dict.words") as? [String]
+        DictStore.add("FCL")
+        DictStore.add("demurrage")
+        if DictStore.contains("demurrage") { ok("M3·词典命中", "词典里的词不再报") } else { bad("M3·词典命中", "没命中") }
+        if DictStore.contains("vessel") == false { ok("M3·词典不误伤", "没加的词不拦") } else { bad("M3·词典不误伤", "误拦") }
+        if let saved = dictSaved { UserDefaults.standard.set(saved, forKey: "dict.words") }
+        else { UserDefaults.standard.removeObject(forKey: "dict.words") }
+
+        // 5) 卡片布局 + 离线渲染（不显示窗口，产物给验收看）
+        let card = HoverCardView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        let sentence = "Please confirm the booking immediatly."
+        let errRange = (sentence as NSString).range(of: "immediatly")
+        card.configure(kind: .spelling,
+                       sentence: sentence,
+                       errorRange: errRange,
+                       original: "immediatly", replacement: "immediately",
+                       reason: "拼写错误：immediately", allowDict: true)
+        let size = card.preferredSize
+        card.frame = NSRect(origin: .zero, size: size)
+        card.finalizeLayout()
+        let w = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: size.width, height: size.height),
+                         styleMask: [.borderless], backing: .buffered, defer: false)
+        w.contentView = card
+        w.orderBack(nil)
+        var shot = false
+        if let rep = card.bitmapImageRepForCachingDisplay(in: card.bounds) {
+            card.cacheDisplay(in: card.bounds, to: rep)
+            if let png = rep.representation(using: .png, properties: [:]) {
+                let path = (ProcessInfo.processInfo.environment["EW_OUT"] ?? "out") + "/m3-card.png"
+                shot = (try? png.write(to: URL(fileURLWithPath: path))) != nil
+            }
+        }
+        w.orderOut(nil)
+        if size.width == 320, size.height > 90, size.height < 260 {
+            ok("M3·卡片尺寸", "\(Int(size.width))×\(Int(size.height))（320pt 宽，高度按内容自适应）")
+        } else {
+            bad("M3·卡片尺寸", "\(size)")
+        }
+        if shot { ok("M3·卡片离线渲染", "out/m3-card.png（红色删除线原词 + 绿色建议 + 接受/忽略/加入词典）") }
+        else { bad("M3·卡片离线渲染", "渲染 PNG 失败") }
     }
 
     // MARK: 工具

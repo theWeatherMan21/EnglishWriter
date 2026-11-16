@@ -13,7 +13,7 @@ enum SpanGuard {
         let ns = text as NSString
         var out: [NSRange] = []
         let patterns: [(String, NSRegularExpression.Options)] = [
-            (#"\b[A-Z]{4}\d{7}\b"#, []),                       // 箱号 MSKU1234567
+            (#"\b[A-Z]{4}\d{7}\b"#, []),                       // 箱号（4 位字母 + 7 位数字）
             (#"\b\d{6,}\b"#, []),                             // 长数字（订舱号/工作号/BL 号）
             (#"\b[A-Z]{5}\b"#, []),                           // 港口码 CNTAO / CNSHA
             (#"\b[A-Z]{2,4}\d{4,}\b"#, []),                   // HBL123456 / ETA2026
@@ -173,6 +173,8 @@ enum LocalEngine {
             guard r.location + r.length <= ns.length else { return nil }
             let original = ns.substring(with: r)
             if original == repl { return nil }
+            if DictStore.contains(original) { return nil }   // 个人词典：用户加过的词不再报
+            if DictStore.hit(in: original) { return nil }
             return DiffItem(start: r.location, length: r.length,
                             original: original, replacement: repl,
                             type: kindFor(m).rawValue,

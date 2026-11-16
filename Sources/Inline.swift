@@ -179,6 +179,13 @@ final class InlineController {
     private(set) var items: [DiffItem] = []
     private(set) var lastText: String = ""
     private(set) var lastFocusPid: pid_t = 0
+    /// 最近一次检查的落点：卡片接受/忽略要往这里写回
+    private(set) var currentElement: AXUIElement?
+    private(set) var currentPid: pid_t = 0
+    private var currentSentenceRange: NSRange = NSRange(location: 0, length: 0)
+    /// Web 正文的文本块 + items[i] 属于哪个块（-1 = 原生输入框，偏移是全文的）
+    private(set) var blocks: [WebText.Block] = []
+    private(set) var itemBlock: [Int] = []
     private var overlayPid: pid_t = 0
 
     var debounce: TimeInterval = 0.8
@@ -209,6 +216,7 @@ final class InlineController {
 
     func start() {
         guard focusObserver == nil else { return }
+        HoverCoordinator.shared.start()      // 悬停卡片（全局 mouseMoved + 300ms 停留）
         focusObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
@@ -229,6 +237,7 @@ final class InlineController {
 
     func stop() {
         detachObserver()
+        HoverCoordinator.shared.stop()
         if let f = focusObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(f)
             focusObserver = nil
@@ -314,16 +323,27 @@ final class InlineController {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    func checkNow() {
+    func checkNow() { checkNow(for: lastFocusPid, element: nil) }
+
+    /// 指定 pid / 元素检查（真机验收器与悬停卡片都走这条：不信焦点判定，直接给元素）
+    func checkNow(for pid: pid_t, element explicit: AXUIElement? = nil) {
         guard enabled else { return }
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
-        let pid = lastFocusPid
         guard pid > 0 else { return }
-        guard let el = AXInline.focusedElement(pid: pid) else { diag.lastError = "没有焦点文本框"; return }
+        guard let el = explicit ?? AXInline.focusedElement(pid: pid) else { diag.lastError = "没有焦点文本框"; return }
         guard let full = AXInline.fullText(of: el) else { diag.lastError = "读不到文本框内容"; return }
+        currentElement = el
+        currentPid = pid
+
+        // WebKit 正文（Mail / Slack / 网页）：按文本块检查，偏移在块内
+        if WebText.isWebBody(el) {
+            checkWeb(pid: pid, body: el)
+            return
+        }
 
         let caret = AXInline.selectedRange(el)?.location ?? (full as NSString).length
         let sentenceRange = Sentence.around(caret: caret, in: full)
+        currentSentenceRange = sentenceRange
         let sentence = Sentence.text(sentenceRange, in: full)
         guard sentence.trimmingCharacters(in: .whitespacesAndNewlines).count > 2 else {
             overlay.clear(); items = []; return
@@ -400,6 +420,172 @@ final class InlineController {
         }
     }
 
+    // MARK: WebKit 正文（按文本块）
+
+    private func checkWeb(pid: pid_t, body: AXUIElement) {
+        let blks = WebText.blocks(of: body)
+        guard !blks.isEmpty else {
+            diag.lastError = "Web 正文里没有可读文本块"
+            overlay.clear(); items = []; blocks = []; itemBlock = []
+            return
+        }
+        blocks = blks
+        lastText = blks.map(\.text).joined(separator: "\n")
+        diag.checks += 1
+
+        let sigMarkers = SpanGuard.signatureMarkers
+        Task { [weak self] in
+            guard let self else { return }
+            let ltOK = await LocalEngine.available()
+            var all: [DiffItem] = []
+            var map: [Int] = []
+            var firstError: String?
+            for (bi, b) in blks.enumerated() {
+                let t = b.text
+                guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
+                if shouldSkipAsChinese(t) { continue }
+                // 整块就是签名行 → 不检查
+                let lowered = t.lowercased()
+                if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
+                guard ltOK else { firstError = "本地引擎未启动"; continue }
+                do {
+                    let out = try await LocalEngine.review(text: t, language: "en-GB")
+                    let t0 = Date()
+                    await MainActor.run {
+                        self.diag.lastElapsed = String(format: "%.0fms", Date().timeIntervalSince(t0) * 1000)
+                    }
+                    for it in out.items { all.append(it); map.append(bi) }
+                } catch {
+                    firstError = "LT: \(error)"
+                }
+            }
+            await MainActor.run {
+                if let e = firstError { self.diag.lastError = e } else { self.diag.lastError = "-" }
+                self.applyWeb(items: all, blockMap: map, blocks: blks, pid: pid)
+            }
+        }
+    }
+
+    private func applyWeb(items newItems: [DiffItem], blockMap: [Int], blocks blks: [WebText.Block], pid: pid_t) {
+        var kept: [DiffItem] = []
+        var keptMap: [Int] = []
+        var specs: [UnderlineSpec] = []
+        for (i, it) in newItems.enumerated() where i < blockMap.count {
+            let bi = blockMap[i]
+            guard bi < blks.count else { continue }
+            let b = blks[bi]
+            let ns = b.text as NSString
+            guard it.length > 0, it.start >= 0, it.start + it.length <= ns.length else { continue }
+            guard ns.substring(with: it.utf16Range) == it.original else { continue }   // 偏移对不上一律不画
+            if IgnoreStore.shared.isIgnored(original: it.original, replacement: it.replacement) { continue }
+            let rects = WebText.lineRects(for: it.utf16Range, in: b)
+            guard !rects.isEmpty else { continue }
+            let id = kept.count
+            kept.append(it)
+            keptMap.append(bi)
+            for r in rects { specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: id)) }
+        }
+        items = kept
+        itemBlock = keptMap
+        diag.lastRectCount = specs.count
+        guard !specs.isEmpty else {
+            overlay.clear()
+            return
+        }
+        overlay.render(specs)
+        overlayPid = pid
+        printRects(specs, items: kept)
+    }
+
+    // MARK: 卡片的动作（接受 / 忽略 / 加词典 / 撤销）
+
+    struct SentenceSlice { var text: String; var errorRange: NSRange }
+
+    /// 某条错误所在的那句话 + 错处在句内的位置（卡片高亮用）
+    func sentenceText(forItem id: Int) -> SentenceSlice {
+        guard id >= 0, id < items.count else {
+            return SentenceSlice(text: "", errorRange: NSRange(location: 0, length: 0))
+        }
+        let it = items[id]
+        let bi = itemBlock.indices.contains(id) ? itemBlock[id] : -1
+        let source = (bi >= 0 && bi < blocks.count) ? blocks[bi].text : lastText
+        guard !source.isEmpty else { return SentenceSlice(text: it.original, errorRange: NSRange(location: 0, length: it.length)) }
+        let r = Sentence.around(caret: it.start, in: source)
+        let local = NSRange(location: max(0, it.start - r.location), length: it.length)
+        return SentenceSlice(text: (source as NSString).substring(with: r), errorRange: local)
+    }
+
+    private var lastAccept: (item: DiffItem, blockIndex: Int, element: AXUIElement?)?
+
+    /// 接受一条：只替换这一处，保留撤销栈（AXSelectedText 写入选区）
+    @discardableResult
+    func accept(itemID id: Int) -> Bool {
+        guard id >= 0, id < items.count else { return false }
+        let it = items[id]
+        let bi = itemBlock.indices.contains(id) ? itemBlock[id] : -1
+        var ok = false
+        if bi >= 0, bi < blocks.count {
+            ok = WebText.replace(range: it.utf16Range, with: it.replacement, in: blocks[bi])
+            if ok { lastAccept = (it, bi, nil) }
+        } else if let el = currentElement, let v = axRangeValue(it.start, it.length) {
+            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+            ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, it.replacement as CFTypeRef) == .success
+            if ok { lastAccept = (it, -1, el) }
+        }
+        diag.lastError = ok ? "已接受：\(it.original) → \(it.replacement)" : "写回失败：这个输入框不接受 AX 写入"
+        if ok { Diag.shared.applyMethod = "AX 写回" }
+        refresh()
+        return ok
+    }
+
+    /// 撤销上一条接受：把 replacement 换回 original
+    @discardableResult
+    func undoLastAccept() -> Bool {
+        guard let last = lastAccept else { return false }
+        let replLen = (last.item.replacement as NSString).length
+        var ok = false
+        if last.blockIndex >= 0, last.blockIndex < blocks.count {
+            ok = WebText.replace(range: NSRange(location: last.item.start, length: replLen),
+                                 with: last.item.original, in: blocks[last.blockIndex])
+        } else if let el = last.element, let v = axRangeValue(last.item.start, replLen) {
+            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+            ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, last.item.original as CFTypeRef) == .success
+        }
+        if ok {
+            lastAccept = nil
+            Diag.shared.undoCount += 1
+            diag.lastError = "已撤销：\(last.item.replacement) → \(last.item.original)"
+        } else {
+            diag.lastError = "撤销失败"
+        }
+        refresh()
+        return ok
+    }
+
+    /// 忽略这一条：同「原词→建议」以后不再提示
+    func ignore(itemID id: Int) {
+        guard id >= 0, id < items.count else { return }
+        let it = items[id]
+        IgnoreStore.shared.ignore(original: it.original, replacement: it.replacement)
+        diag.lastError = "已忽略：\(it.original) → \(it.replacement)"
+        refresh()
+    }
+
+    /// 加入个人词典：这个词以后一律不报
+    func addToDictionary(itemID id: Int) {
+        guard id >= 0, id < items.count else { return }
+        let it = items[id]
+        DictStore.add(it.original)
+        diag.lastError = "已加入词典：\(it.original)"
+        refresh()
+    }
+
+    /// 重新检查刷新（LT 热态 20ms，比本地改状态更可靠）
+    private func refresh() {
+        guard let el = currentElement, currentPid > 0 else { return }
+        checkNow(for: currentPid, element: el)
+    }
+
     // MARK: 渲染
 
     private func apply(items newItems: [DiffItem], sentenceRange: NSRange, element el: AXUIElement, pid: pid_t) {
@@ -417,6 +603,7 @@ final class InlineController {
             }
         }
         items = cleaned
+        itemBlock = Array(repeating: -1, count: cleaned.count)
         diag.lastRectCount = specs.count
         guard !specs.isEmpty else { diag.lastError = "算不出屏幕矩形"; return }
         overlay.render(specs)
@@ -424,7 +611,7 @@ final class InlineController {
         printRects(specs, items: cleaned)
     }
 
-    func clearUnderlines() { overlay.clear(); items = [] }
+    func clearUnderlines() { HoverCoordinator.shared.dismissCard(); overlay.clear(); items = [] }
 
     private func printRects(_ specs: [UnderlineSpec], items: [DiffItem]) {
         print("── underline rects (\(specs.count)) ──")
