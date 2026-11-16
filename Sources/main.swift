@@ -85,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(report.permission ? 0 : 3)
         }
 
+        // 本机 HTTP 接口（给浏览器扩展用）：只绑 127.0.0.1 + token 鉴权
+        LocalAPI.shared.start()
+
         // 常驻输入感知（M2）：AXObserver + 800ms 去抖；无授权时静默降级
         if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1" {
             LocalEngineBootstrap.ensureRunning()     // 本地引擎没起就悄悄拉起来（不弹窗）

@@ -1,0 +1,373 @@
+// content.js — EnglishWriter 浏览器侧：取文本 → 本地 API 查 → 画线 → 卡片 → 直接改 DOM
+//
+// 关键设计：
+//   · 文本与矩形全部来自 DOM（Range.getClientRects），完全不依赖 AX —— Chromium 的 AX 写回实测不可用
+//   · 下划线画在 shadow DOM 里的绝对定位覆盖层，不污染宿主页面样式
+//   · 接受 = 真的改 DOM（contenteditable 用 Range，input/textarea 用原生 setter + input 事件）
+//   · 撤销 = 保留上一次接受的范围与原词，反向改回去
+//   · token 从 chrome.storage 取，没有就静默待命（不报错骚扰用户）
+//   · 调试证据：window.__EW_DEBUG = {lastEdits, lastRects, engine, elapsedMs, accepted, undone}
+
+(() => {
+  if (window.__EW_LOADED__) return;
+  window.__EW_LOADED__ = true;
+
+  const API = 'http://127.0.0.1:17817';
+  const DEBOUNCE = 800;
+  let token = null;
+  let host = null, root = null, layer = null, card = null;
+  let lastTarget = null;
+  let lastAccept = null;
+  let ignoreList = new Set();
+
+  window.__EW_DEBUG = { ready: false, lastEdits: [], lastRects: [], engine: '', elapsedMs: 0, accepted: 0, undone: 0, notes: [] };
+
+  chrome.storage.local.get(['token', 'ignore'], (v) => {
+    token = v.token || null;
+    if (Array.isArray(v.ignore)) v.ignore.forEach(k => ignoreList.add(k));
+    window.__EW_DEBUG.ready = true;
+    window.__EW_DEBUG.notes.push(token ? 'token ok' : 'no token');
+  });
+
+  // ---------- 覆盖层 ----------
+  function ensureLayer() {
+    if (host) return;
+    host = document.createElement('div');
+    host.id = '__ew_host__';
+    host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647';
+    root = host.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = `
+      .u{position:absolute;pointer-events:auto;cursor:pointer;background:transparent;border:0;padding:0;margin:0}
+      .u i{position:absolute;left:0;right:0;bottom:-1px;height:0;display:block}
+      .u.spell i{background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='3'><path d='M0 2 Q1.5 0 3 2 T6 2' fill='none' stroke='%23d93025' stroke-width='1'/></svg>") repeat-x bottom;height:3px;bottom:-3px}
+      .u.gram i{background:#d93025;height:1.5px}
+      .u.clar i{background:#2f6df6;height:1px}
+      .u.style i{background:#9a6a00;height:1px;border-top:1px dashed #9a6a00;background:none}
+      .card{position:absolute;pointer-events:auto;width:320px;background:#fff;border:1px solid #e3e6ea;border-radius:10px;
+            box-shadow:0 8px 24px rgba(20,24,32,.16);font:13px -apple-system,"PingFang SC",sans-serif;color:#15171c;overflow:hidden}
+      .card .hd{padding:8px 12px;border-bottom:1px solid #eef0f3;font-size:11px;color:#8a93a0}
+      .card .bd{padding:10px 12px;line-height:1.5}
+      .card .orig{color:#c0264b;text-decoration:line-through}
+      .card .rep{color:#17794a;font-weight:600}
+      .card .rs{margin-top:6px;color:#56606e;font-size:12px}
+      .card .ft{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #eef0f3}
+      .card button{font:12px -apple-system;padding:5px 10px;border-radius:6px;border:1px solid #e3e6ea;background:#fff;cursor:pointer}
+      .card button.pri{background:#2f6df6;border-color:#2f6df6;color:#fff}
+      .card button:hover{filter:brightness(.97)}
+    `;
+    root.appendChild(style);
+    layer = document.createElement('div');
+    root.appendChild(layer);
+    document.documentElement.appendChild(host);
+  }
+
+  // ---------- 取焦点可编辑元素 ----------
+  function editable(el) {
+    if (!el) return null;
+    if (el.tagName === 'TEXTAREA') return el;
+    if (el.tagName === 'INPUT' && /^(text|search|url|email)$/i.test(el.type)) return el;
+    if (el.isContentEditable) return el;
+    return null;
+  }
+
+  function textOf(el) {
+    return el.isContentEditable ? el.innerText : el.value;
+  }
+
+  // 光标所在句（与原生同一口径：. ! ? \n）
+  function sentenceAround(text, caret) {
+    let start = 0;
+    for (let i = caret - 1; i >= 0; i--) {
+      if ('.!?\n'.includes(text[i])) { start = i + 1; break; }
+    }
+    let end = text.length;
+    for (let i = caret; i < text.length; i++) {
+      if ('.!?\n'.includes(text[i])) { end = i + 1; break; }
+    }
+    // 光标正停在句末标点之后（刚打完一句的常态）→ 上面切出来是空串，回退取上一句
+    if (text.slice(start, end).trim().length === 0 && start > 0) {
+      end = start;
+      start = 0;
+      for (let i = end - 2; i >= 0; i--) {
+        if ('.!?\n'.includes(text[i])) { start = i + 1; break; }
+      }
+    }
+    return { start, end, text: text.slice(start, end) };
+  }
+
+  function caretOf(el) {
+    if (el.isContentEditable) {
+      const s = window.getSelection();
+      if (!s || s.rangeCount === 0) return textOf(el).length;
+      const r = s.getRangeAt(0).cloneRange();
+      r.selectNodeContents(el);
+      r.setEnd(s.getRangeAt(0).endContainer, s.getRangeAt(0).endOffset);
+      return r.toString().length;
+    }
+    return el.selectionStart ?? textOf(el).length;
+  }
+
+  // ---------- 矩形：DOM 侧自己算，不依赖任何宿主接口 ----------
+  // contenteditable 用 Range；input/textarea 用镜像 div（同字体、同 padding、同宽）
+  function rectsFor(el, absStart, length) {
+    if (el.isContentEditable) {
+      const range = rangeForOffsets(el, absStart, absStart + length);
+      if (!range) return [];
+      const out = [];
+      for (const r of range.getClientRects()) {
+        if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+      }
+      return out;
+    }
+    const mirror = mirrorFor(el);
+    if (!mirror) return [];
+    const range = rangeForOffsets(mirror, absStart, absStart + length);
+    if (!range) return [];
+    const box = el.getBoundingClientRect();
+    const mbox = mirror.getBoundingClientRect();
+    const dx = box.left - mbox.left + (el.offsetWidth - el.clientWidth);
+    const dy = box.top - mbox.top + (el.offsetHeight - el.clientHeight);
+    const out = [];
+    for (const r of range.getClientRects()) {
+      if (r.width > 0 && r.height > 0) out.push({ x: r.left + dx - (el.offsetWidth - el.clientWidth), y: r.top + dy - (el.offsetHeight - el.clientHeight), w: r.width, h: r.height });
+    }
+    return out;
+  }
+
+  function rangeForOffsets(container, start, end) {
+    let acc = 0, startNode = null, startOff = 0, endNode = null, endOff = 0;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = walker.nextNode())) {
+      const len = n.nodeValue.length;
+      if (startNode === null && acc + len >= start) { startNode = n; startOff = start - acc; }
+      if (acc + len >= end) { endNode = n; endOff = end - acc; break; }
+      acc += len;
+    }
+    if (!startNode || !endNode) return null;
+    const r = document.createRange();
+    try { r.setStart(startNode, Math.min(startOff, startNode.nodeValue.length)); } catch { return null; }
+    try { r.setEnd(endNode, Math.min(endOff, endNode.nodeValue.length)); } catch { return null; }
+    return r;
+  }
+
+  let mirrorCache = new WeakMap();
+  function mirrorFor(el) {
+    let m = mirrorCache.get(el);
+    if (m && m.parentNode) { syncMirror(el, m); return m; }
+    m = document.createElement('div');
+    const cs = getComputedStyle(el);
+    for (const p of ['fontFamily','fontSize','fontWeight','lineHeight','letterSpacing','padding','border','boxSizing','whiteSpace','wordWrap','wordBreak','width']) {
+      m.style[p] = cs[p];
+    }
+    m.style.position = 'absolute';
+    m.style.visibility = 'hidden';
+    m.style.left = '-99999px';
+    m.style.top = '0';
+    m.style.height = 'auto';
+    m.style.overflow = 'hidden';
+    document.body.appendChild(m);
+    syncMirror(el, m);
+    mirrorCache.set(el, m);
+    return m;
+  }
+  function syncMirror(el, m) {
+    m.style.width = getComputedStyle(el).width;
+    m.textContent = el.value;
+    m.style.whiteSpace = el.tagName === 'INPUT' ? 'pre' : 'pre-wrap';
+  }
+
+  // ---------- 画线 ----------
+  function clearUnderlines() {
+    if (layer) layer.innerHTML = '';
+    hideCard();
+    window.__EW_DEBUG.lastRects = [];
+  }
+
+  function drawUnderlines(el, edits, sentStart) {
+    ensureLayer();
+    layer.innerHTML = '';
+    const rects = [];
+    edits.forEach((e) => {
+      const rs = rectsFor(el, sentStart + e.start, e.length);
+      const cls = e.type === 'spelling' ? 'spell' : (e.type === 'clarity' ? 'clar' : (e.type === 'style' ? 'style' : 'gram'));
+      rs.forEach((r) => {
+        const d = document.createElement('div');
+        d.className = 'u ' + cls;
+        d.style.left = r.x + 'px';
+        d.style.top = r.y + 'px';
+        d.style.width = r.w + 'px';
+        d.style.height = r.h + 'px';
+        const line = document.createElement('i');
+        d.appendChild(line);
+        d.onmouseenter = () => showCard(e, d);
+        layer.appendChild(d);
+        rects.push({ ...r, type: e.type });
+      });
+    });
+    window.__EW_DEBUG.lastRects = rects;
+  }
+
+  // ---------- 卡片 ----------
+  function hideCard() {
+    if (card && card.parentNode) card.remove();
+    card = null;
+  }
+
+  function showCard(edit, anchor) {
+    ensureLayer();
+    hideCard();
+    card = document.createElement('div');
+    card.className = 'card';
+    const typeCn = { spelling: '拼写', grammar: '语法', clarity: '清晰度', style: '风格' }[edit.type] || '语法';
+    card.innerHTML = `
+      <div class="hd">EnglishWriter · ${typeCn}</div>
+      <div class="bd">
+        <span class="orig"></span> → <span class="rep"></span>
+        <div class="rs"></div>
+      </div>
+      <div class="ft">
+        <button class="pri" data-a="accept">接受</button>
+        <button data-a="ignore">忽略此类</button>
+        <button data-a="close">关闭</button>
+      </div>`;
+    card.querySelector('.orig').textContent = edit.original;
+    card.querySelector('.rep').textContent = edit.replacement;
+    card.querySelector('.rs').textContent = edit.reason || '';
+    const box = anchor.getBoundingClientRect();
+    let left = box.left, top = box.bottom + 6;
+    if (left + 320 > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 328);
+    if (top + 180 > window.innerHeight - 8) top = Math.max(8, box.top - 190);
+    card.style.left = left + 'px';
+    card.style.top = top + 'px';
+    card.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    card.querySelector('[data-a=accept]').onclick = () => { accept(edit); hideCard(); };
+    card.querySelector('[data-a=ignore]').onclick = () => { ignore(edit); hideCard(); };
+    card.querySelector('[data-a=close]').onclick = () => hideCard();
+    layer.appendChild(card);
+  }
+
+  // ---------- 接受 / 忽略 / 撤销：直接改 DOM ----------
+  function accept(edit) {
+    const el = lastTarget;
+    if (!el) return;
+    const sentStart = window.__EW_DEBUG.sentStart || 0;
+    const abs = sentStart + edit.start;
+    if (el.isContentEditable) {
+      const r = rangeForOffsets(el, abs, abs + edit.length);
+      if (!r) return;
+      el.focus();
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      document.execCommand('insertText', false, edit.replacement);
+      lastAccept = { el, start: abs, len: edit.replacement.length, original: edit.original, contenteditable: true };
+    } else {
+      const v = el.value;
+      const before = v.slice(0, abs), after = v.slice(abs + edit.length);
+      setNativeValue(el, before + edit.replacement + after);
+      lastAccept = { el, start: abs, len: edit.replacement.length, original: edit.original, contenteditable: false };
+    }
+    window.__EW_DEBUG.accepted++;
+    runCheck(true);
+  }
+
+  function undo() {
+    const la = lastAccept;
+    if (!la) return false;
+    if (la.contenteditable) {
+      const r = rangeForOffsets(la.el, la.start, la.start + la.len);
+      if (r) {
+        la.el.focus();
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        document.execCommand('insertText', false, la.original);
+      }
+    } else {
+      const v = la.el.value;
+      setNativeValue(la.el, v.slice(0, la.start) + la.original + v.slice(la.start + la.len));
+    }
+    lastAccept = null;
+    window.__EW_DEBUG.undone++;
+    runCheck(true);
+    return true;
+  }
+
+  function ignore(edit) {
+    const key = edit.original + '→' + edit.replacement;
+    ignoreList.add(key);
+    chrome.storage.local.set({ ignore: [...ignoreList] });
+    clearUnderlines();
+  }
+
+  function setNativeValue(el, value) {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    setter.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // ---------- 主流程 ----------
+  let timer = null;
+  function onEdit(ev) {
+    const el = editable(ev.target);
+    if (!el) return;
+    lastTarget = el;
+    clearTimeout(timer);
+    timer = setTimeout(() => runCheck(false), DEBOUNCE);
+  }
+
+  document.addEventListener('input', onEdit, true);
+  document.addEventListener('focusin', (e) => { const el = editable(e.target); if (el) lastTarget = el; }, true);
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) { if (undo()) e.preventDefault(); }
+  }, true);
+
+  async function runCheck(force) {
+    const el = lastTarget;
+    if (force) window.__EW_DEBUG.notes.push('run target=' + (el ? el.tagName + (el.id ? '#' + el.id : '') : 'null'));
+    if (!el) return;
+    if (!token) { window.__EW_DEBUG.notes.push('skip: no token'); return; }
+    const text = textOf(el);
+    if (!text || text.length > 5000) return;
+    const caret = caretOf(el);
+    const sent = sentenceAround(text, caret);
+    if (force) window.__EW_DEBUG.notes.push('text=' + text.length + ' sent=' + sent.text.trim().length);
+    if (sent.text.trim().length < 3) { clearUnderlines(); return; }
+    const body = { text: sent.text, language: 'en-GB' };
+    try {
+      const res = await fetch(API + '/v1/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
+        body: JSON.stringify(body)
+      });
+      if (res.status === 401) { window.__EW_DEBUG.notes.push('401 bad token'); return; }
+      const j = await res.json();
+      let edits = (j.edits || []).filter(e => !ignoreList.has(e.original + '→' + e.replacement));
+      window.__EW_DEBUG.lastEdits = edits;
+      window.__EW_DEBUG.engine = j.engine || '';
+      window.__EW_DEBUG.elapsedMs = j.elapsedMs || 0;
+      window.__EW_DEBUG.sentStart = sent.start;
+      window.__EW_DEBUG.sentText = sent.text;
+      if (!edits.length) { clearUnderlines(); return; }
+      drawUnderlines(el, edits, sent.start);
+    } catch (e) {
+      window.__EW_DEBUG.notes.push('fetch fail: ' + e.message);
+    }
+  }
+
+  // 供验收器调用（不靠鼠标悬停也能触发卡片/接受）
+  window.__EW_TEST__ = {
+    check: () => runCheck(true),
+    state: () => window.__EW_DEBUG,
+    acceptByOriginal: (orig) => {
+      const e = (window.__EW_DEBUG.lastEdits || []).find(x => x.original === orig);
+      if (!e) return false;
+      accept(e);
+      return true;
+    },
+    undo: () => undo()
+  };
+})();

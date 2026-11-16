@@ -1,0 +1,88 @@
+{
+  "textarea": {
+    "edits": 3,
+    "rects": 3,
+    "engine": "languagetool",
+    "ms": 50,
+    "types": [
+      "grammar",
+      "grammar",
+      "spelling"
+    ],
+    "rectSample": [
+      {
+        "x": 43,
+        "y": 72,
+        "w": 143.515625,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 291.390625,
+        "y": 72,
+        "w": 25.78125,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 486.921875,
+        "y": 72,
+        "w": 72.359375,
+        "h": 18,
+        "type": "spelling"
+      }
+    ],
+    "notes": [
+      "token ok"
+    ],
+    "before": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "after": "There is many reasons why we should sent the booking confirmation immediately.",
+    "undone": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "accept_changed": true,
+    "undo_restored": true
+  },
+  "contenteditable": {
+    "edits": 3,
+    "rects": 3,
+    "engine": "languagetool",
+    "ms": 34,
+    "types": [
+      "grammar",
+      "grammar",
+      "spelling"
+    ],
+    "rectSample": [
+      {
+        "x": 43,
+        "y": 205,
+        "w": 143.515625,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 291.390625,
+        "y": 205,
+        "w": 25.78125,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 486.921875,
+        "y": 205,
+        "w": 72.359375,
+        "h": 18,
+        "type": "spelling"
+      }
+    ],
+    "notes": [
+      "text=78 sent=78",
+      "run target=TEXTAREA#ta",
+      "text=77 sent=77"
+    ],
+    "before": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "after": "There is many reasons why we should sent the booking confirmation immediately.",
+    "undone": "There is many reasons why we should sent the booking confirmation immediatly.",
+    "accept_changed": true,
+    "undo_restored": true
+  }
+}

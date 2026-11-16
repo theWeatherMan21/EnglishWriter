@@ -83,3 +83,9 @@ open -a build/英文写作助手.app --args --axwatch out/ --seconds 120
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
+
+## 浏览器扩展（Chrome / Edge）
+
+Grammarly 在浏览器里走扩展而不是辅助功能接口；本项目的 Chrome 支持同样是一个 MV3 扩展，
+见 [`extension/README.md`](extension/README.md)。它通过本机 `http://127.0.0.1:17817` 调 App 的检查接口
+（token 鉴权、只绑回环），取文本与矩形全部走 DOM，接受/撤销直接改 DOM。

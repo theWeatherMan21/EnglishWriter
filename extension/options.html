@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>EnglishWriter 设置</title>
+  <style>
+    body { font: 14px -apple-system, "PingFang SC", sans-serif; margin: 24px; max-width: 720px; }
+    label { display: block; margin: 16px 0 6px; font-weight: 600; }
+    input { width: 100%; padding: 8px 10px; font: 13px ui-monospace, Menlo, monospace; box-sizing: border-box; }
+    .hint { color: #666; font-size: 12px; margin-top: 6px; line-height: 1.6; }
+    button { margin-top: 14px; padding: 8px 16px; font-size: 13px; }
+    .st { margin-top: 12px; font-size: 13px; }
+    code { background: #f2f3f5; padding: 1px 4px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h2>EnglishWriter</h2>
+  <p class="hint">
+    本扩展只跟本机 App 说话（<code>http://127.0.0.1:17817</code>），不需要任何账号。
+    Token 在 App 里生成，路径：<br>
+    <code>~/Library/Application Support/EnglishWriter/api-token.txt</code>
+  </p>
+  <label for="t">Token（必填，没有就点一下「检查服务」看错误）</label>
+  <input id="t" type="text" placeholder="粘贴 api-token.txt 里的内容" autocomplete="off" spellcheck="false">
+  <div class="hint">不填任何默认值；留空 = 不工作。</div>
+  <button id="save">保存</button>
+  <button id="ping">检查服务</button>
+  <div class="st" id="st"></div>
+  <script src="options.js"></script>
+</body>
+</html>
