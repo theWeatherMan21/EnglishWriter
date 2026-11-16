@@ -64,11 +64,24 @@ enum AXCheck {
         if let t = value(argv, "--text"), !t.isEmpty { text = t }
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
+        // --spawn：只有爹地明确批准「允许她自己开一个空白 TextEdit」时才加。
+        // 它确实会开窗口（唯一例外），所以收尾必须彻底：进程级杀掉、删临时文档、不留保存对话框。
+        let spawn = argv.contains("--spawn")
+        var spawnedTemp: String? = nil
+
         func finish(_ code: Int32) -> Never {
             st.diag = InlineController.shared.diag.description
             write(st, to: outDir)
             print("[axcheck] \(st.ok ? "OK" : "FAIL") rects=\(st.underlineCount) reason=\(st.reason)")
             InlineController.shared.clearUnderlines()
+            if let t = spawnedTemp {
+                if let p = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
+                    p.terminate()
+                    usleep(800_000)
+                    if !p.isTerminated { p.forceTerminate() }
+                }
+                try? FileManager.default.removeItem(atPath: t)
+            }
             exit(code)
         }
 
@@ -77,15 +90,46 @@ enum AXCheck {
             finish(3)
         }
 
-        // 1) 目标必须在跑 —— 不 launch，launch 会弹窗
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first else {
-            st.reason = "目标 \(bundle) 未运行（A 层不自己拉起，避免产生窗口）"
-            st.app = bundle
+        // 1) 目标必须在跑 —— 默认不 launch（launch 会弹窗）
+        var target = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first
+        if target == nil {
+            guard spawn else {
+                st.reason = "目标 \(bundle) 未运行（A 层不自己拉起，避免产生窗口；爹地点头后加 --spawn）"
+                st.app = bundle
+                finish(8)
+            }
+            let tmp = NSTemporaryDirectory() + "ew-axcheck-\(getpid()).rtf"
+            try? "".write(toFile: tmp, atomically: true, encoding: .utf8)
+            spawnedTemp = tmp
+            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else {
+                st.reason = "找不到 \(bundle) 的安装位置"
+                finish(8)
+            }
+            let sem = DispatchSemaphore(value: 0)
+            NSWorkspace.shared.open([URL(fileURLWithPath: tmp)], withApplicationAt: appURL,
+                                    configuration: NSWorkspace.OpenConfiguration()) { _, _ in sem.signal() }
+            _ = sem.wait(timeout: .now() + 10)
+            for _ in 0..<20 {
+                if let a = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first,
+                   windowCount(a.processIdentifier) > 0 {
+                    target = a
+                    break
+                }
+                usleep(500_000)
+            }
+            guard let a = target, windowCount(a.processIdentifier) > 0 else {
+                st.reason = "起了 \(bundle) 但没等到窗口（临时文档 \(tmp)）"
+                finish(8)
+            }
+            st.notes.append("【--spawn】爹地已批准：临时空白文档（\(a.processIdentifier)），跑完杀进程、删临时文件")
+        }
+        guard let app = target else {
+            st.reason = "目标 \(bundle) 未运行"
             finish(8)
         }
         st.app = app.localizedName ?? bundle
         st.pid = app.processIdentifier
-        st.notes.append("未激活、未新建窗口、未发键击、未截屏")
+        if spawnedTemp == nil { st.notes.append("未激活、未新建窗口、未发键击、未截屏") }
 
         // 2) 找一个可写的正文容器（最大的 AXTextArea）
         guard let found = body(pid: st.pid, minArea: 4000) else {
