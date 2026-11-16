@@ -3,13 +3,43 @@
     "edits": 3,
     "rects": 3,
     "engine": "languagetool",
-    "ms": 21,
-    "notes_all": [
-      "no token",
-      "token updated"
+    "ms": 42,
+    "rect_source": "mirror",
+    "target": {
+      "tag": "TEXTAREA",
+      "id": "ta",
+      "contenteditable": false,
+      "textLen": 77
+    },
+    "active_element": "#taTEXTAREA",
+    "typed_text_len": 77,
+    "typed_into_expected": true,
+    "rect_list": [
+      {
+        "x": 43,
+        "y": 72,
+        "w": 143.515625,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 291.390625,
+        "y": 72,
+        "w": 25.78125,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 486.921875,
+        "y": 72,
+        "w": 72.359375,
+        "h": 18,
+        "type": "spelling"
+      }
     ],
+    "notes_all": [],
     "token_retry": {
-      "had_skip_before_success": true,
+      "had_skip_before_success": false,
       "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
     },
     "before": "There is many reasons why we should sent the booking confirmation immediatly.",
@@ -33,7 +63,11 @@
       "undone_equals_before": true,
       "undone_len_equals_before": true,
       "accept_api_returned": true,
-      "undo_api_returned": true
+      "undo_api_returned": true,
+      "rects_positive": true,
+      "rect_source_reported": true,
+      "target_is_expected": true,
+      "typed_into_expected": true
     },
     "accept_changed": true,
     "undo_restored": true
@@ -42,17 +76,43 @@
     "edits": 3,
     "rects": 3,
     "engine": "languagetool",
-    "ms": 23,
-    "notes_all": [
-      "no token",
-      "token updated",
-      "run target=TEXTAREA#ta",
-      "text=78 sent=78",
-      "run target=TEXTAREA#ta",
-      "text=77 sent=77"
+    "ms": 19,
+    "rect_source": "range",
+    "target": {
+      "tag": "DIV",
+      "id": "ce",
+      "contenteditable": true,
+      "textLen": 77
+    },
+    "active_element": "#ceDIV",
+    "typed_text_len": 77,
+    "typed_into_expected": true,
+    "rect_list": [
+      {
+        "x": 43,
+        "y": 265.4375,
+        "w": 143.515625,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 291.390625,
+        "y": 265.4375,
+        "w": 25.78125,
+        "h": 18,
+        "type": "grammar"
+      },
+      {
+        "x": 486.921875,
+        "y": 265.4375,
+        "w": 72.359375,
+        "h": 18,
+        "type": "spelling"
+      }
     ],
+    "notes_all": [],
     "token_retry": {
-      "had_skip_before_success": true,
+      "had_skip_before_success": false,
       "explain": "先无 token 跳过一次、写入 token 后重试成功 —— 重试过程照实留档，别看成一次就通"
     },
     "before": "There is many reasons why we should sent the booking confirmation immediatly.",
@@ -76,9 +136,27 @@
       "undone_equals_before": true,
       "undone_len_equals_before": true,
       "accept_api_returned": true,
-      "undo_api_returned": true
+      "undo_api_returned": true,
+      "rects_positive": true,
+      "rect_source_reported": true,
+      "target_is_expected": true,
+      "typed_into_expected": true,
+      "fallback_rects_positive": true,
+      "fallback_source_expected": true
     },
     "accept_changed": true,
-    "undo_restored": true
+    "undo_restored": true,
+    "fallback_probe": {
+      "rects": 1,
+      "source": "child-union",
+      "first": [
+        {
+          "x": 43,
+          "y": 265.4375,
+          "w": 68.421875,
+          "h": 18
+        }
+      ]
+    }
   }
 }

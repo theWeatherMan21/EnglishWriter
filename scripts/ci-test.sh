@@ -12,8 +12,8 @@ swiftc -O -swift-version 5 Sources/*.swift -o "$BIN" \
     -framework AppKit -framework SwiftUI -framework ApplicationServices 2>&1 \
     | grep -E "error:" && { echo "编译失败"; exit 1; } || true
 
-echo "== 自测（门控 / 护栏 / diff 契约 / M3 / M3.3 合并去重）=="
-EW_OUT="$PWD/out" "$BIN" --selftest --m3
+echo "== 自测（门控 / 护栏 / diff 契约 / M3 / M3.3 合并去重 / 设置面板）=="
+EW_OUT="$PWD/out" "$BIN" --selftest --m3 --settings
 
 echo "== 行内几何断言（真 NSTextView + AX 交叉校验）=="
 "$BIN" --demo-selfcheck

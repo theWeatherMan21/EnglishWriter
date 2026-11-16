@@ -318,6 +318,17 @@ def main():
                 "accept_changed": a_has_new and a_no_old and changed_vs_before,
                 "undo_restored": u_eq_before and u_len_eq,
             })
+            if kind == "contenteditable":
+                # 强制走兜底（逐文本节点并集）：证明 range 主路之外的兜底真能出矩形
+                fb = evaluate(ws, "window.__EW_TEST__.rectProbe('#ce', window.__EW_DEBUG.sentStart || 0, 10, true)",
+                              context_id=iso_id)
+                report[label]["fallback_probe"] = {
+                    "rects": len((fb or {}).get("rects") or []),
+                    "source": (fb or {}).get("source"),
+                    "first": ((fb or {}).get("rects") or [])[:2],
+                }
+                report[label]["assertions"]["fallback_rects_positive"] = bool((fb or {}).get("rects"))
+                report[label]["assertions"]["fallback_source_expected"] = (fb or {}).get("source") in ("child-union", "element")
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ext-probe-report.json")
@@ -327,7 +338,10 @@ def main():
             "typed_into_expected", "accept_changed", "undo_restored"]
     failures = {}
     for label, v in report.items():
-        bad = [k for k in need if not (v.get(k) if k in ("accept_changed", "undo_restored")
+        keys = list(need)
+        if label == "contenteditable":
+            keys += ["fallback_rects_positive", "fallback_source_expected"]
+        bad = [k for k in keys if not (v.get(k) if k in ("accept_changed", "undo_restored")
                                        else (v.get("assertions", {}) or {}).get(k))]
         if v.get("edits", 0) <= 0:
             bad.append("edits_positive")

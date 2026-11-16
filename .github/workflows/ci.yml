@@ -23,6 +23,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: out
-          path: out/
+          path: |
+            out/
+            qa/evidence/settings-selftest.json
           if-no-files-found: ignore
           retention-days: 1

@@ -135,9 +135,15 @@ final class DemoController: NSObject, NSWindowDelegate {
         textView = tv
 
         window.contentView = scroll
-        Audit.show()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // 静默红线：只有「要截图 / 要人看」才允许上屏；断言模式一律放屏幕外，不 orderFront、不 activate
+        let headless = opts.selfCheckOnly || opts.snapshotPath != nil || (opts.axSelfCheck && opts.shotPath == nil)
+        if headless {
+            window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
+        } else {
+            Audit.show()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func windowWillClose(_ n: Notification) { NSApp.terminate(nil) }

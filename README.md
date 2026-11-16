@@ -18,8 +18,10 @@ yourself.
 | M1 行内下划线渲染 | 已交付（真机待复核） | `--demo-selfcheck` PASS，5 处错误 → 5 个矩形；`out/m1-snapshot.png` |
 | M2 输入即检查（AXObserver + 800ms 去抖） | 代码就绪（真机待复核） | `--selftest --lt` PASS 56/0；真机需靶子窗口 |
 | M3 悬停卡片 + 接受/撤销/忽略/词典 | 已交付（真机待复核） | `--selftest --m3` PASS 60/0；`out/m3-card.png` |
+| M4 设置面板（三件套 / 引擎地址 / 方言 / App 排除 / 词典） | 已交付（UI 点击留给人验） | `bash scripts/settings-selftest.sh` PASS；证据 `qa/evidence/settings-selftest.json` |
 | M4 设置 / 文档 / 开源骨架 | 已交付 | LICENSE、README、CI、`out/parity.md` |
-| 真机（TextEdit / Mail / Chromium） | **未验收** | 缺一个真实靶子窗口，见 `out/parity.md` |
+| 浏览器扩展（Chromium） | **已验证**（headless 真扩展） | `bash scripts/ext-real-probe.sh` PASS；textarea 与 contenteditable 各 3 条命中 / 3 个矩形，接受与撤销读回一致；证据 `qa/evidence/ext-real-probe.json` |
+| 真机（TextEdit / Mail / Chromium） | TextEdit **已验**；Mail 待真人打字 | 见 `out/parity.md`；Mail 用 `--passive` 被动取证（不上屏） |
 
 **别看表格就当能用**：离线自测全绿；真机上的“边打字边出现下划线”这一步还没拿到证据。
 
@@ -40,13 +42,70 @@ open build/英文写作助手.app            # 常驻菜单栏；首次需授辅
 默认用本机证书 `SOALedger Dev` 签名（重编译不丢 TCC 授权）。换证书：
 `SIGN_ID="Apple Development: …" bash scripts/build.sh`。
 
+## 安装
+
+```bash
+bash scripts/build.sh                                   # 产出 build/英文写作助手.app
+mkdir -p /Applications/Selfmade
+cp -R build/英文写作助手.app /Applications/Selfmade/
+open /Applications/Selfmade/英文写作助手.app            # 菜单栏出现铅笔图标，无 Dock 图标、无主窗口
+```
+
+首次运行只需要做一件事：**系统设置 → 隐私与安全性 → 辅助功能 → 勾上「英文写作助手」**。
+TCC 不允许程序代勾；勾完 App 会自行重连（不用重装）。用同一个证书重编译不会丢这条授权；
+换证书或改 bundle id 就必须重新勾。
+
+升级：覆盖 `/Applications/Selfmade/英文写作助手.app` 后重开即可，设置在
+`~/Library/Preferences/com.wanyi.englishwriter.plist`，不随 App 覆盖丢失。
+
+## 填模型接口三件套（可选，默认不联网）
+
+菜单栏铅笔图标 → **设置…** → 「模型接口」三格，全部手填，**没有任何预设默认值**：
+
+| 字段 | 填什么 | 例子 |
+|---|---|---|
+| Base URL | OpenAI 兼容的 `/v1` 根地址 | `https://api.example.com/v1` |
+| API Key | 只存本机 UserDefaults | `sk-…` |
+| Model | 请求体里的 `model` 字段 | `gpt-4o-mini` |
+
+保存即生效（输入时就地保存）。校验落库：
+
+```bash
+defaults read com.wanyi.englishwriter llm.baseURL
+defaults read com.wanyi.englishwriter llm.model
+```
+
+同一面板里还能改：**引擎地址**（LanguageTool，留空=本机 `127.0.0.1:8081`）、**方言**
+（en-GB / en-US / en-AU / en-CA / en-NZ，决定拼写口径）、**App 排除**（填 bundle id 或应用名，
+命中的 App 一个请求都不发）、**个人词典**（加进去的词一律不报）。
+
+不填三件套也能用：本地 LanguageTool 在线时永远优先走它，文本不出本机。
+
+## 本地 LanguageTool 启动
+
+```bash
+bash scripts/languagetool-up.sh          # 幂等：已在跑直接返回 0
+curl -s http://127.0.0.1:8081/v2/languages | head -c 200   # 应返回 JSON 语言列表
+```
+
+- App 每次启动会静默调一次这个脚本；没装就安静回落到上面填的模型接口（不弹窗、不报错）。
+- 安装目录口径：`~/Library/Application Support/EnglishWriter/lt/`
+  （`jdk-*/Contents/Home/bin/java` + `LanguageTool-*/languagetool-server.jar`），日志 `lt/lt.log`。
+- 换端口：`EW_LT_PORT=8082 bash scripts/languagetool-up.sh`，同时把设置面板里的「引擎地址」
+  改成 `http://127.0.0.1:8082`。
+- 内存默认 `-Xmx1g`；句子级请求，热态 15–30ms。
+
 ## 自测
 
 ```bash
 ./build/英文写作助手 --selftest --lt      # 门控 / 护栏 / diff 契约 / 本地引擎
 ./build/英文写作助手 --selftest --m3      # 接受 / 撤销 / 忽略 / 词典 / 合并去重 / 卡片离线渲染
+./build/英文写作助手 --selftest --settings # 设置持久化（defaults 冷读）/ 词典过滤 / App 排除
 ./build/英文写作助手 --demo-selfcheck     # 行内几何断言（真 NSTextView + AX 交叉校验）
 bash scripts/ci-test.sh                  # CI 用的那套（不依赖本地引擎）
+bash scripts/settings-selftest.sh         # 设置面板验收 → qa/evidence/settings-selftest.json
+bash scripts/passive-selfcheck.sh         # --passive 仪器自证（零写回/零上屏/日志七字段）
+bash scripts/ext-real-probe.sh            # 真扩展端到端（headless，含 contenteditable 矩形）
 ```
 
 ## 真机验收工具（不需要截屏）
@@ -96,6 +155,14 @@ Grammarly 在浏览器里走扩展而不是辅助功能接口；本项目的 Chr
 open -a 英文写作助手.app --args --passive ~/dev/EnglishWriter/qa/evidence/passive.jsonl --seconds 600
 ```
 
-只读：不写宿主、不敲键、不截屏、下划线全程不上屏、不弹卡片；日志只记元信息
-（pid / 应用名 / role / 文本长度 / 句子长度 / 命中数 / 矩形数 / 耗时 / 错误），**正文一个字都不落盘**。
+只读：不写宿主、不敲键、不截屏、不 activate 任何 App、下划线全程不上屏、不弹卡片、不建窗口；日志只记元信息
+（ts / pid / app / role / textLen / 句长 / 命中数 / rects / 耗时 / 错误），**正文一个字都不落盘**。
 用来在 Mail / Notes 这类真实宿主里取证「真人打字会不会触发」。
+
+仪器本身也要能自证（免得「我说我没写」）：
+
+```bash
+bash scripts/passive-selfcheck.sh
+# PASS 正控·写回计数器是活的 / 只读·写回计数为 0 / 只读·窗口上屏计数为 0 / 日志·七字段齐全
+# 证据：qa/evidence/passive-selfcheck.json
+```

@@ -598,7 +598,7 @@ enum SelfTest {
 
         // 2) 保存 → 真落盘 → 独立进程冷读
         let cfg = LLMConfig(baseURL: "https://selftest.invalid/v1",
-                            apiKey: "sk-selftest-0000-not-a-real-key",
+                            apiKey: "dummy-key-selftest-not-real",
                             model: "selftest-model")
         SettingsStore.save(cfg, d)
         EnginePrefs.setLTBaseURL("http://127.0.0.1:18081", d)
@@ -627,7 +627,7 @@ enum SelfTest {
         evidence["defaultsRead"] = reads
         let need: [(String, String)] = [
             (SettingsStore.kBase, "https://selftest.invalid/v1"),
-            (SettingsStore.kKey, "sk-selftest-0000-not-a-real-key"),
+            (SettingsStore.kKey, "dummy-key-selftest-not-real"),
             (SettingsStore.kModel, "selftest-model"),
             (SettingsStore.kLTBase, "http://127.0.0.1:18081"),
             (SettingsStore.kLTLanguage, "en-US"),
@@ -685,7 +685,7 @@ enum SelfTest {
         evidence["plistPath"] = NSHomeDirectory() + "/Library/Preferences/\(SettingsStore.bundleId).plist"
         evidence["savedValues"] = [
             SettingsStore.kBase: cfg.baseURL,
-            SettingsStore.kKey: "sk-selftest-0000-not-a-real-key（测试值，测完已还原）",
+            SettingsStore.kKey: "dummy-key-selftest-not-real（测试值，测完已还原）",
             SettingsStore.kModel: cfg.model,
             SettingsStore.kLTBase: "http://127.0.0.1:18081",
             SettingsStore.kLTLanguage: "en-US",

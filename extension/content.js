@@ -160,7 +160,7 @@
         if (rect.width > 0 && rect.height > 0) out.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height });
       }
     }
-    if (out.length) return out;
+    if (out.length) { setRectSource('child-union'); return out; }
     const box = el.getBoundingClientRect();
     if (box.width > 0 && box.height > 0) { setRectSource('element'); return [{ x: box.left, y: box.top, w: box.width, h: box.height }]; }
     return [];
@@ -425,6 +425,18 @@
   window.__EW_TEST__ = {
     check: () => runCheck(true),
     state: () => window.__EW_DEBUG,
+    // 矩形探针：forceFallback=true 时强制走「逐文本节点并集」兜底，用来证明兜底路径真能出矩形
+    rectProbe: (sel, start, len, forceFallback) => {
+      const el = document.querySelector(sel);
+      if (!el) return { rects: [], source: 'no-element' };
+      if (forceFallback) {
+        window.__EW_DEBUG.rectSource = 'none';
+        const rs = childUnionRects(el, start, len);
+        return { rects: rs, source: window.__EW_DEBUG.rectSource };
+      }
+      const rs = rectsFor(el, start, len);
+      return { rects: rs, source: window.__EW_DEBUG.rectSource };
+    },
     acceptByOriginal: (orig) => {
       const e = (window.__EW_DEBUG.lastEdits || []).find(x => x.original === orig);
       if (!e) return false;

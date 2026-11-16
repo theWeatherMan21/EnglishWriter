@@ -54,14 +54,14 @@
   "check" : "settings-selftest",
   "defaultsRead" : {
     "exclude.apps" : "(\n    \"com.apple.mail\",\n    Notes\n)",
-    "llm.apiKey" : "sk-selftest-0000-not-a-real-key",
+    "llm.apiKey" : "dummy-key-selftest-not-real",
     "llm.baseURL" : "https:\/\/selftest.invalid\/v1",
     "llm.model" : "selftest-model",
     "lt.baseURL" : "http:\/\/127.0.0.1:18081",
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-16T09:16:45Z",
+  "generatedAt" : "2026-11-16T09:23:10Z",
   "note" : "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。",
   "pass" : true,
   "plistPath" : "\/Users\/russospencer\/Library\/Preferences\/com.wanyi.englishwriter.plist",
@@ -70,7 +70,7 @@
       "com.apple.mail",
       "Notes"
     ],
-    "llm.apiKey" : "sk-selftest-0000-not-a-real-key（测试值，测完已还原）",
+    "llm.apiKey" : "dummy-key-selftest-not-real（测试值，测完已还原）",
     "llm.baseURL" : "https:\/\/selftest.invalid\/v1",
     "llm.model" : "selftest-model",
     "lt.baseURL" : "http:\/\/127.0.0.1:18081",

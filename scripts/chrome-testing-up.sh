@@ -57,12 +57,19 @@ launch() {
   python3 -m http.server "$HTTP_PORT" --bind 127.0.0.1 --directory qa/chrome-ext-probe >/tmp/ew-cft-http.log 2>&1 &
   echo $! > /tmp/ew-cft-http.pid
   sleep 1
-  "$bin" --user-data-dir="$UA_PROFILE" --remote-debugging-port="$CDP_PORT" \
-    --load-extension="$PWD/extension" --disable-extensions-except="$PWD/extension" \
-    --no-first-run --no-default-browser-check --window-size=1200,900 \
-    "http://127.0.0.1:$HTTP_PORT/" >/tmp/ew-cft-chrome.log 2>&1 &
+  # 静默红线：默认 headless（新版 headless 支持 MV3 扩展）；要人工看才设 EW_CHROME_HEADLESS=0，
+  # 那时窗口也放到屏幕外，绝不 activate。
+  local flags=(--user-data-dir="$UA_PROFILE" --remote-debugging-port="$CDP_PORT"
+    --load-extension="$PWD/extension" --disable-extensions-except="$PWD/extension"
+    --no-first-run --no-default-browser-check --window-size=1200,900)
+  if [ "${EW_CHROME_HEADLESS:-1}" = "1" ]; then
+    flags+=(--headless=new --disable-gpu)
+  else
+    flags+=(--window-position=-3000,-3000)
+  fi
+  "$bin" "${flags[@]}" "http://127.0.0.1:$HTTP_PORT/" >/tmp/ew-cft-chrome.log 2>&1 &
   echo $! > /tmp/ew-cft-chrome.pid
-  echo "CDP：http://127.0.0.1:$CDP_PORT  页面：http://127.0.0.1:$HTTP_PORT/"
+  echo "CDP：http://127.0.0.1:$CDP_PORT  页面：http://127.0.0.1:$HTTP_PORT/  模式：$([ "${EW_CHROME_HEADLESS:-1}" = "1" ] && echo headless || echo offscreen-headed)"
 }
 
 stop() {
