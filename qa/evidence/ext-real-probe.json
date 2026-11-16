@@ -1,0 +1,32 @@
+{
+  "textarea": {
+    "edits": 3,
+    "rects": 3,
+    "engine": "languagetool",
+    "ms": 13,
+    "notes": [
+      "no token",
+      "token updated"
+    ],
+    "accept_changed": true,
+    "undo_restored": true,
+    "before": "There is many reasons why we should sent the booking confirmation imme",
+    "after": "There is many reasons why we should sent the booking confirmation imme",
+    "undone": "There is many reasons why we should sent the booking confirmation imme"
+  },
+  "contenteditable": {
+    "edits": 3,
+    "rects": 3,
+    "engine": "languagetool",
+    "ms": 24,
+    "notes": [
+      "run target=TEXTAREA#ta",
+      "text=77 sent=77"
+    ],
+    "accept_changed": true,
+    "undo_restored": true,
+    "before": "There is many reasons why we should sent the booking confirmation imme",
+    "after": "There is many reasons why we should sent the booking confirmation imme",
+    "undone": "There is many reasons why we should sent the booking confirmation imme"
+  }
+}

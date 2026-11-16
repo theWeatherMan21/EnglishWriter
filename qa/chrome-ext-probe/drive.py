@@ -65,6 +65,22 @@ class WS:
                 return obj
         raise TimeoutError(f"no reply for id={mid}")
 
+    def drain(self, seconds=0.8):
+        """读一段事件流（不等 id），返回事件列表 —— 用来抓 Runtime.executionContextCreated"""
+        end = time.time() + seconds
+        out = []
+        while time.time() < end:
+            msg = self._frame()
+            if not msg:
+                continue
+            try:
+                obj = json.loads(msg)
+            except Exception:
+                continue
+            if "method" in obj:
+                out.append(obj)
+        return out
+
     def _frame(self):
         self.sock.settimeout(2)
         try:
@@ -109,9 +125,12 @@ def targets():
     return http("/json/list")
 
 
-def evaluate(ws, expr, await_promise=True):
-    mid = ws.send("Runtime.evaluate", {"expression": expr, "returnByValue": True,
-                                       "awaitPromise": await_promise, "userGesture": True})
+def evaluate(ws, expr, await_promise=True, context_id=None):
+    params = {"expression": expr, "returnByValue": True,
+               "awaitPromise": await_promise, "userGesture": True}
+    if context_id:
+        params["contextId"] = context_id
+    mid = ws.send("Runtime.evaluate", params)
     r = ws.recv_until(mid)
     res = r.get("result", {}).get("result", {})
     if res.get("subtype") == "error":
@@ -166,6 +185,19 @@ def main():
     ws = WS(page["webSocketDebuggerUrl"])
     ws.send("Runtime.enable")
     ws.send("Page.enable")
+    # 关键：content script 跑在 isolated world，window.__EW_DEBUG 在默认上下文里看不见，
+    # 必须找到那个非 default 的执行上下文再取数/触发
+    ws.send("Runtime.enable")
+    ctxs = []
+    for ev in ws.drain(1.0):
+        if ev.get("method") == "Runtime.executionContextCreated":
+            ctxs.append(ev["params"]["context"])
+    iso = next((c for c in ctxs if not c.get("auxData", {}).get("isDefault", True)), None)
+    if iso:
+        print("isolated context:", iso.get("name"), iso.get("id"))
+    else:
+        print("WARN 没找到 isolated world，退回默认上下文")
+    iso_id = iso.get("id") if iso else None
 
     report = {}
     for sel, kind, label in [("#ta", "textarea", "textarea"), ("#ce", "contenteditable", "contenteditable")]:
@@ -184,7 +216,7 @@ def main():
         mid = ws.send("Input.insertText", {"text": sentence})
         ws.recv_until(mid)
         time.sleep(2.6)
-        dbg = evaluate(ws, "JSON.stringify(window.__EW_DEBUG)")
+        dbg = evaluate(ws, "JSON.stringify(window.__EW_DEBUG)", context_id=iso_id)
         dbg = json.loads(dbg) if isinstance(dbg, str) else (dbg or {})
         edits = dbg.get("lastEdits", [])
         rects = dbg.get("lastRects", [])
@@ -193,10 +225,10 @@ def main():
 
         if edits:
             before = evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}")
-            evaluate(ws, "window.__EW_TEST__.acceptByOriginal('immediatly')")
+            evaluate(ws, "window.__EW_TEST__.acceptByOriginal('immediatly')", context_id=iso_id)
             time.sleep(1.2)
             after = evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}")
-            evaluate(ws, "window.__EW_TEST__.undo()")
+            evaluate(ws, "window.__EW_TEST__.undo()", context_id=iso_id)
             time.sleep(1.2)
             undone = evaluate(ws, f"document.querySelector('{sel}').{'value' if kind=='textarea' else 'innerText'}")
             report[label].update({

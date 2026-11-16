@@ -19,6 +19,9 @@ SENTENCE = "There is many reasons why we should sent the booking confirmation im
 
 
 def main():
+    if "--port" in sys.argv:
+        import drive
+        drive.DEBUG_PORT = int(sys.argv[sys.argv.index("--port") + 1])
     token = open(TOKEN_FILE).read().strip()
     src = open(os.path.join(HERE, "..", "..", "extension", "content.js")).read()
     page = next((t for t in targets() if t.get("type") == "page" and "127.0.0.1:8765" in t.get("url", "")), None)

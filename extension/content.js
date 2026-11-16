@@ -22,12 +22,26 @@
 
   window.__EW_DEBUG = { ready: false, lastEdits: [], lastRects: [], engine: '', elapsedMs: 0, accepted: 0, undone: 0, notes: [] };
 
-  chrome.storage.local.get(['token', 'ignore'], (v) => {
-    token = v.token || null;
-    if (Array.isArray(v.ignore)) v.ignore.forEach(k => ignoreList.add(k));
+  function readToken(cb) {
+    chrome.storage.local.get(['token', 'ignore'], (v) => {
+      token = v.token || null;
+      if (Array.isArray(v.ignore)) v.ignore.forEach(k => ignoreList.add(k));
+      cb && cb(token);
+    });
+  }
+  readToken((t) => {
     window.__EW_DEBUG.ready = true;
-    window.__EW_DEBUG.notes.push(token ? 'token ok' : 'no token');
+    window.__EW_DEBUG.notes.push(t ? 'token ok' : 'no token');
   });
+  // 用户在扩展选项里后填 token / 改 token，页面不用刷新也能生效
+  if (chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.token) {
+        token = changes.token.newValue || null;
+        window.__EW_DEBUG.notes.push(token ? 'token updated' : 'token cleared');
+      }
+    });
+  }
 
   // ---------- 覆盖层 ----------
   function ensureLayer() {
@@ -329,6 +343,9 @@
     const el = lastTarget;
     if (force) window.__EW_DEBUG.notes.push('run target=' + (el ? el.tagName + (el.id ? '#' + el.id : '') : 'null'));
     if (!el) return;
+    if (!token) {                       // 每次检查前补读一次，别让"后填 token"变成必须刷新页面
+      token = await new Promise((r) => chrome.storage.local.get(['token'], (v) => r(v.token || null)));
+    }
     if (!token) { window.__EW_DEBUG.notes.push('skip: no token'); return; }
     const text = textOf(el);
     if (!text || text.length > 5000) return;

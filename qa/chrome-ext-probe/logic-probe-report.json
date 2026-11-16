@@ -3,7 +3,7 @@
     "edits": 3,
     "rects": 3,
     "engine": "languagetool",
-    "ms": 50,
+    "ms": 66,
     "types": [
       "grammar",
       "grammar",
@@ -45,7 +45,7 @@
     "edits": 3,
     "rects": 3,
     "engine": "languagetool",
-    "ms": 34,
+    "ms": 17,
     "types": [
       "grammar",
       "grammar",
