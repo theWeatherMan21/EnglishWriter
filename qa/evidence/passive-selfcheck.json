@@ -9,7 +9,7 @@
     "writeTotal" : 0
   },
   "check" : "passive-selfcheck",
-  "generatedAt" : "2026-11-16T09:22:11Z",
+  "generatedAt" : "2026-11-16T09:36:55Z",
   "instrumentedSites" : [
     "applyEdits",
     "WebText.replace",
@@ -23,7 +23,7 @@
   "logPath" : "\/Users\/russospencer\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl",
   "note" : "A 段正控后已 reset；B 段所有计数都是 reset 之后的实测值。覆盖窗口对象在进程启动时分配、从不 orderFront，所以「创建对象数」按启动前基线比对、上屏计数单独统计。",
   "pass" : true,
-  "pid" : 36230,
+  "pid" : 62691,
   "requiredFields" : [
     "ts",
     "pid",

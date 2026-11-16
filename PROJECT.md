@@ -13,7 +13,11 @@
 | M1 行内下划线渲染器 | **已交付（待真机复核）** | `--demo-selfcheck` → PASS，5 处错误 5 个矩形；快照 `out/m1-snapshot.png` |
 | M2 输入即检查 | **真机已验（TextEdit）** | `--axcheck --spawn --notify` 3/3：AXObserver 自发触发 → 800ms 去抖 → rects=3（62/49/147ms）；`--selftest --lt` 56/0 |
 | M3 悬停卡片 + 接受/忽略/撤销 + 词典 | **已交付（待真机复核）** | `--selftest --m3` → **PASS 53/0**；卡片离线渲染 `out/m3-card.png`（320×147）；commit `2a30293` |
-| M4 设置/词典/开源发布 | 词典与忽略规则已进设置面板；开源 public 化等爹地点头 | — |
+| M3.3 三类命中合并去重 | **已交付** | `--selftest --m3` 合并不变量 PASS（重复/重叠/相接/越界/升序/端到端） |
+| M4 #8 设置面板 | **已交付（UI 手点留给爹地）** | `bash scripts/settings-selftest.sh` → PASS 10 项：零预设、独立进程 `defaults read` 冷读六项一致、词典过滤 1→0、App 排除命中/不误伤。证据 `qa/evidence/settings-selftest.json` |
+| M4 Chromium contenteditable 矩形 | **已打通（扩展侧）** | `bash scripts/ext-real-probe.sh` → PASS：`#ce` 真焦点、3 命中 / 3 矩形（rect_source=`range`）、强制兜底 `child-union` 也出矩形、接受/撤销读回一致；证据 `qa/evidence/ext-real-probe.json` |
+| `--passive` 仪器自证 | **R1** | `bash scripts/passive-selfcheck.sh` → 9/9 PASS（正控活 + 只读写回 0 + 上屏 0 + 日志七字段）；证据 `qa/evidence/passive-selfcheck.json` |
+| M4 开源发布 | 等爹地点头 | README 补完安装/三件套/LanguageTool 三段；CI 远端已真跑绿（run 见 `out/parity.md` #15）；public 化不动 |
 
 唯一阻塞：A 层真机验收需要一个真实靶子窗口（爹地红线禁止我们弹窗），要他开一个 TextEdit 空白文档放那儿。
 工具已就绪：`--axcheck`（AXValue 直写正文 → checkNow → 读 overlay.specs，不激活/不敲键/不截屏，下划线只算不上屏，合成图走离屏位图）。
