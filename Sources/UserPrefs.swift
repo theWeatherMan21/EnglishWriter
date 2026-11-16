@@ -80,6 +80,9 @@ final class IgnoreStore {
 
     var count: Int { loadIfNeeded(); return rules.count }
 
+    /// 自测用：改了域里的原始值之后让内存缓存重新读一次
+    func reloadForTesting() { loaded = false; loadIfNeeded() }
+
     func clear() {
         loadIfNeeded()
         rules = []
