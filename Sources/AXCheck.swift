@@ -76,9 +76,12 @@ enum AXCheck {
             InlineController.shared.clearUnderlines()
             if let t = spawnedTemp {
                 if let p = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
-                    p.terminate()
-                    usleep(800_000)
-                    if !p.isTerminated { p.forceTerminate() }
+                    let pid = p.processIdentifier
+                    // 先请它体面退出；0.5s 还在就直接 SIGKILL —— 不然写了文本的临时文档会弹保存对话框，留在屏幕上
+                    kill(pid, SIGTERM)
+                    usleep(500_000)
+                    if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+                    usleep(200_000)
                 }
                 try? FileManager.default.removeItem(atPath: t)
             }
@@ -122,6 +125,8 @@ enum AXCheck {
                 finish(8)
             }
             st.notes.append("【--spawn】爹地已批准：临时空白文档（\(a.processIdentifier)），跑完杀进程、删临时文件")
+            // 爹地口径：开完立刻最小化，后台操作
+            if let win = windows(a.processIdentifier).first { setMinimized(win, true) }
         }
         guard let app = target else {
             st.reason = "目标 \(bundle) 未运行"
@@ -154,16 +159,38 @@ enum AXCheck {
         st.caret = setCaret(at: (back as NSString).length, in: el)
         st.notes.append("正文=「\(back.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))」")
 
-        // 4) 只算不上屏，再 checkNow
+        // 4) 只算不上屏，再 checkNow（--notify：不主动调用，只等 AXObserver 自己触发）
         InlineController.shared.overlay.silent = true
-        InlineController.shared.checkNow(for: st.pid, element: el)
+        let notifyOnly = argv.contains("--notify")
+        if notifyOnly {
+            st.notes.append("--notify：不代调 checkNow，只等 AXObserver + 800ms 去抖自己触发")
+        } else {
+            InlineController.shared.checkNow(for: st.pid, element: el)
+        }
 
         let deadline = Date().addingTimeInterval(20)
         while Date() < deadline {
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !InlineController.shared.overlay.specs.isEmpty { break }
             let d = InlineController.shared.diag
-            if d.checks > 0 && d.lastError != "-" { break }
+            if notifyOnly {
+                if d.checks > 0 { break }        // 观察者自己跑起来了
+            } else if d.checks > 0 && d.lastError != "-" { break }
+        }
+
+        // 最小化状态下 AX 常常给不到矩形：如果是 --spawn 起的窗口又拿空，就短暂还原取一次再最小化
+        if spawnedTemp != nil, InlineController.shared.overlay.specs.isEmpty, let win = found.window {
+            setMinimized(win, false)
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            InlineController.shared.overlay.silent = true
+            InlineController.shared.checkNow(for: st.pid, element: el)
+            let d2 = Date().addingTimeInterval(10)
+            while Date() < d2 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                if !InlineController.shared.overlay.specs.isEmpty { break }
+            }
+            setMinimized(win, true)
+            st.notes.append("最小化时拿不到矩形 → 已短暂还原窗口重取一次，随后立刻最小化")
         }
 
         let specs = InlineController.shared.overlay.specs
@@ -329,6 +356,12 @@ enum AXCheck {
     }
 
     // MARK: AX 读写
+
+    /// 最小化/还原窗口（爹地口径：开的窗口立刻最小化，后台操作）
+    private static func setMinimized(_ win: AXUIElement, _ on: Bool) {
+        let v: CFBoolean = on ? kCFBooleanTrue : kCFBooleanFalse
+        _ = AXUIElementSetAttributeValue(win, kAXMinimizedAttribute as CFString, v)
+    }
 
     private static func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
         var v: CFTypeRef?

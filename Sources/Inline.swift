@@ -23,6 +23,33 @@ enum AXInline {
         return nil
     }
 
+    /// 兜底：焦点元素不是文本框时（焦点落在窗口/工具栏上），取前台窗口里最大的可读 AXTextArea。
+    /// 2026-11-16 真机实测：observer 有时在焦点落到窗口本身时触发，读不到内容 → 白丢一次检查（err=读不到文本框内容）
+    static func biggestTextArea(pid: pid_t) -> AXUIElement? {
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 1.0)
+        let wins = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        var best: (area: CGFloat, el: AXUIElement)?
+        for w in wins {
+            for el in descendants(w, depth: 8) {
+                guard (attrString(el, kAXRoleAttribute as String) ?? "") == "AXTextArea" else { continue }
+                guard let v = attrString(el, kAXValueAttribute as String), !v.isEmpty else { continue }
+                var r = CGRect.zero
+                if let p = attr(el, kAXPositionAttribute as String), CFGetTypeID(p) == AXValueGetTypeID() {
+                    var pt = CGPoint.zero
+                    if AXValueGetValue(p as! AXValue, .cgPoint, &pt) { r.origin = pt }
+                }
+                if let s = attr(el, kAXSizeAttribute as String), CFGetTypeID(s) == AXValueGetTypeID() {
+                    var sz = CGSize.zero
+                    if AXValueGetValue(s as! AXValue, .cgSize, &sz) { r.size = sz }
+                }
+                let area = r.width * r.height
+                if best == nil || area > best!.area { best = (area, el) }
+            }
+        }
+        return best?.el
+    }
+
     static func focusedElement(pid: pid_t) -> AXUIElement? {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.25)
@@ -204,11 +231,12 @@ final class InlineController {
         var requests = 0
         var skippedChinese = 0
         var dedupedHits = 0
+        var fallbackTextArea = 0        // 焦点落空、改取窗口里最大 AXTextArea 的次数
         var lastError = "-"
         var lastElapsed = "-"
         var lastRectCount = 0
         var description: String {
-            "checks=\(checks) requests=\(requests) cjkSkip=\(skippedChinese) dedupe=\(dedupedHits) rects=\(lastRectCount) elapsed=\(lastElapsed) err=\(lastError)"
+            "checks=\(checks) requests=\(requests) cjkSkip=\(skippedChinese) dedupe=\(dedupedHits) fallback=\(fallbackTextArea) rects=\(lastRectCount) elapsed=\(lastElapsed) err=\(lastError)"
         }
     }
 
@@ -330,8 +358,17 @@ final class InlineController {
         guard enabled else { return }
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
         guard pid > 0 else { return }
-        guard let el = explicit ?? AXInline.focusedElement(pid: pid) else { diag.lastError = "没有焦点文本框"; return }
-        guard let full = AXInline.fullText(of: el) else { diag.lastError = "读不到文本框内容"; return }
+        guard var el = explicit ?? AXInline.focusedElement(pid: pid) else { diag.lastError = "没有焦点文本框"; return }
+        var full = AXInline.fullText(of: el)
+        if full == nil {
+            // 焦点落在窗口/工具栏上时读到空：改取该 App 前台窗口里最大的可读 AXTextArea，别白丢这次检查
+            if let alt = AXInline.biggestTextArea(pid: pid), let f2 = AXInline.fullText(of: alt) {
+                el = alt
+                full = f2
+                diag.fallbackTextArea += 1
+            }
+        }
+        guard let full else { diag.lastError = "读不到文本框内容"; return }
         currentElement = el
         currentPid = pid
 
