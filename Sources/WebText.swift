@@ -81,9 +81,21 @@ enum WebText {
         AXInline.lineRects(for: ns, in: block.element)
     }
 
+    /// 替换计划（纯函数，不碰 AX）：越界/空替换一律拒绝，返回替换后的块文本。
+    /// 抽出来的理由：写回逻辑的正确性必须能在没有真宿主的情况下断言（WebKit 宿主取证要真人）。
+    static func planReplace(in text: String, range: NSRange, with newText: String) -> String? {
+        let ns = text as NSString
+        guard range.location >= 0, range.length >= 0 else { return nil }
+        guard range.location + range.length <= ns.length else { return nil }
+        guard !newText.isEmpty else { return nil }
+        return ns.replacingCharacters(in: range, with: newText)
+    }
+
     /// 块内替换（写回：选中块内 range → 写 AXSelectedText，保留撤销栈）
     static func replace(range: NSRange, with newText: String, in block: Block) -> Bool {
         Audit.write("WebText.replace")   // 只读自证：往 WebKit 正文写，一次都算
+        // 先过纯函数这关：越界/空替换直接不写，避免把块写成破坏状态
+        guard planReplace(in: block.text, range: range, with: newText) != nil else { return false }
         guard let v = axRangeValue(range.location, range.length) else { return false }
         let selErr = AXUIElementSetAttributeValue(block.element, kAXSelectedTextRangeAttribute as CFString, v)
         guard selErr == .success else { return false }

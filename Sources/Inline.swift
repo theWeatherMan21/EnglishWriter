@@ -287,6 +287,17 @@ final class InlineController {
         }
     }
 
+    /// 被动/验收模式用：onCheck 装好之后再补挂一次前台 App
+    /// （start() 早于 onCheck 赋值，否则「启动时前台已是你正在打字的 App」这类情况会一条事件都不发）
+    func reattachFrontmost() {
+        guard enabled, AXPermission.granted() else { return }
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            lastFocusPid = front.processIdentifier
+            attachObserver(pid: front.processIdentifier)
+        }
+    }
+
     func stop() {
         detachObserver()
         HoverCoordinator.shared.stop()

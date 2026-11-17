@@ -92,6 +92,8 @@ enum Passive {
             write(e)
         }
 
+        InlineController.shared.reattachFrontmost()   // 补挂：启动时前台可能已经是你正在用的 App
+
         print("[passive] 只读观察中，\(Int(seconds))s 或 Ctrl-C 结束；日志 \(outPath)")
         let t0 = Date()
         while Date().timeIntervalSince(t0) < seconds {

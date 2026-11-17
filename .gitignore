@@ -4,3 +4,4 @@ out/
 .DS_Store
 .tools/
 dist/
+qa/evidence/passive-live.jsonl

@@ -42,7 +42,7 @@ enum SelfTest {
         if wantAll || argv.contains("--glossary") { glossaryTests() }
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
-        if argv.contains("--m3") { m3Tests(); mergeTests() }
+        if argv.contains("--m3") { m3Tests(); mergeTests(); webReplaceTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -495,6 +495,59 @@ enum SelfTest {
         } else {
             bad("M3·卡片离线渲染", "渲染 PNG 失败")
         }
+    }
+
+    // MARK: WebKit 块级写回（R2：逻辑测，宿主未验）
+    //
+    // 不变量：
+    //   W1 越界 range 一律拒绝（不许把块写成破坏状态）
+    //   W2 空替换拒绝（删掉整块不是写回该干的事）
+    //   W3 替换后长度 = 原长度 - range.length + newText 的 UTF-16 长度
+    //   W4 非 ASCII（中文/emoji/带重音）替换后其余部分逐字节不变
+    //   W5 同一 range 连续替换两次，第二次基于新文本仍成立（幂等边界）
+
+    static func webReplaceTests() {
+        print("\n--- WebKit 块级写回（R2 逻辑层）---")
+        let text = "There is many reasons why we should sent it immediatly."
+
+        // W1 越界
+        if WebText.planReplace(in: text, range: NSRange(location: 0, length: text.count + 5), with: "x") == nil {
+            ok("写回·越界拒绝", "range 超出块长度 → nil")
+        } else { bad("写回·越界拒绝", "越界却被接受") }
+        if WebText.planReplace(in: text, range: NSRange(location: -1, length: 3), with: "x") == nil {
+            ok("写回·负偏移拒绝", "location<0 → nil")
+        } else { bad("写回·负偏移拒绝", "负偏移被接受") }
+
+        // W2 空替换
+        if WebText.planReplace(in: text, range: NSRange(location: 0, length: 5), with: "") == nil {
+            ok("写回·空替换拒绝", "newText 为空 → nil")
+        } else { bad("写回·空替换拒绝", "空替换被接受") }
+
+        // W3 长度
+        let r = (text as NSString).range(of: "immediatly")
+        if let out = WebText.planReplace(in: text, range: r, with: "immediately") {
+            let expect = (text as NSString).length - r.length + ("immediately" as NSString).length
+            if (out as NSString).length == expect, out.contains("immediately"), !out.contains("immediatly") {
+                ok("写回·长度与内容", "替换后 \(expect) 字，immediatly→immediately")
+            } else { bad("写回·长度与内容", "长度 \((out as NSString).length)/预期 \(expect)") }
+        } else { bad("写回·长度与内容", "planReplace 返回 nil") }
+
+        // W4 非 ASCII：替换处前后原样
+        let cn = "我们发的 booking 已确认 immediatly 请查收"
+        let r2 = (cn as NSString).range(of: "immediatly")
+        if let out = WebText.planReplace(in: cn, range: r2, with: "immediately") {
+            if out.hasPrefix("我们发的 booking 已确认 immediately "), out.hasSuffix("请查收") {
+                ok("写回·中文不被破坏", "中文与前后文逐字保留")
+            } else { bad("写回·中文不被破坏", out) }
+        } else { bad("写回·中文不被破坏", "planReplace 返回 nil") }
+
+        // W5 连续替换
+        let sentRange = (text as NSString).range(of: "sent")
+        if let step1 = WebText.planReplace(in: text, range: sentRange, with: "send"),
+           let step2 = WebText.planReplace(in: step1, range: (step1 as NSString).range(of: "immediatly"), with: "immediately"),
+           step2.contains("send"), step2.contains("immediately") {
+            ok("写回·连续两次替换", "两次替换互不破坏")
+        } else { bad("写回·连续两次替换", "连续替换结果异常") }
     }
 
     // MARK: 三类合并去重（M3.3）
