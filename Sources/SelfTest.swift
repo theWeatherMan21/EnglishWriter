@@ -47,6 +47,7 @@ enum SelfTest {
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
         if argv.contains("--lt") { ltTests() }
+        if argv.contains("--web") { _ = MainActor.assumeIsolated { WebSelfTest.run(argv) } }
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) ===")
         if let dir = ProcessInfo.processInfo.environment["EW_SELFTEST_OUT"] {

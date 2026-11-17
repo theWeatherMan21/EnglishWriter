@@ -166,3 +166,8 @@ bash scripts/passive-selfcheck.sh
 # PASS 正控·写回计数器是活的 / 只读·写回计数为 0 / 只读·窗口上屏计数为 0 / 日志·七字段齐全
 # 证据：qa/evidence/passive-selfcheck.json
 ```
+
+## 手动核对（两分钟，补最后两条真人证据）
+
+`docs/manual-check.md`。只有两件事必须真人做：在原生 App 里真敲英文看划线、在 Mail 里真敲英文看划线。
+其余全部可自动化复跑（`scripts/ext-real-probe.sh`、`scripts/ext-logic-probe.sh`、`scripts/ci-test.sh`、`scripts/release.sh`）。

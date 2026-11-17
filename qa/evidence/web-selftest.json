@@ -1,0 +1,16 @@
+{
+  "blockCount" : 0,
+  "blocks" : [
+
+  ],
+  "host" : "WKWebView（与 Mail 同一 WebKit 引擎；不是 Mail 本体）",
+  "notes" : [
+    "6s 内没在自己的 AX 树里看到 AXWebArea（WKWebView 可能未暴露无障碍）"
+  ],
+  "ok" : false,
+  "rectSample" : [
+
+  ],
+  "rectsOK" : false,
+  "webAreaFound" : false
+}
