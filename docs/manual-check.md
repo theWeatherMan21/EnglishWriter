@@ -47,7 +47,8 @@ There is many reasons why we should sent the booking confirmation immediatly.
 
 | 宿主 | 状态 |
 |---|---|
-| TextEdit / Mail / Notes / 浏览器网页 | 支持（原生 + WebKit） |
+| TextEdit / Notes / 浏览器网页 | 支持（原生 + WebKit） |
+| **Mail 阅读视图** | 链路已证（后台取文本 + 矩形对得上，R2）；**写邮件视图待验** |
 | Chrome / Edge | 用扩展（`extension/`），不是在 App 里 |
 | **WPS / Word** | **不支持**：自绘控件，AX 读不到文字。要用得走加载项（另开一条线） |
 | 单行 input（搜索框那种） | 不支持（Grammarly 也不做） |
