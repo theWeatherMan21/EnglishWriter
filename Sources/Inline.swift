@@ -288,6 +288,25 @@ final class InlineController {
         }
     }
 
+    /// 给菜单/卡片看的一句话状态（改写用；走同一条 diag 通道，面板上能看到）
+    func noteForRewrite(_ msg: String) { diag.lastError = msg }
+
+    /// 改写建议用：读当前焦点元素 / 选区 / 全文
+    @MainActor
+    func rewriteContext() -> (element: AXUIElement, pid: pid_t, full: String, sel: NSRange)? {
+        let pid = lastFocusPid
+        guard pid > 0, let el = AXInline.focusedElement(pid: pid) ?? AXInline.biggestTextArea(pid: pid),
+              let full = AXInline.fullText(of: el) else { return nil }
+        let sel = AXInline.selectedRange(el) ?? currentSentenceRange
+        let ns = full as NSString
+        let clamped = NSRange(location: min(sel.location, ns.length),
+                              length: min(sel.length, max(0, ns.length - min(sel.location, ns.length))))
+        guard clamped.length > 0 else { return nil }
+        currentElement = el
+        currentPid = pid
+        return (el, pid, full, clamped)
+    }
+
     /// 改写建议：把候选的逐条 diff 当作本次条目（不刷新 UI、不重查）
     func adoptForRewrite(_ newItems: [DiffItem]) {
         items = newItems

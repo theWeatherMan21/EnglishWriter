@@ -61,7 +61,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-18T08:45:55Z",
+  "generatedAt" : "2026-11-18T08:50:52Z",
   "note" : "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。",
   "pass" : true,
   "plistPath" : "\/Users\/russospencer\/Library\/Preferences\/com.wanyi.englishwriter.plist",

@@ -75,7 +75,7 @@ $ ./build/英文写作助手 --selftest --lt
   LT·有错句#1  3 条 1686ms（冷启）：There is many reasons→There are many reasons | sent→send | immediatly→immediately
   LT·有错句#2  1 条 27ms
   LT·有错句#3  2 条 17ms
-  LT·干净句#1..#5  全部 0 条误报（含合成箱号 TCLU9999996 / CNTAO / CNSHTA / 202612345678 / demurrage 等）
+  LT·干净句#1..#5  全部 0 条误报（含合成箱号形态样例 / CNTAO / CNSHTA / 长数字 / demurrage 等；真单号不进仓库）
   LT·签名块不检查
 
 $ ./build/英文写作助手 --demo-selfcheck

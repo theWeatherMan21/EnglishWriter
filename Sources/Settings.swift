@@ -31,6 +31,9 @@ final class SettingsWindowController {
 }
 
 struct SettingsView: View {
+    /// 调试 UI 门控：只有 `EW_DEBUG=1` 启动才在设置里显示诊断区；正常双击为零。
+    static let debugUI = ProcessInfo.processInfo.environment["EW_DEBUG"] == "1"
+
     @ObservedObject var model: AppModel
     @ObservedObject var diag = Diag.shared
     @ObservedObject var badge = SaveBadge()
@@ -166,21 +169,25 @@ struct SettingsView: View {
                     Button("打开系统设置") { AXPermission.openSettingsPane() }
                 }
 
-                Divider()
-                Text("诊断（DoD 取证）").font(.system(size: 13, weight: .semibold))
-                VStack(alignment: .leading, spacing: 4) {
-                    row("请求数 requests", "\(diag.requests)")
-                    row("中文门控跳过", "\(diag.skippedChinese)")
-                    row("术语硬闸丢弃", "\(diag.gateDropped)")
-                    row("上次 endpoint", diag.lastEndpoint)
-                    row("上次 model", diag.lastModel)
-                    row("上次耗时", diag.lastElapsed)
-                    row("写回方式", diag.applyMethod)
-                    row("撤销次数", "\(diag.undoCount)")
-                    row("最后一条错误", diag.lastError)
+                // ★ 2026-11-18：诊断区门控 —— 只有 `EW_DEBUG=1` 启动才渲染。
+                //   正常态设置窗零调试元素（爹地 11-18 红线）；排障读者是自检 cron + 日志文件，不是用户。
+                if SettingsView.debugUI {
+                    Divider()
+                    Text("诊断（DoD 取证）").font(.system(size: 13, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 4) {
+                        row("请求数 requests", "\(diag.requests)")
+                        row("中文门控跳过", "\(diag.skippedChinese)")
+                        row("术语硬闸丢弃", "\(diag.gateDropped)")
+                        row("上次 endpoint", diag.lastEndpoint)
+                        row("上次 model", diag.lastModel)
+                        row("上次耗时", diag.lastElapsed)
+                        row("写回方式", diag.applyMethod)
+                        row("撤销次数", "\(diag.undoCount)")
+                        row("最后一条错误", diag.lastError)
+                    }
+                    Text("纪律：无轮询 Timer；只给焦点 App 挂一个 AXObserver；800ms 去抖；同一句 hash 不重复请求；打字时绝不出网。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                Text("纪律：无轮询 Timer；只给焦点 App 挂一个 AXObserver；800ms 去抖；同一句 hash 不重复请求；打字时绝不出网。")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             .padding(18)
         }

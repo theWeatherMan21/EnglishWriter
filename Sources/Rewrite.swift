@@ -193,9 +193,9 @@ enum Rewrite {
     /// 回滚沿用已有的 undoLastAccept 路径（不另造一套）
     @MainActor
     @discardableResult
-    static func apply(_ candidate: RewriteCandidate, segment: String, via ctrl: InlineController) -> Int {
+    static func apply(_ candidate: RewriteCandidate, segment: String, segStart: Int,
+                      via ctrl: InlineController) -> Int {
         guard let el = ctrl.currentElement else { return 0 }
-        let segStart = ctrl.currentSentenceRange.location
         let before = AXInline.fullText(of: el) ?? segment
 
         ctrl.adoptForRewrite(candidate.items)

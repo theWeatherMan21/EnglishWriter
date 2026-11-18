@@ -13,7 +13,7 @@ enum LiveRewriteTests {
 
     /// 单据号用「不撞箱号形态」的仿真编号（pre-commit 会把「4字母+7数字」当成真实单号拦下；
     /// 箱号保护本身由离线测试覆盖：规则·不碰箱号 / 拼写·保护区间零误报）
-    static let ref = "BKG4417"
+    static let ref = "BKG-TEST-0001"
 
     static var passage: String {
         "We must make a decision in order to save time, and the FCL booking " + ref + " is still pending."

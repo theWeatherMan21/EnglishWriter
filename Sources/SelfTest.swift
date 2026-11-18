@@ -605,8 +605,8 @@ enum SelfTest {
         else { bad("拼写·保护区间零误报", "\(pItems.map { $0.original })") }
 
         // 缩写/带数字标识符不算错
-        if SpellCheck.items(in: "Please confirm the FCL booking and BL12345 today.").isEmpty {
-            ok("拼写·缩写与编号不误报", "FCL / BL12345 0 条")
+        if SpellCheck.items(in: "Please confirm the FCL booking and BL-TEST-1 today.").isEmpty {
+            ok("拼写·缩写与编号不误报", "FCL / BL-TEST-1 0 条")
         } else { bad("拼写·缩写与编号不误报", "误报") }
     }
 

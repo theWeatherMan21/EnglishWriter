@@ -1,18 +1,18 @@
 
 --- 真模型·改写建议（--live-rewrite）---
   endpoint=https://api.deepseek.com/v1 model=deepseek-flash labels=更简洁/更正式/更清晰
-  耗时 17593ms；原始响应 820 字
-  原始片段：{"candidates":[{"label":"更简洁","note":"压缩冗长表达，保留原意和订舱号。","edits":[{"start":8,"length":37,"original":"make a decision in order to save time","replacement":"decide promptly to save time","type":"style","reason":"将“make a decision in order to”简化为“decide promptly to”，减少字数且不改变含义。"}]},{"label":"更正式","note":"改为正式被动表达，语气更适合商务沟通。","edits":[{"start":0,"length":45,"original":"We must make a decision in order 
-  · [更简洁] 1 条 → We must decide promptly to save time, and the FCL booking BKG4417 is still pending.
-  · [更正式] 1 条 → A decision must be made promptly to save time, and the FCL booking BKG4417 is still pending.
-  · [更清晰] 1 条 → We must make a decision in order to save time; the FCL booking BKG4417 remains pending.
+  耗时 18305ms；原始响应 841 字
+  原始片段：{"candidates":[{"label":"更简洁","note":"用 decide 替代 make a decision，减少冗词。","edits":[{"start":8,"length":15,"original":"make a decision","replacement":"decide","type":"style","reason":"将名词短语改为动词，表达更直接。"}]},{"label":"更正式","note":"采用更正式的动词搭配与状态表述。","edits":[{"start":8,"length":15,"original":"make a decision","replacement":"reach a decision","type":"style","reason":"reach a decision 更正式。"},{"start":81,"
+  · [更简洁] 1 条 → We must decide in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更正式] 2 条 → We must reach a decision in order to save time, and the FCL booking BKG-TEST-0001 remains pending.
+  · [更清晰] 2 条 → We must decide in order to save time; the FCL booking BKG-TEST-0001 is still pending.
 RESULT: PASS（3 个候选）
 
 --- 真模型·语气（--live-tone）---
   endpoint=https://api.deepseek.com/v1 model=deepseek-flash labels=更正式/更简洁/更直接
-  耗时 25540ms；原始响应 924 字
-  原始片段：{"candidates":[{"label":"更正式","note":"采用更正式的书面措辞，保持原意与订舱号不变。","edits":[{"start":8,"length":15,"original":"make a decision","replacement":"reach a decision","type":"style","reason":"用更正式的书面表达替换口语化动词短语。"},{"start":75,"length":8,"original":"is still","replacement":"remains","type":"style","reason":"将状态描述改为更正式的 remains pending。"}]},{"label":"更简洁","note":"压缩动词短语并省略冗余冠词，保留关键信息。","edits":[{"start":8,"len
-  · [更正式] 2 条 → We must reach a decision in order to save time, and the FCL booking BKG4417 remains pending.
-  · [更简洁] 2 条 → We must decide in order to save time, and FCL booking BKG4417 is still pending.
-  · [更直接] 2 条 → We must decide in order to save time; the FCL booking BKG4417 is still pending.
+  耗时 18085ms；原始响应 1518 字
+  原始片段：{"candidates":[{"label":"更正式","note":"采用被动语态和更正式的用词，语气更符合正式商务沟通。","edits":[{"start":0,"length":23,"original":"We must make a decision","replacement":"A decision must be made","type":"style","reason":"使用被动语态，语气更正式。"},{"start":24,"length":21,"original":"in order to save time","replacement":"to save time","type":"clarity","reason":"删除冗余表达，保持正式简洁。"},{"start":81,"length":16,"original":"is still pending
+  · [更正式] 3 条 → A decision must be made to save time, and the FCL booking BKG-TEST-0001 remains pending.
+  · [更简洁] 4 条 → We must decide to save time, and FCL booking BKG-TEST-0001 remains pending.
+  · [更直接] 3 条 → We must decide to save time, and FCL booking BKG-TEST-0001 is still pending.
 RESULT: PASS（3 个候选）

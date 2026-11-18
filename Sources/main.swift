@@ -53,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var demo: DemoController?
     /// --realshot 传进来的参数（真机验收器在 didFinishLaunching 之后跑）
     var realShotArgs: [String]?
+    /// 改写候选菜单的暂存（点选后才应用）
+    private var rewritePending: (cands: [RewriteCandidate], segment: String, segStart: Int)?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         model = AppModel()
@@ -73,6 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(undoItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "立即检查当前段落", action: #selector(checkNowAction), keyEquivalent: ""))
+        if Rewrite.isAvailable() {
+            menu.addItem(NSMenuItem(title: "改写选中段落…", action: #selector(rewriteAction), keyEquivalent: ""))
+        }
         menu.addItem(NSMenuItem(title: "清掉下划线", action: #selector(clearAction), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "跑探针（验 Mail 可读/可写）", action: #selector(probeAction), keyEquivalent: ""))
@@ -134,6 +139,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func checkNowAction() { InlineController.shared.checkNow() }
+
+    /// 改写选中段落：选中才亮（没选区就提示），模型没配时菜单项根本不出现
+    @MainActor @objc private func rewriteAction() {
+        let ctrl = InlineController.shared
+        guard let ctx = ctrl.rewriteContext() else {
+            ctrl.noteForRewrite("请先选中要改写的英文段落")
+            return
+        }
+        let ns = ctx.full as NSString
+        let segment = ns.substring(with: ctx.sel)
+        let cfg = SettingsStore.load()
+        guard cfg.isComplete else { ctrl.noteForRewrite("模型三项没填"); return }
+        ctrl.noteForRewrite("改写中…（模型返回约 10–40s）")
+        Task { @MainActor in
+            do {
+                let cands = try await Rewrite.suggest(segment: segment, config: cfg)
+                guard !cands.isEmpty else { ctrl.noteForRewrite("模型没给出可用候选"); return }
+                presentCandidateMenu(cands, segment: segment, segStart: ctx.sel.location, ctrl: ctrl)
+            } catch {
+                ctrl.noteForRewrite("改写失败：\(error)")
+            }
+        }
+    }
+
+    @MainActor private func presentCandidateMenu(_ cands: [RewriteCandidate], segment: String,
+                                                 segStart: Int, ctrl: InlineController) {
+        let menu = NSMenu()
+        for (i, c) in cands.enumerated() {
+            let item = NSMenuItem(title: "\(c.label)（\(c.items.count) 处）",
+                                  action: #selector(applyRewriteFromMenu(_:)), keyEquivalent: "")
+            item.tag = i
+            item.target = self
+            rewritePending = (cands, segment, segStart)
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @MainActor @objc private func applyRewriteFromMenu(_ sender: NSMenuItem) {
+        guard let pending = rewritePending, sender.tag < pending.cands.count else { return }
+        let c = pending.cands[sender.tag]
+        let n = Rewrite.apply(c, segment: pending.segment, segStart: pending.segStart, via: InlineController.shared)
+        InlineController.shared.noteForRewrite(n > 0 ? "已应用「\(c.label)」：\(n) 处（⇧⌘Z 可撤销）" : "写回失败：该输入框不接受 AX 写入")
+        rewritePending = nil
+    }
     @MainActor @objc private func clearAction() { InlineController.shared.clearUnderlines() }
 
     @MainActor @objc private func demoAction() {
