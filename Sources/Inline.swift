@@ -12,6 +12,24 @@ import ApplicationServices
 
 // MARK: - AX 文本 → 屏幕矩形
 
+/// AX 元素的全局矩形（Quartz，左上原点）
+func elementRectQuartz(_ el: AXUIElement) -> CGRect {
+    var r = CGRect.zero
+    var pos: CFTypeRef?
+    if AXUIElementCopyAttributeValue(el, kAXPositionAttribute as CFString, &pos) == .success,
+       let pv = pos, CFGetTypeID(pv) == AXValueGetTypeID() {
+        var p = CGPoint.zero
+        if AXValueGetValue(pv as! AXValue, .cgPoint, &p) { r.origin = p }
+    }
+    var size: CFTypeRef?
+    if AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &size) == .success,
+       let sv = size, CFGetTypeID(sv) == AXValueGetTypeID() {
+        var sz = CGSize.zero
+        if AXValueGetValue(sv as! AXValue, .cgSize, &sz) { r.size = sz }
+    }
+    return r
+}
+
 /// pid → 应用名（只用于观察日志，取不到就是 "?"）
 func appName(_ pid: pid_t) -> String {
     pid > 0 ? (NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?") : "?"
@@ -281,6 +299,7 @@ final class InlineController {
                 self?.attachObserver(pid: app.processIdentifier)
             }
         }
+        startPolling()
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
@@ -318,10 +337,26 @@ final class InlineController {
         lastAccept = (item, -1, element)
     }
 
+    /// 轮询兜底：布局/焦点通知会丢（知洲 11-18 指出的 Grammarly 行为：每秒轮一次）。
+    /// 只读文本比对，不直接调引擎；文本变了才走正常去抖检查。
+    private var pollTimer: Timer?
+    private func startPolling() {
+        guard pollTimer == nil else { return }
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.enabled, self.lastFocusPid > 0 else { return }
+                guard let el = AXInline.focusedElement(pid: self.lastFocusPid) ?? AXInline.biggestTextArea(pid: self.lastFocusPid),
+                      let t = AXInline.fullText(of: el) else { return }
+                if t != self.lastText { self.scheduleCheck(delay: 0.2) }
+            }
+        }
+    }
+
     /// 被动/验收模式用：onCheck 装好之后再补挂一次前台 App
     /// （start() 早于 onCheck 赋值，否则「启动时前台已是你正在打字的 App」这类情况会一条事件都不发）
     func reattachFrontmost() {
         guard enabled, AXPermission.granted() else { return }
+        startPolling()
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
@@ -561,11 +596,12 @@ final class InlineController {
             await MainActor.run { self?.diag.requests += 1 }
             do {
                 let out = try await InlineEngine.review(text: sentence, config: cfg)
+                let mergedModel = DiffSanitize.consolidate(out.items + instant, in: sentence)
                 await MainActor.run {
                     guard let self else { return }
                     self.diag.lastElapsed = String(format: "%.2fs", out.elapsed)
                     self.diag.lastError = "-"
-                    self.apply(items: self.shift(out.items, by: sentenceRange.location),
+                    self.apply(items: self.shift(mergedModel, by: sentenceRange.location),
                                sentenceRange: sentenceRange, element: el, pid: pid)
                 }
             } catch let f as ReviewFailure {
@@ -830,7 +866,32 @@ final class InlineController {
         printRects(specs, items: cleaned)
     }
 
-    func clearUnderlines() { HoverCoordinator.shared.dismissCard(); overlay.clear(); items = [] }
+    func clearUnderlines() {
+        HoverCoordinator.shared.dismissCard()
+        overlay.clear()
+        items = []
+        FloatBall.shared.hide()
+    }
+
+    /// 浮动球：无问题绿点 / N 条环+数字（Grammarly 那个「我在盯着」的信号）
+    private func updateFloatBall(items: [DiffItem], specs: [UnderlineSpec], element el: AXUIElement, pid: pid_t) {
+        guard !UnderlineOverlay.globallySilent else { return }   // 被动模式一个像素都不上
+        let box = specs.isEmpty ? elementRectQuartz(el)
+                                : specs.reduce(CGRect.null) { $0.union($1.rect) }
+        guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
+        let worst = items.map { CategoryPrefsSeverity($0.kind) }.max() ?? 0
+        let sev: UnderlineKind = items.first(where: { CategoryPrefsSeverity($0.kind) == worst })?.kind ?? .grammar
+        FloatBall.shared.update(.init(count: specs.count, severity: sev, pid: pid, anchor: box))
+    }
+
+    private func CategoryPrefsSeverity(_ k: UnderlineKind) -> Int {
+        switch k {
+        case .spelling: return 4
+        case .grammar: return 3
+        case .clarity: return 2
+        case .style: return 1
+        }
+    }
 
     private func printRects(_ specs: [UnderlineSpec], items: [DiffItem]) {
         print("── underline rects (\(specs.count)) ──")

@@ -1,18 +1,19 @@
 
 --- 真模型·改写建议（--live-rewrite）---
-  endpoint=https://opencode.ai/zen/go/v1 model=gpt-6-luna labels=更简洁/更正式/更清晰
-  耗时 4171ms；原始响应 632 字
-  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余表达，保留原意。","edits":[{"start":10,"length":25,"original":"make a decision in order to","replacement":"decide to","type":"style","reason":"删去冗余措辞"}]},{"label":"更正式","note":"调整措辞，使表达更正式。","edits":[{"start":0,"length":25,"original":"We must make a decision","replacement":"We must reach a decision","type":"style","reason":"措辞更正式"}]},{"label":"更清晰","note":"明确决策目的与
-  · [更简洁] 1 条 → We must decide to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更正式] 1 条 → We must reach a decision in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更清晰] 1 条 → To save time, we must make a decision. The FCL booking BKG-TEST-0001 is still pending.
+  endpoint=https://opencode.ai/zen/go/v1 model=deepseek-v4.1-flash labels=更简洁/更正式/更清晰
+  耗时 7739ms；原始响应 1143 字
+  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余连接词，缩短表达","edits":[{"start":7,"length":26,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"删冗余，表达更短"},{"start":33,"length":4,"original":"and ","replacement":"","type":"style","reason":"删去多余连词"},{"start":41,"length":4,"original":"still","replacement":"","type":"style","reason":"删去非必要副词"}]},{"label":"更正式","note":"
+  · [更简洁] 3 条 → We must decide to save time, the FCL booking BKG-TEST-0001 is  pending.
+  · [更正式] 3 条 → It is necessary to decide so as to save time, and the FCL booking BKG-TEST-0001 remains pending.
+  · [更清晰] 3 条 → We must decide now to save time, ; the FCL booking BKG-TEST-0001 is currently pending.
 RESULT: PASS（3 个候选）
 
 --- 真模型·语气（--live-tone）---
-  endpoint=https://opencode.ai/zen/go/v1 model=gpt-6-luna labels=更正式/更简洁/更直接
-  耗时 4084ms；原始响应 594 字
-  原始片段：{"candidates":[{"label":"更正式","note":"调整措辞，使表达更正式。","edits":[{"start":9,"length":22,"original":"make a decision in order to","replacement":"decide in order to","type":"style","reason":"提升表达正式度"}]},{"label":"更简洁","note":"精简表达，保留原意。","edits":[{"start":9,"length":22,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"删减冗余措辞"}]},{"label":"更直接","note":"改用直接表述，突
-  · [更正式] 1 条 → We must decide in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更简洁] 1 条 → We must decide to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更直接] 1 条 → To save time, we must decide, and the FCL booking BKG-TEST-0001 is still pending.
+  endpoint=https://opencode.ai/zen/go/v1 model=deepseek-v4.1-flash labels=更正式/更简洁/更直接
+  耗时 7811ms；原始响应 1100 字
+  原始片段：{"candidates":[{"label":"更正式","note":"使用正式书面表达，语气更庄重。","edits":[{"start":0,"length":4,"original":"We must","replacement":"It is necessary to","type":"style","reason":"书面正式语气"},{"start":17,"length":2,"original":"in order to","replacement":"to","type":"style","reason":"正式文体更凝练"},{"start":56,"length":5,"original":"is still","replacement":"remains","type":"style","reason":"更正式用词"}]},{"label":"更简洁","no
+  · [更正式] 3 条 → It is necessary to make a decision to save time, and the FCL booking BKG-TEST-0001 remains pending.
+  · [更简洁] 3 条 → We make a decision to save time, and the FCL booking BKG-TEST-0001 remains pending.
+  · [更直接] 3 条 → We need to make a decision to save time, and the FCL booking BKG-TEST-0001 remains pending.
 RESULT: PASS（3 个候选）
+EXIT=0

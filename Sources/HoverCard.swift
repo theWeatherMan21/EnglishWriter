@@ -41,6 +41,11 @@ final class HoverCardView: NSView {
     var onAccept: (() -> Void)?
     var onIgnore: (() -> Void)?
     var onAddDict: (() -> Void)?
+    /// 改写 / 语气：点了才发请求（不自动发，烧钱）
+    var onRewrite: (() -> Void)?
+    var onTone: (() -> Void)?
+    var onPrev: (() -> Void)?
+    var onNext: (() -> Void)?
 
     private let width: CGFloat = 320
     private let pad: CGFloat = 14
@@ -53,6 +58,10 @@ final class HoverCardView: NSView {
     private let acceptBtn = CardButton(title: "接受", primary: true)
     private let ignoreBtn = CardButton(title: "忽略")
     private let dictBtn = CardButton(title: "加入词典")
+    private let rewriteBtn = CardButton(title: "改写")
+    private let toneBtn = CardButton(title: "语气")
+    private let prevBtn = CardButton(title: "◀")
+    private let nextBtn = CardButton(title: "▶")
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -80,8 +89,12 @@ final class HoverCardView: NSView {
         acceptBtn.onClick = { [weak self] in self?.onAccept?() }
         ignoreBtn.onClick = { [weak self] in self?.onIgnore?() }
         dictBtn.onClick = { [weak self] in self?.onAddDict?() }
+        rewriteBtn.onClick = { [weak self] in self?.onRewrite?() }
+        prevBtn.onClick = { [weak self] in self?.onPrev?() }
+        nextBtn.onClick = { [weak self] in self?.onNext?() }
+        toneBtn.onClick = { [weak self] in self?.onTone?() }
 
-        for v in [kindLabel, sentenceField, diffField, reasonField, acceptBtn, ignoreBtn, dictBtn] as [NSView] {
+        for v in [kindLabel, sentenceField, diffField, reasonField, acceptBtn, ignoreBtn, dictBtn, rewriteBtn, toneBtn, prevBtn, nextBtn] as [NSView] {
             addSubview(v)
         }
     }
@@ -126,6 +139,10 @@ final class HoverCardView: NSView {
 
         reasonField.stringValue = reason.isEmpty ? "（引擎没给理由）" : reason
         dictBtn.isHidden = !allowDict
+        // 只有模型配置齐全时才给改写/语气入口（不给死按钮）
+        let canRewrite = Rewrite.isAvailable()
+        rewriteBtn.isHidden = !canRewrite
+        toneBtn.isHidden = !canRewrite
         height = layoutSubviewsManually()
     }
 
@@ -150,13 +167,31 @@ final class HoverCardView: NSView {
 
         let btnH: CGFloat = 26
         let btnW: CGFloat = 62
+        let navW: CGFloat = 26
         var x = textW + pad - btnW
         for b in [dictBtn, ignoreBtn, acceptBtn] {
             if b.isHidden { continue }
             b.frame = NSRect(x: x, y: y, width: btnW, height: btnH)
             x -= btnW + 6
         }
-        y += btnH + pad
+        // 翻条：◀ n/N ▶ 放右侧
+        var nx = textW + pad - navW
+        for b in [nextBtn, prevBtn] {
+            b.frame = NSRect(x: nx, y: y - btnH - 6, width: navW, height: btnH)
+            nx -= navW + 6
+        }
+        y += 6
+        if !rewriteBtn.isHidden || !toneBtn.isHidden {
+            var x2: CGFloat = pad
+            for b in [rewriteBtn, toneBtn] {
+                if b.isHidden { continue }
+                b.frame = NSRect(x: x2, y: y, width: btnW, height: btnH)
+                x2 += btnW + 6
+            }
+            y += btnH + pad
+        } else {
+            y += pad - 6
+        }
         return y
     }
 
@@ -200,10 +235,18 @@ final class HoverCardPanel: NSPanel {
                  itemID: Int, anchor: CGRect,
                  onAccept: @escaping () -> Void,
                  onIgnore: @escaping () -> Void,
-                 onAddDict: (() -> Void)?) {
+                 onAddDict: (() -> Void)?,
+                 onRewrite: (() -> Void)? = nil,
+                 onTone: (() -> Void)? = nil,
+                 onPrev: (() -> Void)? = nil,
+                 onNext: (() -> Void)? = nil) {
         card.onAccept = onAccept
         card.onIgnore = onIgnore
         card.onAddDict = onAddDict
+        card.onRewrite = onRewrite
+        card.onTone = onTone
+        card.onPrev = onPrev
+        card.onNext = onNext
         card.configure(kind: kind, sentence: sentence, errorRange: errorRange,
                        original: original, replacement: replacement, reason: reason,
                        allowDict: onAddDict != nil)
@@ -250,6 +293,7 @@ final class HoverCoordinator {
     private var monitor: Any?
     private var dwell: DispatchWorkItem?
     private var pending: (itemID: Int, rect: CGRect)?
+    private var currentOpenIndex = -1
 
     var dwellDelay: TimeInterval = 0.30
 
@@ -322,8 +366,46 @@ final class HoverCoordinator {
                       onAddDict: { [weak self] in
                           self?.panel.dismiss()
                           ctrl.addToDictionary(itemID: itemID)
+                      },
+                      onRewrite: { [weak self] in
+                          self?.panel.dismiss()
+                          RewriteFlow.start(tone: false)
+                      },
+                      onTone: { [weak self] in
+                          self?.panel.dismiss()
+                          RewriteFlow.start(tone: true)
+                      },
+                      onPrev: { [weak self] in
+                          self?.panel.dismiss()
+                          self?.openPrevIssue()
+                      },
+                      onNext: { [weak self] in
+                          self?.panel.dismiss()
+                          self?.openNextIssue()
                       })
     }
 
     func dismissCard() { panel.dismiss() }
+
+    @MainActor
+    func openPrevIssue() {
+        let ctrl = InlineController.shared
+        guard !ctrl.items.isEmpty else { return }
+        currentOpenIndex = (currentOpenIndex - 1 + ctrl.items.count) % ctrl.items.count
+        let id = currentOpenIndex
+        guard let rect = ctrl.overlay.currentRects().first(where: { $0.itemID == id })?.rect else { return }
+        open(itemID: id, rect: rect)
+    }
+
+    /// 浮动球左键：跳到下一条没看过的建议
+    @MainActor
+    func openNextIssue() {
+        let ctrl = InlineController.shared
+        guard !ctrl.items.isEmpty else { return }
+        currentOpenIndex = (currentOpenIndex + 1) % ctrl.items.count
+        let id = currentOpenIndex
+        let specs = ctrl.overlay.currentRects().filter { $0.itemID == id }
+        guard let rect = specs.first?.rect else { return }
+        open(itemID: id, rect: rect)
+    }
 }

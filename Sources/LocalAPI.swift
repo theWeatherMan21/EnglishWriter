@@ -196,7 +196,7 @@ final class LocalAPI {
             let out = try await LocalEngine.review(text: text, language: language)
             // 四类齐：LT（拼写/语法）+ 本地规则（清晰度/风格），统一收口
             let merged = CategoryPrefs.filterForDisplay(
-                DiffSanitize.consolidate(out.items + StyleRules.apply(to: text), in: text))
+                DiffSanitize.consolidate(out.items + SpellCheck.items(in: text) + StyleRules.apply(to: text), in: text))
             let edits = merged.map { it -> [String: Any] in
                 ["start": it.start, "length": it.length, "original": it.original,
                  "replacement": it.replacement, "type": it.type, "reason": it.reason]

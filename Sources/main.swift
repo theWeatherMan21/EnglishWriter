@@ -61,7 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   格式固定 `YYYY-MM-DD HH:mm:ss LEVEL tag key=value`，selfcheck 一条 normal 全覆盖。
         AppLog.info("boot", "pid=\(getpid()) args=\(CommandLine.arguments.dropFirst().joined(separator: " "))")
         InlineController.shared.onCheck = { e in
-            let bad = e.kind.hasSuffix("-fail") || (e.err != "-" && !e.err.isEmpty)
+            // 只把「引擎真失败」记 ERROR。焦点不在输入框 / 中文 / 排除 App 都是正常跳过：
+            // 常驻检查在 Telegram、Finder 上也会被触发，那些不算错误（否则日志天天误报）。
+            let skipKinds: Set<String> = ["no-text", "skip-cjk", "skip-excluded", "attach-app", "attach-el-fail"]
+            let engineFailed = e.err != "-" && !e.err.isEmpty
+                && !e.err.contains("没有焦点") && !e.err.contains("读不到文本框")
+            let bad = engineFailed && !skipKinds.contains(e.kind)
             AppLog.write(bad ? "ERROR" : "INFO", "check",
                          "kind=\(e.kind) app=\(e.app) pid=\(e.pid) textLen=\(e.textLen) items=\(e.itemCount) rects=\(e.rectCount) elapsed=\(e.elapsed) err=\(e.err)")
         }
@@ -246,6 +251,14 @@ if argv.contains("--selftest") {
 }
 
 // 真模型改写 / 语气（--live-rewrite / --live-tone）：key 只走环境变量
+if argv.contains("--docscan-file") {
+    var ok = false
+    let sem = DispatchSemaphore(value: 0)
+    Task { ok = await DocScanCLI.run(argv); sem.signal() }
+    sem.wait()
+    exit(ok ? 0 : 1)
+}
+
 if argv.contains("--live-ab") {
     var ok = false
     let sem = DispatchSemaphore(value: 0)

@@ -1,5 +1,5 @@
 {
-  "model" : "gpt-6-luna",
+  "model" : "deepseek-v4.1-flash",
   "rows" : [
     {
       "case" : 0,
@@ -8,7 +8,7 @@
       "fast" : true,
       "hit" : 3,
       "miss" : 0,
-      "ms" : 7164,
+      "ms" : 13364,
       "termViolations" : 0,
       "types" : [
         "grammar",
@@ -23,38 +23,40 @@
       "fast" : true,
       "hit" : 4,
       "miss" : 0,
-      "ms" : 12932,
+      "ms" : 43345,
       "termViolations" : 0,
       "types" : [
         "grammar",
         "grammar",
         "grammar",
-        "grammar"
+        "clarity"
       ]
     },
     {
       "case" : 2,
-      "edits" : 1,
+      "edits" : 2,
       "error" : "",
       "fast" : true,
-      "hit" : 1,
+      "hit" : 2,
       "miss" : 0,
-      "ms" : 4862,
+      "ms" : 14438,
       "termViolations" : 0,
       "types" : [
-        "grammar"
+        "grammar",
+        "spelling"
       ]
     },
     {
       "case" : 3,
-      "edits" : 1,
+      "edits" : 2,
       "error" : "",
       "fast" : true,
-      "hit" : 1,
+      "hit" : 2,
       "miss" : 0,
-      "ms" : 4909,
+      "ms" : 12312,
       "termViolations" : 0,
       "types" : [
+        "clarity",
         "clarity"
       ]
     },
@@ -65,7 +67,7 @@
       "fast" : true,
       "hit" : 2,
       "miss" : 0,
-      "ms" : 20482,
+      "ms" : 38291,
       "termViolations" : 0,
       "types" : [
         "clarity",
@@ -79,7 +81,7 @@
       "fast" : false,
       "hit" : 3,
       "miss" : 0,
-      "ms" : 7750,
+      "ms" : 10699,
       "termViolations" : 0,
       "types" : [
         "grammar",
@@ -89,17 +91,18 @@
     },
     {
       "case" : 1,
-      "edits" : 3,
+      "edits" : 4,
       "error" : "",
       "fast" : false,
-      "hit" : 3,
+      "hit" : 4,
       "miss" : 0,
-      "ms" : 9854,
+      "ms" : 44009,
       "termViolations" : 0,
       "types" : [
         "grammar",
         "grammar",
-        "grammar"
+        "grammar",
+        "clarity"
       ]
     },
     {
@@ -109,7 +112,7 @@
       "fast" : false,
       "hit" : 2,
       "miss" : 0,
-      "ms" : 7448,
+      "ms" : 14417,
       "termViolations" : 0,
       "types" : [
         "grammar",
@@ -118,14 +121,15 @@
     },
     {
       "case" : 3,
-      "edits" : 1,
+      "edits" : 2,
       "error" : "",
       "fast" : false,
-      "hit" : 1,
+      "hit" : 2,
       "miss" : 0,
-      "ms" : 3948,
+      "ms" : 5510,
       "termViolations" : 0,
       "types" : [
+        "clarity",
         "clarity"
       ]
     },
@@ -136,7 +140,7 @@
       "fast" : false,
       "hit" : 2,
       "miss" : 0,
-      "ms" : 24019,
+      "ms" : 31037,
       "termViolations" : 0,
       "types" : [
         "clarity",
@@ -146,17 +150,17 @@
   ],
   "summary" : {
     "fast" : {
-      "edits" : 11,
-      "hit" : 11,
+      "edits" : 13,
+      "hit" : 13,
       "miss" : 0,
-      "ms" : 50349,
+      "ms" : 121750,
       "termViol" : 0
     },
     "slow" : {
-      "edits" : 11,
-      "hit" : 11,
+      "edits" : 13,
+      "hit" : 13,
       "miss" : 0,
-      "ms" : 53019,
+      "ms" : 105672,
       "termViol" : 0
     }
   }

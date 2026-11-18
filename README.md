@@ -137,11 +137,11 @@ open -a build/英文写作助手.app --args --axwatch out/ --seconds 120
 
 | 通道 | 实测延迟 | 能干什么 |
 |---|---|---|
-| 拼写（系统词典） | ~16ms | 实时划线 |
+| 拼写（系统词典，常开） | ~16ms | 实时划线 |
 | 本地规则（清晰度/风格） | <5ms | 实时划线 |
 | LanguageTool 语法（可选，默认关） | 20–60ms 热态 / 1.8s 冷启 | 实时划线 |
-| 模型逐条 diff（快速模式） | 4.3–20.9s（长句慢） | 近实时划线，长句会明显卡 |
-| 模型改写 / 语气（快速模式） | **2.3–2.5s** | 选中段落立刻出候选 |
+| 模型逐条 diff | 5.5–44s（按句长/模型波动） | 近实时划线不成立，作辅助 |
+| 模型改写 / 语气 | 5–25s（按模型波动） | 选中段落手动触发 |
 
 改写慢不是实现问题，是模型（deepseek-flash / v4-pro 都带推理链）。要更快就换非推理模型。
 
@@ -150,7 +150,7 @@ open -a build/英文写作助手.app --args --axwatch out/ --seconds 120
 - **opencode.ai/zen 端点必须带 `x-opencode-session` 头**（任意稳定字符串）。不带直接 `MissingSessionID`，
   一个模型都调不到。本项目会自动生成并存一个 `ew-<uuid>` 到 UserDefaults 后自动带上。
 - `thinking:{"type":"disabled"}` 该端点**不认**，会回 `invalid_request_error`；要关推理用 `reasoning_effort:"none"`。
-- opencode 这条通道给我们的实测：`gpt-6-luna` + `reasoning_effort:none` 改写 4.5–6.2s；
+- 测过的模型里 `deepseek-v4.1-flash` 是当前验收基线；换模型必须重跑 A/B，不许搬数
   `deepseek-flash` 同条件 2.3–2.5s（更快但长句改写质量略粗）；`deepseek-v4-pro` 46.5s（别用）。
 
 ## 隐私

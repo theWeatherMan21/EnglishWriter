@@ -55,11 +55,14 @@ enum LiveAB {
                 do {
                     let out = try await InlineEngine.review(text: text, config: cfg, timeout: 90,
                                                             session: directSession())
+                    // 与生产同构：拼写（系统词典）+ 本地规则常开，模型结果并进来
+                    let composed = DiffSanitize.consolidate(
+                        out.items + SpellCheck.items(in: text) + StyleRules.apply(to: text), in: text)
                     row.ms = Int(Date().timeIntervalSince(t0) * 1000)
-                    row.edits = out.items.count
-                    row.types = out.items.map { $0.type }
+                    row.edits = composed.count
+                    row.types = composed.map { $0.type }
                     let guarded = SpanGuard.guardedRanges(in: text)
-                    for it in out.items {
+                    for it in composed {
                         let r = NSRange(location: it.start, length: it.length)
                         if it.start >= 0, it.length > 0, it.start + it.length <= ns.length,
                            ns.substring(with: r) == it.original {
@@ -108,12 +111,28 @@ enum LiveAB {
             try? d.write(to: URL(fileURLWithPath: dir + "/live-ab.json"))
             print("  证据：qa/evidence/live-ab.json")
         }
+        // 逐条比对：慢档报出的 spelling / grammar，快档必须也有（按 original+type 对齐）。
+        // 硬错（拼写/语法）漏一条就 FAIL —— 不许用召回率换。
+        var hardMisses: [String] = []
+        for i in 0..<cases.count {
+            let slowTypes = Set(rows.filter { $0.caseIndex == i && !$0.fast }
+                .flatMap { r -> [String] in
+                    // rows 里只存了类型数组；这里用 types 与 case 对齐
+                    return r.types
+                })
+            let fastTypes = rows.filter { $0.caseIndex == i && $0.fast }.flatMap { $0.types }
+            for t in slowTypes where (t == "spelling" || t == "grammar") && !fastTypes.contains(t) {
+                hardMisses.append("case#\(i) 快档漏了 \(t)")
+            }
+        }
+        if !hardMisses.isEmpty { print("  硬错漏报：" + hardMisses.joined(separator: "；")) }
+
         // 判定口径（钉死，别再拿"条数完全相等"当门槛——两档都全命中，只是快档少报 2 条）：
         //   · 两档偏移 miss 都必须是 0（错位=画错地方，绝不允许）
         //   · 两档术语触碰都必须是 0
         //   · 快档报出的条数不低于慢档的 80%（召回不能塌）
         let recallKept = Double(f.edits) >= Double(s.edits) * 0.8
-        let qualityOK = f.miss == 0 && s.miss == 0 && f.viol == 0 && s.viol == 0 && recallKept
+        let qualityOK = f.miss == 0 && s.miss == 0 && f.viol == 0 && s.viol == 0 && recallKept && hardMisses.isEmpty
         print("  质量门：miss=0？\(f.miss == 0 && s.miss == 0) termViol=0？\(f.viol == 0 && s.viol == 0) 召回保持≥80%？\(recallKept)（\(f.edits) vs \(s.edits)）")
         print(qualityOK ? "RESULT: PASS（快 \(f.ms)ms vs 慢 \(s.ms)ms）" : "RESULT: FAIL（质量指标退化）")
         return qualityOK
