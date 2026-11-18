@@ -47,7 +47,7 @@ enum Rewrite {
         {"candidates":[{"label":"<\(labels.joined(separator: "|"))>","note":"<一句话中文说明>",
           "edits":[{"start":<UTF-16 offset in the PASSAGE>,"length":<UTF-16 length>,
                    "original":"<exact substring>","replacement":"<new substring>",
-                   "type":"spelling|grammar|clarity|style","reason":"<中文理由>"}]}]}
+                   "type":"spelling|grammar|clarity|style","reason":"<中文理由，≤20字>"}]}]}
 
         Rules:
         1. Produce exactly \(labels.count) candidates, one per label, in this order: \(labels.joined(separator: ", ")).
@@ -56,6 +56,7 @@ enum Rewrite {
         3. Keep meaning, facts, numbers and industry terms unchanged: \(terms)
         4. Do not translate. Do not add sentences. Only rewrite what the label asks for.
         5. start/length are UTF-16 offsets in the ORIGINAL passage (counted from 0).
+        6. Keep "reason" under 20 Chinese characters — the response gets truncated otherwise.
         """
     }
 
@@ -78,13 +79,13 @@ enum Rewrite {
         if CategoryPrefs.fastMode() {
             body["reasoning_effort"] = "none"   // 实测 18.3s → ~2s，候选质量不掉
         }
-        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 1500 }
+        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 4000 }
         return body
     }
 
     // MARK: 解析
 
-    private struct Payload: Decodable {
+    struct Payload: Decodable {
         struct C: Decodable {
             var label: String?
             var note: String?
@@ -102,9 +103,16 @@ enum Rewrite {
             if let fence = s.range(of: "```", options: .backwards) { s = String(s[..<fence.lowerBound]) }
             s = s.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard let data = s.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(Payload.self, from: data),
-              let raw = payload.candidates else { return [] }
+        var raw: [Payload.C] = []
+        if let data = s.data(using: .utf8),
+           let payload = try? JSONDecoder().decode(Payload.self, from: data),
+           let list = payload.candidates {
+            raw = list
+        } else {
+            // 整段解码失败（最常见：max_tokens 截断）→ 逐个对象抢救
+            raw = salvageCandidates(from: s)
+        }
+        guard !raw.isEmpty else { return [] }
 
         var out: [RewriteCandidate] = []
         for (i, c) in raw.enumerated() {
@@ -190,6 +198,38 @@ enum Rewrite {
         let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         let content = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String ?? ""
         return parse(content, segment: segment)
+    }
+
+    /// 从残缺 JSON 里逐个抽出形如 {"label":...,"edits":[...]} 的对象（大括号配平，容忍被截断的尾巴）
+    static func salvageCandidates(from s: String) -> [Payload.C] {
+        var out: [Payload.C] = []
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            guard chars[i] == "{" else { i += 1; continue }
+            var depth = 0
+            var j = i
+            var end: Int? = nil
+            while j < chars.count {
+                if chars[j] == "{" { depth += 1 }
+                if chars[j] == "}" {
+                    depth -= 1
+                    if depth == 0 { end = j; break }
+                }
+                j += 1
+            }
+            if let e = end {
+                let frag = String(chars[i...e])
+                if frag.contains("\"edits\""), let d = frag.data(using: .utf8),
+                   let c = try? JSONDecoder().decode(Payload.C.self, from: d) {
+                    out.append(c)
+                }
+                i = e + 1
+            } else {
+                break   // 截断在对象中间：放弃这一段
+            }
+        }
+        return out
     }
 
     // MARK: 应用 / 回滚

@@ -1,15 +1,18 @@
 
 --- 真模型·改写建议（--live-rewrite）---
   endpoint=https://opencode.ai/zen/go/v1 model=gpt-6-luna labels=更简洁/更正式/更清晰
-  耗时 5601ms；原始响应 728 字
-  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余表达，使句子更精炼。","edits":[{"start":9,"length":31,"original":"make a decision in order to","replacement":"decide to","type":"style","reason":"删去冗余措辞，保留节省时间的目的。"}]},{"label":"更正式","note":"调整措辞，使表达更符合正式商务语境。","edits":[{"start":9,"length":20,"original":"make a decision","replacement":"reach a decision","type":"style","reason":"使用较正式的商务表达，含义保持不变。"}]},{"label":"更清晰",
+  耗时 4171ms；原始响应 632 字
+  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余表达，保留原意。","edits":[{"start":10,"length":25,"original":"make a decision in order to","replacement":"decide to","type":"style","reason":"删去冗余措辞"}]},{"label":"更正式","note":"调整措辞，使表达更正式。","edits":[{"start":0,"length":25,"original":"We must make a decision","replacement":"We must reach a decision","type":"style","reason":"措辞更正式"}]},{"label":"更清晰","note":"明确决策目的与
   · [更简洁] 1 条 → We must decide to save time, and the FCL booking BKG-TEST-0001 is still pending.
   · [更正式] 1 条 → We must reach a decision in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更清晰] 1 条 → We must make a decision to save time; meanwhile, the FCL booking BKG-TEST-0001 remains pending.
+  · [更清晰] 1 条 → To save time, we must make a decision. The FCL booking BKG-TEST-0001 is still pending.
 RESULT: PASS（3 个候选）
 
 --- 真模型·语气（--live-tone）---
   endpoint=https://opencode.ai/zen/go/v1 model=gpt-6-luna labels=更正式/更简洁/更直接
-  耗时 13278ms；原始响应 4308 字
-  原始片段：{"candidates":[{"label":"更正式","note":"调整措辞以提升正式度，保留原意及订舱编号。","edits":[{"start":9,"length":23,"original":"make a decision in order to","replacement":"make a decision to","type":"style","reason":"精简并使表达更正式自然。"}]},{"label":"更简洁","note":"压缩冗余表达，保留时间要求和订舱状态。","edits":[{"start":9,"length":23,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"用更简洁的动词表达作出决定的意思。"}
-FAIL  解析出 0 个候选（原始响应见上）
+  耗时 4084ms；原始响应 594 字
+  原始片段：{"candidates":[{"label":"更正式","note":"调整措辞，使表达更正式。","edits":[{"start":9,"length":22,"original":"make a decision in order to","replacement":"decide in order to","type":"style","reason":"提升表达正式度"}]},{"label":"更简洁","note":"精简表达，保留原意。","edits":[{"start":9,"length":22,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"删减冗余措辞"}]},{"label":"更直接","note":"改用直接表述，突
+  · [更正式] 1 条 → We must decide in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更简洁] 1 条 → We must decide to save time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更直接] 1 条 → To save time, we must decide, and the FCL booking BKG-TEST-0001 is still pending.
+RESULT: PASS（3 个候选）
