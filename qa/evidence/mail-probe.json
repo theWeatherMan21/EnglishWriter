@@ -1,45 +1,38 @@
 {
-  "note": "只读探针一次真实运行记录（写这些字段时 Mail 有 1 个阅读窗口）；后续重跑时 Mail 窗口已被关闭，返回【没有窗口】，不重写本文件",
-  "provenance": "stdout captured at run time; fields copied verbatim from that run's console output",
-  "bundle": "com.apple.mail",
-  "pid": 87655,
-  "windowCount": 1,
-  "composePresent": false,
-  "windows": [
+  "bundle" : "com.apple.mail",
+  "composePresent" : false,
+  "pid" : 87655,
+  "windowCount" : 1,
+  "windows" : [
     {
-      "kind": "reading",
-      "title": "Poland – Network Management – 3,145 messages, 13 unread",
-      "windowRect": [
+      "badRects" : [
+
+      ],
+      "blocks" : 347,
+      "chars" : 73,
+      "englishBlocks" : 1,
+      "itemCount" : 0,
+      "items" : [
+
+      ],
+      "kind" : "reading",
+      "note" : "可见 4 块 \/ 屏幕外 343 块；其中中文块 3（49 字，按设计跳过）、英文块 1 → 本次命中 0",
+      "offscreenBlocks" : 343,
+      "rectsInsideWindow" : true,
+      "skippedCjkBlocks" : 3,
+      "skippedCjkChars" : 49,
+      "staticTexts" : 2698,
+      "textAreas" : 3,
+      "title" : "Poland – Network Management – 3,145 messages, 13 unread",
+      "totalChars" : 8086,
+      "visibleBlocks" : 4,
+      "webAreaFound" : true,
+      "windowRect" : [
         61,
         30,
         1859,
         1050
-      ],
-      "webAreaFound": true,
-      "staticTexts": 2698,
-      "textAreas": 3,
-      "blocks": 347,
-      "visibleBlocks": 4,
-      "offscreenBlocks": 343,
-      "chars": 73,
-      "totalChars": 8086,
-      "itemCount": 0,
-      "rectsInsideWindow": true,
-      "badRects": [],
-      "note": "可见 4 块 / 屏幕外 343 块，本次无命中（可见正文为中文，按设计跳过）",
-      "visibleBlockPreviews": [
-        "Dear 工厂",
-        "我们有一个11/27号的CMA的仓位在手上等国外确认一下哦",
-        "预计是23号左右截提单的",
-        "QINGDAO -GDANSK 1*40HQ"
-      ],
-      "items": []
+      ]
     }
-  ],
-  "verdict": "PARTIAL（链路通：后台取到文本 + 矩形全在窗口内；命中共 0 因为可见正文是中文）",
-  "whatMustStillHappen": [
-    "屏幕上有一封英文邮件（阅读视图）→ 才能拿到 K>0 的命中",
-    "或一个写信（compose）窗口 → 才能验爹地真正打字的那一半",
-    "两件都只能由真人造，App 不自己建窗口、不改他的 Mail"
   ]
 }

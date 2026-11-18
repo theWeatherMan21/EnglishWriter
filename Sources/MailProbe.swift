@@ -32,6 +32,9 @@ enum MailProbe {
         var offscreenBlocks = 0
         var chars = 0
         var totalChars = 0
+        var skippedCjkBlocks = 0
+        var skippedCjkChars = 0
+        var englishBlocks = 0
         var items: [[String: AnyEncodable]] = []
         var itemCount = 0
         var rectsInsideWindow = true
@@ -108,6 +111,12 @@ enum MailProbe {
                 } else { r.offscreenBlocks += 1 }
             }
             r.chars = blks.reduce(0) { $0 + ($1.text as NSString).length }
+            // 中文块与英文块分开数：K=0 时能分清「没英文」和「检查坏了」
+            for b in blks {
+                let n = (b.text as NSString).length
+                if cjkRatio(b.text) >= 0.30 { r.skippedCjkBlocks += 1; r.skippedCjkChars += n }
+                else if n >= 8 { r.englishBlocks += 1 }
+            }
             for b in blks.prefix(6) {
                 let preview = b.text.replacingOccurrences(of: "\n", with: " ")
                 print("    可见块[\(b.text.count)字] " + preview.prefix(90))
@@ -144,11 +153,15 @@ enum MailProbe {
             }
             r.items = itemsOut
             r.itemCount = count
-            if count == 0 { r.note = "可见 \(r.visibleBlocks) 块 / 屏幕外 \(r.offscreenBlocks) 块，本次无命中" }
+            if count == 0 {
+                r.note = "可见 \(r.visibleBlocks) 块 / 屏幕外 \(r.offscreenBlocks) 块；其中中文块 \(r.skippedCjkBlocks)（\(r.skippedCjkChars) 字，按设计跳过）、英文块 \(r.englishBlocks) → 本次命中 0"
+            }
             reports.append(r)
 
-            print("  窗口#\(i) [\(r.kind)] 「\(title)」 webArea=\(r.webAreaFound) staticText=\(r.staticTexts) textArea=\(r.textAreas) blocks=\(r.blocks)(可见 \(r.visibleBlocks)/屏外 \(r.offscreenBlocks)) chars=\(r.chars) items=\(r.itemCount) rectsInside=\(r.rectsInsideWindow)")
-            for it in itemsOut.prefix(5) {
+            print("  窗口#\(i) [\(r.kind)] 「\(title)」 webArea=\(r.webAreaFound) staticText=\(r.staticTexts) textArea=\(r.textAreas)")
+        print("    blocks=\(r.blocks)（可见 \(r.visibleBlocks) / 屏外 \(r.offscreenBlocks)）可见字 \(r.chars)（中文块 \(r.skippedCjkBlocks)/\(r.skippedCjkChars) 字 · 英文块 \(r.englishBlocks)）items=\(r.itemCount) rectsInside=\(r.rectsInsideWindow)")
+            let showAll = argv.contains("--all-visible")
+            for it in (showAll ? Array(itemsOut.prefix(200)) : Array(itemsOut.prefix(5))) {
                 print("    · \(it["type"]?.value ?? "") \(it["original"]?.value ?? "") → \(it["replacement"]?.value ?? "") \(it["rect"]?.value ?? "")")
             }
             if !r.note.isEmpty { print("    ! \(r.note)") }
@@ -170,6 +183,8 @@ enum MailProbe {
                 ["kind": r.kind, "title": r.title, "windowRect": r.windowRect,
                  "webAreaFound": r.webAreaFound, "staticTexts": r.staticTexts, "textAreas": r.textAreas,
                  "blocks": r.blocks, "visibleBlocks": r.visibleBlocks, "offscreenBlocks": r.offscreenBlocks,
+                 "skippedCjkBlocks": r.skippedCjkBlocks, "skippedCjkChars": r.skippedCjkChars,
+                 "englishBlocks": r.englishBlocks,
                  "chars": r.chars, "totalChars": r.totalChars, "itemCount": r.itemCount,
                  "rectsInsideWindow": r.rectsInsideWindow, "badRects": r.badRects, "note": r.note,
                  "items": r.items.map { $0.mapValues { $0.value } }]

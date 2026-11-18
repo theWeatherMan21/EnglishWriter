@@ -191,3 +191,14 @@ bash scripts/passive-selfcheck.sh
 
 `docs/manual-check.md`。只有两件事必须真人做：在原生 App 里真敲英文看划线、在 Mail 里真敲英文看划线。
 其余全部可自动化复跑（`scripts/ext-real-probe.sh`、`scripts/ext-logic-probe.sh`、`scripts/ci-test.sh`、`scripts/release.sh`）。
+
+### 踩过的坑（验收相关，别再踩第二次）
+
+- **Mail 的 bundle id 是小写 `com.apple.mail`**。按 `com.apple.Mail` 找进程会一直找不到，
+  等于之前所有「Mail 没验证」都是在找一个不存在的进程。
+- **探针模式必须在 stdout 上 `setvbuf(...,_IONBF,0)` 并跑完 `exit()`**：管道里 stdout 是块缓冲，
+  进程不退出日志全丢，看起来像「探针没跑」。
+- **Mail 窗口的 `AXWebArea` 是整个文档**（含列表几千行），屏幕外块的 `AXBoundsForRange`
+  返回的是滚动空间坐标（y 上千），按全文档扫会把它们误判成「矩形越界」→ 必须按窗口 bounds 只查可见块。
+- **命中 0 要能区分三种原因**：可见文本是中文（按设计跳过）/ 英文但本身无误 / 链路坏了。
+  探针现在分开输出中文块数、英文字数、命中数，别用一个 0 糊过去。
