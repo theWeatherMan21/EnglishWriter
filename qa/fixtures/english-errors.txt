@@ -1,0 +1,3 @@
+There is many reasons why we should sent the booking confirmation to the customer immediatly.
+
+In order to save time, we must make a decision today. Due to the fact that the vessel was delayed, the customer asked for an update.

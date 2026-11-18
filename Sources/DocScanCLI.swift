@@ -37,7 +37,7 @@ enum DocScanCLI {
         }
 
         let ns = text as NSString
-        print("  句子 \(res.sentenceCount) 句，跳过中文 \(res.skippedCJK) 句，命中 \(res.items.count) 条，耗时 \(Int(res.elapsed * 1000))ms")
+        print("  句子 \(res.sentenceCount) 句，跳过非英文 \(res.skippedCJK) 句，命中 \(res.items.count) 条，耗时 \(Int(res.elapsed * 1000))ms")
         for it in res.items.prefix(20) {
             let line = ns.substring(with: NSRange(location: it.start, length: it.length))
             print("    [\(it.type)] \(it.original) → \(it.replacement)（原句片段：\(line)）")

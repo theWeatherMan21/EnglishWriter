@@ -35,6 +35,10 @@ enum SpellCheck {
             if dict.contains(word.lowercased()) { continue }
             if guarded.contains(where: { NSIntersectionRange($0, r).length > 0 }) { continue }
             if isLikelyCode(word) { continue }                              // 全大写缩写 / 含数字
+            // 这个名字/词在别的语言里是对的 → 不是英文拼写错误（实案：Spedytor/Agencji/Jaroslaw/Terramar
+            // 被当成英文错字报给爹地，一封波兰语邮件刷出几百条红线）
+            if isValidInOtherLanguage(word) { continue }
+            if isLikelyProperNoun(word, at: r.location, in: ns) { continue }
 
             let guesses = checker.guesses(forWordRange: r, in: text, language: language,
                                           inSpellDocumentWithTag: 0) ?? []
@@ -53,5 +57,34 @@ enum SpellCheck {
         let letters = s.filter { $0.isLetter }
         if !letters.isEmpty, letters.allSatisfy({ $0.isUppercase }) { return true }
         return false
+    }
+
+    /// 在常见非英文语言里查这个词：任一语言认为它正确 → 丢弃（本地词典，零网络）
+    static func isValidInOtherLanguage(_ word: String) -> Bool {
+        let langs = ["pl", "de", "fr", "es", "it", "nl", "pt", "sv", "da"]
+        let checker = NSSpellChecker.shared
+        for lang in langs {
+            var wordLen = 0
+            let r = checker.checkSpelling(of: word, startingAt: 0, language: lang,
+                                         wrap: false, inSpellDocumentWithTag: 0, wordCount: &wordLen)
+            if r.location == NSNotFound { return true }   // 该语言词典里认得这个词
+        }
+        return false
+    }
+
+    /// 专有名词启发：句中首字母大写、且不是句首 → 大概率是人名/公司名/地名，不报拼写
+    static func isLikelyProperNoun(_ word: String, at loc: Int, in ns: NSString) -> Bool {
+        guard let first = word.unicodeScalars.first, CharacterSet.uppercaseLetters.contains(first) else { return false }
+        // 句首判定：往前找一个非空白字符，是句末标点或行首 → 句首，不算专有名词启发
+        var i = loc - 1
+        while i >= 0 {
+            let ch = ns.substring(with: NSRange(location: i, length: 1))
+            if ch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { i -= 1; continue }
+            if ".!?\n".contains(ch) { return false }
+            break
+        }
+        // 全大写缩写已经在上游过滤；这里只处理「首字母大写且词内还有小写」的形态
+        let hasLower = word.dropFirst().contains { $0.isLowercase }
+        return hasLower
     }
 }

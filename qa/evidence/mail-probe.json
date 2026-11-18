@@ -1,0 +1,39 @@
+{
+  "bundle" : "com.apple.mail",
+  "composePresent" : false,
+  "pid" : 87655,
+  "windowCount" : 1,
+  "windows" : [
+    {
+      "badRects" : [
+
+      ],
+      "blocks" : 0,
+      "chars" : 0,
+      "englishBlocks" : 0,
+      "itemCount" : 0,
+      "items" : [
+
+      ],
+      "kind" : "reading",
+      "langSkippedBlocks" : 0,
+      "note" : "这个窗口里没有 AXWebArea \/ AXTextArea",
+      "offscreenBlocks" : 0,
+      "rectsInsideWindow" : true,
+      "skippedCjkBlocks" : 0,
+      "skippedCjkChars" : 0,
+      "staticTexts" : 2268,
+      "textAreas" : 2,
+      "title" : "Poland – Network Management – 3,147 messages, 1 unread",
+      "totalChars" : 0,
+      "visibleBlocks" : 0,
+      "webAreaFound" : false,
+      "windowRect" : [
+        61,
+        30,
+        1859,
+        1050
+      ]
+    }
+  ]
+}

@@ -44,6 +44,7 @@ enum SelfTest {
         if wantAll || argv.contains("--diff") { diffTests() }
         if argv.contains("--m3") { m3Tests(); mergeTests(); webReplaceTests() }
         if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests(); routerTests(); RewriteTests.run(); CategoryPrefsTests.run() }
+        if wantAll || argv.contains("--lang") { languageGateTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -986,5 +987,42 @@ enum SelfTest {
                let f = try? JSONDecoder().decode(Fixture.self, from: d) { return f }
         }
         return nil
+    }
+}
+
+// MARK: 语言门控（11-18：波兰语邮件被报 410 条拼写错误的防线）
+extension SelfTest {
+    static func languageGateTests() {
+        struct Case { let text: String; let english: Bool; let why: String }
+        let cases: [Case] = [
+            .init(text: "There is many reasons why we should sent the booking confirmation immediatly.",
+                  english: true, why: "带错的英文必须照样检查"),
+            .init(text: "We met at the café near the port before the ETD.",
+                  english: true, why: "英文里偶发一个变音词不该整句跳过"),
+            .init(text: "Please confirm the FCL booking before the ETD, BKG-TEST-0001 stays unchanged.",
+                  english: true, why: "行业术语与单号不影响判定"),
+            .init(text: "Pozdrawiam / Best Regards, Spedytor / Forwarding Agent",
+                  english: false, why: "波兰语署名（实案原文）"),
+            .init(text: "Zgodnie z informacjami zawartymi w tej wiadomości prosimy o potwierdzenie",
+                  english: false, why: "整句波兰语"),
+            .init(text: "Agencji Celnych ostatnie zmiany danych oraz Terramar",
+                  english: false, why: "实案里被误报的那批词"),
+            .init(text: "Sehr geehrte Damen und Herren, wir bitten um Ihre Bestätigung",
+                  english: false, why: "德语"),
+            .init(text: "Nous vous remercions pour votre confirmation et restons à votre disposition",
+                  english: false, why: "法语"),
+            .init(text: "Cordiali saluti, gentile cliente, grazie per la conferma",
+                  english: false, why: "意大利语"),
+        ]
+        for c in cases {
+            let got = LanguageGate.isEnglish(c.text)
+            let ok = got == c.english
+            if ok { SelfTest.ok("lang: \(c.why)", "判英文=\(got)") } else { SelfTest.bad("lang: \(c.why)", "判英文=\(got) 期望 \(c.english)") }
+        }
+        // 误报泄漏判据
+        let (leak1, _) = LanguageGate.looksLikeForeignLeak(["Spedytor", "Agencji", "Celnych"])
+        if leak1 { SelfTest.ok("lang: 非 ASCII 错词判为泄漏") } else { SelfTest.bad("lang: 非 ASCII 错词判为泄漏", "应为 true") }
+        let (leak2, _) = LanguageGate.looksLikeForeignLeak(["immediatly", "recieve", "teh"])
+        if !leak2 { SelfTest.ok("lang: 纯 ASCII 错词不判泄漏") } else { SelfTest.bad("lang: 纯 ASCII 错词不判泄漏", "应为 false") }
     }
 }

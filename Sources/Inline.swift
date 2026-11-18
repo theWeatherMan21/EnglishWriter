@@ -352,7 +352,15 @@ final class InlineController {
                 // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
                 let t: String?
                 if WebText.isWebBody(el) {
-                    let joined = WebText.blocks(of: el).map(\.text).joined(separator: "\n")
+                    let blks = WebText.blocks(of: el)
+                    let joined = blks.map(\.text).joined(separator: "\n")
+                    // 轮询自己也要留证据：Web 正文到底读出几块、几个字（没声音时靠这行判断）
+                    self.emit(CheckEvent(kind: "web-poll", pid: self.lastFocusPid,
+                                         app: appName(self.lastFocusPid),
+                                         role: attrString(el, kAXRoleAttribute as String) ?? "",
+                                         textLen: (joined as NSString).length, sentenceLen: 0,
+                                         itemCount: blks.count, rectCount: 0,
+                                         elapsed: "-", err: "-", at: Date()))
                     t = joined.isEmpty ? nil : joined
                 } else {
                     t = AXInline.fullText(of: el)
@@ -550,9 +558,9 @@ final class InlineController {
         // 先把这次看到的文本记下：否则轮询每秒都认为「文本变了」，日志 1 秒刷一条（踩过）
         lastText = full
         // 语言门控：中文占比超阈值 → 一个请求都不发
-        if shouldSkipAsChinese(sentence) {
+        if !LanguageGate.isEnglish(sentence) {
             diag.skippedChinese += 1
-            emit(CheckEvent(kind: "skip-cjk", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+            emit(CheckEvent(kind: "skip-lang", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
                             textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
                             itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
             overlay.clear(); items = []
@@ -667,7 +675,7 @@ final class InlineController {
             for (bi, b) in blks.enumerated() {
                 let t = b.text
                 guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
-                if shouldSkipAsChinese(t) { continue }
+                if !LanguageGate.isEnglish(t) { continue }
                 // 整块就是签名行 → 不检查
                 let lowered = t.lowercased()
                 if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }

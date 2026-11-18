@@ -12,7 +12,7 @@ rm -rf build
 mkdir -p build
 
 swiftc -O -swift-version 5 Sources/*.swift -o "build/$NAME" \
-    -framework AppKit -framework SwiftUI -framework ApplicationServices
+    -framework AppKit -framework SwiftUI -framework ApplicationServices -framework NaturalLanguage
 
 APP="build/$NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

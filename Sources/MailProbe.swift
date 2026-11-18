@@ -35,6 +35,8 @@ enum MailProbe {
         var skippedCjkBlocks = 0
         var skippedCjkChars = 0
         var englishBlocks = 0
+        var langSkippedBlocks = 0
+        var langGuardRatio = 0.0
         var items: [[String: AnyEncodable]] = []
         var itemCount = 0
         var rectsInsideWindow = true
@@ -115,6 +117,7 @@ enum MailProbe {
             for b in blks {
                 let n = (b.text as NSString).length
                 if cjkRatio(b.text) >= 0.30 { r.skippedCjkBlocks += 1; r.skippedCjkChars += n }
+                else if !LanguageGate.isEnglish(b.text) { r.langSkippedBlocks += 1 }
                 else if n >= 8 { r.englishBlocks += 1 }
             }
             for b in blks.prefix(6) {
@@ -126,6 +129,8 @@ enum MailProbe {
             var count = 0
             for b in blks {
                 guard (b.text as NSString).length > 2 else { continue }
+                // 语言门控：非英文一个字都不查（波兰语邮件曾报出 410 条误报）
+                guard LanguageGate.isEnglish(b.text) else { continue }
                 let edits = DiffSanitize.consolidate(
                     SpellCheck.items(in: b.text) + StyleRules.apply(to: b.text), in: b.text)
                 for e in edits {
@@ -184,7 +189,7 @@ enum MailProbe {
                  "webAreaFound": r.webAreaFound, "staticTexts": r.staticTexts, "textAreas": r.textAreas,
                  "blocks": r.blocks, "visibleBlocks": r.visibleBlocks, "offscreenBlocks": r.offscreenBlocks,
                  "skippedCjkBlocks": r.skippedCjkBlocks, "skippedCjkChars": r.skippedCjkChars,
-                 "englishBlocks": r.englishBlocks,
+                 "englishBlocks": r.englishBlocks, "langSkippedBlocks": r.langSkippedBlocks,
                  "chars": r.chars, "totalChars": r.totalChars, "itemCount": r.itemCount,
                  "rectsInsideWindow": r.rectsInsideWindow, "badRects": r.badRects, "note": r.note,
                  "items": r.items.map { $0.mapValues { $0.value } }]
@@ -203,10 +208,16 @@ enum MailProbe {
         //   FAIL      = 取不到文本，或矩形越界
         let readOK = reports.contains { $0.chars > 0 && $0.rectsInsideWindow }
         let anyItems = reports.contains { $0.itemCount > 0 }
-        let verdict = readOK ? (anyItems ? "PASS" : "PARTIAL（链路通，命中共 0：当前可见文本为中文或本身无误）")
-                             : "FAIL（取不到可见文本，或矩形越界）"
+        // LANG-GUARD：命中的「错词」里非 ASCII 超 20% = 外语漏进英文通道，直接 FAIL
+        let allOriginals = reports.flatMap { $0.items.compactMap { $0["original"]?.value } }
+        let (leak, ratio) = LanguageGate.looksLikeForeignLeak(allOriginals)
+        if leak { print("  ! LANG-GUARD FAIL：命中词非 ASCII 占比 \(Int(ratio*100))% → 外语漏进英文通道") }
+        let verdict = readOK
+            ? (leak ? "FAIL（语言门控泄漏，命中词是非英文）"
+                    : (anyItems ? "PASS" : "PARTIAL（链路通，命中共 0：可见文本非英文或本身无误）"))
+            : "FAIL（取不到可见文本，或矩形越界）"
         print("RESULT: \(verdict)")
-        return readOK
+        return readOK && !leak
     }
 
     private static func isCompose(_ title: String) -> Bool {
