@@ -18,4 +18,11 @@ EW_OUT="$PWD/out" "$BIN" --selftest --m3 --settings
 echo "== 行内几何断言（真 NSTextView + AX 交叉校验）=="
 "$BIN" --demo-selfcheck
 
+echo "== 装机版 vs 仓库 build（旧则拦，别让爹地点到旧二进制）=="
+if [ -x "/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" ]; then
+    bash scripts/install-check.sh || { echo "装机版落后仓库 build：先 bash scripts/install.sh"; exit 1; }
+else
+    echo "（本机未安装，跳过；CI 机器不装 App 属正常）"
+fi
+
 echo "全部通过"
