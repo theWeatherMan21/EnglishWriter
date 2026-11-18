@@ -218,8 +218,17 @@ enum MailProbe {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 1.5)
         var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success else { return [] }
-        return (raw as? [AXUIElement]) ?? []
+        if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success,
+           let wins = raw as? [AXUIElement], !wins.isEmpty {
+            return wins
+        }
+        // Mail 写信窗口可能不在 kAXWindowsAttribute 里（实测：主窗口关掉只留 compose 时 windows=0）。
+        // 兜底：从 app 元素往下找 role=AXWindow 的节点，最多 4 层。
+        let found = descendants(appEl, depth: 4).filter { (str($0, kAXRoleAttribute) ?? "") == "AXWindow" }
+        if !found.isEmpty {
+            print("  ! kAXWindowsAttribute 为空，从子节点兜底找到 \(found.count) 个 AXWindow")
+        }
+        return found
     }
 
     private static func descendants(_ el: AXUIElement, depth: Int) -> [AXUIElement] {

@@ -20,14 +20,21 @@ esac
 WINDOW="${3:-60,60,960,660}"
 HOLD="${HOLD:-45}"
 APP="/Applications/Selfmade/英文写作助手.app"
+# 只杀带本脚本参数的探针实例（--realshot/--axcheck/…）；无参数的那个是爹地在用的，绝不许碰
 PK="Selfmade/英文写作助手.app/Contents/MacOS"
+kill_probes() {
+  pgrep -f "$PK" | while read -r p; do
+    ps -o args= -p "$p" | grep -q -- "--realshot\|--axcheck\|--axwatch\|--axaccept\|--passive\|--probe\|--docscan\|--live-" \
+      && kill -TERM "$p" 2>/dev/null
+  done
+}
 SHOT="$OUT/realshot-$TARGET.png"
 
 mkdir -p "$OUT"
 rm -f "$OUT/realshot-status.json"
 
-echo "== 1/5 收拾旧进程 =="
-pkill -f "$PK" 2>/dev/null
+echo "== 1/5 收拾旧探针进程（用户实例不碰）=="
+kill_probes
 sleep 1
 
 echo "== 2/5 起靶子（TARGET=${TARGET}）=="
@@ -70,7 +77,7 @@ for _ in $(seq 1 50); do
   [ -f "$OUT/realshot-status.json" ] && break
   sleep 0.5
 done
-[ -f "$OUT/realshot-status.json" ] || { echo "FAIL: App 没写出 status"; pkill -f "$PK"; exit 3; }
+[ -f "$OUT/realshot-status.json" ] || { echo "FAIL: App 没写出 status"; kill_probes; exit 3; }
 
 read -r RECT INFO <<<"$(/usr/bin/python3 - "$OUT/realshot-status.json" <<'PY'
 import json,sys
@@ -82,7 +89,7 @@ PY
 )"
 echo "   $INFO"
 echo "   window rect: $RECT"
-[ "$RECT" != "-" ] || { echo "FAIL: 拿不到窗口矩形"; pkill -f "$PK"; exit 4; }
+[ "$RECT" != "-" ] || { echo "FAIL: 拿不到窗口矩形"; kill_probes; exit 4; }
 
 echo "== 5/5 截窗口区域（下划线是独立浮窗，必须截屏幕）=="
 screencapture -x -R "$RECT" "$SHOT"
@@ -108,6 +115,6 @@ tell application "TextEdit"
 end tell
 EOF5
 fi
-pkill -f "$PK" 2>/dev/null
+kill_probes
 
 ls -la "$OUT/realshot-status.json" "$SHOT"

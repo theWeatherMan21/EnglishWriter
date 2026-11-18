@@ -348,8 +348,16 @@ final class InlineController {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.enabled, self.lastFocusPid > 0 else { return }
-                guard let el = AXInline.focusedElement(pid: self.lastFocusPid) ?? AXInline.biggestTextArea(pid: self.lastFocusPid),
-                      let t = AXInline.fullText(of: el) else { return }
+                guard let el = AXInline.focusedElement(pid: self.lastFocusPid) ?? AXInline.biggestTextArea(pid: self.lastFocusPid) else { return }
+                // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
+                let t: String?
+                if WebText.isWebBody(el) {
+                    let joined = WebText.blocks(of: el).map(\.text).joined(separator: "\n")
+                    t = joined.isEmpty ? nil : joined
+                } else {
+                    t = AXInline.fullText(of: el)
+                }
+                guard let t else { return }
                 if t != self.lastText { self.scheduleCheck(delay: 0.2) }
             }
         }
@@ -508,6 +516,15 @@ final class InlineController {
                 diag.fallbackTextArea += 1
             }
         }
+        // WebKit 正文（Mail / Slack / 网页）：AXValue 通常读不到（实测 Mail 写信窗口 len=0），
+        // 必须在「full 为空」判定之前先走文本块通道，否则永远停在 no-text、一个字都不检查。
+        if WebText.isWebBody(el) {
+            currentElement = el
+            currentPid = pid
+            checkWeb(pid: pid, body: el)
+            return
+        }
+
         if full == nil {
             emit(CheckEvent(kind: "no-text", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-",
