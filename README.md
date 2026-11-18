@@ -145,6 +145,14 @@ open -a build/英文写作助手.app --args --axwatch out/ --seconds 120
 
 改写慢不是实现问题，是模型（deepseek-flash / v4-pro 都带推理链）。要更快就换非推理模型。
 
+## 接模型接口的坑（必须知道）
+
+- **opencode.ai/zen 端点必须带 `x-opencode-session` 头**（任意稳定字符串）。不带直接 `MissingSessionID`，
+  一个模型都调不到。本项目会自动生成并存一个 `ew-<uuid>` 到 UserDefaults 后自动带上。
+- `thinking:{"type":"disabled"}` 该端点**不认**，会回 `invalid_request_error`；要关推理用 `reasoning_effort:"none"`。
+- opencode 这条通道给我们的实测：`gpt-6-luna` + `reasoning_effort:none` 改写 4.5–6.2s；
+  `deepseek-flash` 同条件 2.3–2.5s（更快但长句改写质量略粗）；`deepseek-v4-pro` 46.5s（别用）。
+
 ## 隐私
 
 - 默认只用本机 LanguageTool：文本不出本机。

@@ -1,18 +1,15 @@
 
 --- 真模型·改写建议（--live-rewrite）---
-  endpoint=https://api.deepseek.com/v1 model=deepseek-flash labels=更简洁/更正式/更清晰
-  耗时 2453ms；原始响应 1275 字
-  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余连接词，句子更紧凑。","edits":[{"start":7,"length":28,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"用动词decide替代make a decision in order to，减少字数。"},{"start":36,"length":4,"original":"and ","replacement":"","type":"style","reason":"删去并列连词，两个分句用逗号衔接更简洁。"}]},{"label":"更正式","note":"改用正式书面表达，语气更庄重。","edits":[{"start":0,"leng
-  · [更简洁] 2 条 → We must decide to save time, the FCL booking BKG-TEST-0001 is still pending.
-  · [更正式] 3 条 → It is necessary for us to make a decision so as to save time, and the FCL booking BKG-TEST-0001 is currently pending.
-  · [更清晰] 3 条 → We must decide on this matter in order to save time, meanwhile, the FCL booking BKG-TEST-0001 is still currently pending.
+  endpoint=https://opencode.ai/zen/go/v1 model=gpt-6-luna labels=更简洁/更正式/更清晰
+  耗时 5601ms；原始响应 728 字
+  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余表达，使句子更精炼。","edits":[{"start":9,"length":31,"original":"make a decision in order to","replacement":"decide to","type":"style","reason":"删去冗余措辞，保留节省时间的目的。"}]},{"label":"更正式","note":"调整措辞，使表达更符合正式商务语境。","edits":[{"start":9,"length":20,"original":"make a decision","replacement":"reach a decision","type":"style","reason":"使用较正式的商务表达，含义保持不变。"}]},{"label":"更清晰",
+  · [更简洁] 1 条 → We must decide to save time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更正式] 1 条 → We must reach a decision in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更清晰] 1 条 → We must make a decision to save time; meanwhile, the FCL booking BKG-TEST-0001 remains pending.
 RESULT: PASS（3 个候选）
 
 --- 真模型·语气（--live-tone）---
-  endpoint=https://api.deepseek.com/v1 model=deepseek-flash labels=更正式/更简洁/更直接
-  耗时 2516ms；原始响应 1324 字
-  原始片段：{"candidates":[{"label":"更正式","note":"使用正式书面表达，提升商务文书的严谨性。","edits":[{"start":0,"length":4,"original":"We must","replacement":"It is necessary for us to","type":"style","reason":"将口语化的must改为正式书面表达"},{"start":22,"length":2,"original":"in","replacement":"with a view to","type":"style","reason":"使用更正式的书面连接表达"},{"start":25,"length":4,"original":"save","replacement":"conserve","type":"style","reason":"
-  · [更正式] 3 条 → It is necessary for us to make a decision with a view to order to conserve time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更简洁] 4 条 → We must make a decision to order to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更直接] 4 条 → We must make a decision to order to save time, and the FCL booking BKG-TEST-0001 is still pending.
-RESULT: PASS（3 个候选）
+  endpoint=https://opencode.ai/zen/go/v1 model=gpt-6-luna labels=更正式/更简洁/更直接
+  耗时 13278ms；原始响应 4308 字
+  原始片段：{"candidates":[{"label":"更正式","note":"调整措辞以提升正式度，保留原意及订舱编号。","edits":[{"start":9,"length":23,"original":"make a decision in order to","replacement":"make a decision to","type":"style","reason":"精简并使表达更正式自然。"}]},{"label":"更简洁","note":"压缩冗余表达，保留时间要求和订舱状态。","edits":[{"start":9,"length":23,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"用更简洁的动词表达作出决定的意思。"}
+FAIL  解析出 0 个候选（原始响应见上）

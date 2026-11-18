@@ -23,6 +23,9 @@ final class Diag: ObservableObject {
 
 @MainActor
 final class AppModel: ObservableObject {
+    /// 诊断窗口要能打开设置窗口，需要一个 model 引用（启动时注入，不新造实例）
+    static weak var diagRef: AppModel?
+
     enum Phase: Equatable {
         case idle
         case notConfigured

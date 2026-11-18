@@ -78,6 +78,7 @@ enum Rewrite {
         if CategoryPrefs.fastMode() {
             body["reasoning_effort"] = "none"   // 实测 18.3s → ~2s，候选质量不掉
         }
+        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 1500 }
         return body
     }
 
@@ -139,6 +140,9 @@ enum Rewrite {
         req.setValue("Bearer \(config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
                      forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
+            req.setValue(v, forHTTPHeaderField: k)
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(segment: segment, config: config, labels: labels))
         let data: Data, resp: URLResponse
         do {
@@ -166,6 +170,9 @@ enum Rewrite {
         req.setValue("Bearer \(config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
                      forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
+            req.setValue(v, forHTTPHeaderField: k)
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(segment: segment, config: config, labels: labels))
 
         let data: Data, resp: URLResponse

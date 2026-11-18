@@ -57,7 +57,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var rewritePending: (cands: [RewriteCandidate], segment: String, segStart: Int)?
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        // ★ 2026-11-18：常驻日志 + 检查事件落盘（读者是自检 cron / 婉宜，不是用户）。
+        //   格式固定 `YYYY-MM-DD HH:mm:ss LEVEL tag key=value`，selfcheck 一条 normal 全覆盖。
+        AppLog.info("boot", "pid=\(getpid()) args=\(CommandLine.arguments.dropFirst().joined(separator: " "))")
+        InlineController.shared.onCheck = { e in
+            let bad = e.kind.hasSuffix("-fail") || (e.err != "-" && !e.err.isEmpty)
+            AppLog.write(bad ? "ERROR" : "INFO", "check",
+                         "kind=\(e.kind) app=\(e.app) pid=\(e.pid) textLen=\(e.textLen) items=\(e.itemCount) rects=\(e.rectCount) elapsed=\(e.elapsed) err=\(e.err)")
+        }
         model = AppModel()
+        AppModel.diagRef = model
         AXTarget.shared.startTracking()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -82,6 +91,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "跑探针（验 Mail 可读/可写）", action: #selector(probeAction), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "行内渲染自测…", action: #selector(demoAction), keyEquivalent: ""))
+        // ★ 2026-11-18 爹地红线：诊断窗口能力保留，但 release 常驻 UI 不出现入口。
+        //   只有 EW_DEBUG=1 才挂菜单项（排障走命令行/日志，不给用户按钮）。
+        if SettingsView.debugUI {
+            menu.addItem(NSMenuItem(title: "诊断…", action: #selector(diagAction), keyEquivalent: "d"))
+        }
         menu.addItem(NSMenuItem(title: "设置…", action: #selector(settingsAction), keyEquivalent: ","))
         if !AXPermission.granted() {
             menu.addItem(NSMenuItem(title: "授辅助功能权限…", action: #selector(permissionAction), keyEquivalent: ""))
@@ -200,6 +214,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if model.canUndo { model.undo() }
         else { model.showPanel(phase: .info("没有可撤销的替换（只记录本次运行内的最后一次）")) }
     }
+
+    @MainActor @objc private func diagAction() { DiagWindowController.shared.show() }
 
     @MainActor @objc private func settingsAction() { SettingsWindowController.shared.show(model: model) }
 

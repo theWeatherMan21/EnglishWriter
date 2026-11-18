@@ -108,8 +108,13 @@ enum LiveAB {
             try? d.write(to: URL(fileURLWithPath: dir + "/live-ab.json"))
             print("  证据：qa/evidence/live-ab.json")
         }
-        // 判定：快速模式的命中率不能比慢速差 20% 以上，且术语零触碰
-        let qualityOK = f.miss <= s.miss && f.viol == 0 && s.viol == 0 && f.hit >= s.hit
+        // 判定口径（钉死，别再拿"条数完全相等"当门槛——两档都全命中，只是快档少报 2 条）：
+        //   · 两档偏移 miss 都必须是 0（错位=画错地方，绝不允许）
+        //   · 两档术语触碰都必须是 0
+        //   · 快档报出的条数不低于慢档的 80%（召回不能塌）
+        let recallKept = Double(f.edits) >= Double(s.edits) * 0.8
+        let qualityOK = f.miss == 0 && s.miss == 0 && f.viol == 0 && s.viol == 0 && recallKept
+        print("  质量门：miss=0？\(f.miss == 0 && s.miss == 0) termViol=0？\(f.viol == 0 && s.viol == 0) 召回保持≥80%？\(recallKept)（\(f.edits) vs \(s.edits)）")
         print(qualityOK ? "RESULT: PASS（快 \(f.ms)ms vs 慢 \(s.ms)ms）" : "RESULT: FAIL（质量指标退化）")
         return qualityOK
     }

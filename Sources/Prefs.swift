@@ -28,6 +28,22 @@ enum EnginePrefs {
         s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: 模型端点附加头
+    //
+    // opencode.ai/zen 端点不加 x-opencode-session 会直接回 MissingSessionID（五个模型全灭，11-18 实测）。
+    // 这里生成一个稳定但一次性的 session 串，存 UserDefaults，不预设任何业务值。
+    static func modelSessionID(_ d: UserDefaults = SettingsStore.store) -> String {
+        if let v = d.string(forKey: "llm.session"), !v.isEmpty { return v }
+        let v = "ew-" + UUID().uuidString.lowercased()
+        d.set(v, forKey: "llm.session")
+        return v
+    }
+
+    static func extraModelHeaders(baseURL: String, _ d: UserDefaults = SettingsStore.store) -> [String: String] {
+        guard baseURL.lowercased().contains("opencode") else { return [:] }
+        return ["x-opencode-session": modelSessionID(d)]
+    }
+
     // MARK: 本地 LanguageTool 开关（默认关）
     //
     // 理由（2026-11-18 实测）：LT 是 JVM，Xmx 从 1g 砍到 256m，RSS 仍 368MB；

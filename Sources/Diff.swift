@@ -196,6 +196,9 @@ enum InlineEngine {
         req.timeoutInterval = timeout
         req.setValue("Bearer \(config.apiKey.trimmed)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
+            req.setValue(v, forHTTPHeaderField: k)
+        }
         var body: [String: Any] = [
             "model": config.model.trimmed,
             "temperature": 0,
