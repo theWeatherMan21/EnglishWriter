@@ -26,6 +26,14 @@ enum Rewrite {
 
     static let defaultLabels = ["更简洁", "更正式", "更清晰"]
 
+    /// 语气档（Grammarly 的 tone）：本质是同一管道的另一组 label
+    enum Tone: String, CaseIterable {
+        case formal = "更正式"
+        case concise = "更简洁"
+        case direct = "更直接"
+    }
+    static let toneLabels = Tone.allCases.map(\.rawValue)
+
     /// 入口是否可用：模型三件套齐全才显示
     static func isAvailable(_ cfg: LLMConfig = SettingsStore.load()) -> Bool { cfg.isComplete }
 
@@ -115,6 +123,33 @@ enum Rewrite {
 
 
     // MARK: 调用（只在这里碰网络；解析/校验全在纯函数里，便于断言）
+
+    static func suggestDetailed(segment: String, config: LLMConfig,
+                                labels: [String] = defaultLabels,
+                                timeout: TimeInterval = 20,
+                                session: URLSession = .shared) async throws -> (raw: String, candidates: [RewriteCandidate]) {
+        guard config.isComplete, let url = config.endpoint else { throw ReviewFailure.notConfigured }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("Bearer \(config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+                     forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(segment: segment, config: config, labels: labels))
+        let data: Data, resp: URLResponse
+        do {
+            (data, resp) = try await session.data(for: req)
+        } catch let e as URLError where e.code == .timedOut {
+            throw ReviewFailure.timeout
+        } catch {
+            throw ReviewFailure.network((error as NSError).localizedDescription)
+        }
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200 else { throw ReviewFailure.http(code, String(data: data, encoding: .utf8) ?? "") }
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let raw = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String ?? ""
+        return (raw, parse(raw, segment: segment))
+    }
 
     static func suggest(segment: String, config: LLMConfig,
                         labels: [String] = defaultLabels,

@@ -179,6 +179,19 @@ if argv.contains("--selftest") {
     exit(SelfTest.run(argv))
 }
 
+// 真模型改写 / 语气（--live-rewrite / --live-tone）：key 只走环境变量
+if argv.contains("--live-rewrite") || argv.contains("--live-tone") {
+    var ok = true
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        if argv.contains("--live-rewrite") { ok = await LiveRewriteTests.runRewrite() && ok }
+        if argv.contains("--live-tone") { ok = await LiveRewriteTests.runTone() && ok }
+        sem.signal()
+    }
+    sem.wait()
+    exit(ok ? 0 : 1)
+}
+
 // M1 渲染自测台：--demo / --demo-selfcheck / --ax-selftest / --snapshot <path> / --shot <path>
 if argv.contains("--demo") || argv.contains("--demo-selfcheck")
     || argv.contains("--ax-selftest") || argv.contains("--snapshot") {
