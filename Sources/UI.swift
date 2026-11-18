@@ -180,6 +180,7 @@ enum SettingsStore {
     static let kKey = "llm.apiKey"
     static let kModel = "llm.model"
     static let kLTBase = "lt.baseURL"
+    static let kLTEnabled = "lt.enabled"   // 默认关：LT 是 JVM，常驻 ~370MB
     static let kLTLanguage = "lt.language"
     static let kExcludedApps = "exclude.apps"
 

@@ -49,7 +49,13 @@ struct SettingsView: View {
                 }
 
                 Divider()
-                Text("本地引擎（LanguageTool）").font(.system(size: 13, weight: .semibold))
+                Text("本地引擎（LanguageTool，可关）").font(.system(size: 13, weight: .semibold))
+                Toggle(isOn: Binding(get: { EnginePrefs.ltEnabled() },
+                                     set: { EnginePrefs.setLTEnabled($0) })) {
+                    Text("启用本地 LanguageTool（语法检查，常驻约 370MB）").font(.system(size: 12))
+                }
+                Text("关掉后只剩 App 本体约 61MB：拼写走系统词典、清晰度/风格走本地规则；语法需要填上面的模型接口。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("引擎地址").font(.system(size: 12, weight: .medium))
                     TextField("", text: $prefs.ltBase)

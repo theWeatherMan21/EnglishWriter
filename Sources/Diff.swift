@@ -164,7 +164,13 @@ func systemPromptV2() -> String {
     Rules:
     1. One edit per distinct error. Do not rewrite whole sentences; do not merge two unrelated errors into one edit.
     2. start/length are UTF-16 offsets measured in the ORIGINAL text. original must be the exact substring at that range.
-    3. Fix real spelling, grammar, article/preposition/agreement errors. No rephrasing, no shortening, no translation.
+    3. Cover all four types, each with the right "type":
+       - spelling: wrong word / typo
+       - grammar: agreement, articles, prepositions, tense, verb form
+       - clarity: wordy or roundabout phrasing that can be shortened WITHOUT changing meaning
+         (e.g. "in order to" -> "to", "due to the fact that" -> "because")
+       - style: weak / informal / redundant wording (e.g. "very unique" -> "unique", "a lot of" -> "many")
+       Keep every edit minimal: only the differing span, never a whole-sentence rewrite. No translation.
     4. Industry terms must stay byte-for-byte unchanged: \(terms)
     5. If a sentence has no error, output no edit for it.
     6. No error at all -> {"edits":[]}.

@@ -173,8 +173,23 @@ final class LocalAPI {
         if ratio > 0.40 { return ["edits": [], "engine": "skipped-cjk", "skipped": "cjk", "elapsedMs": 0] }
 
         let t0 = Date()
-        guard await LocalEngine.available() else {
-            return ["edits": [], "engine": "none", "error": "local engine offline", "elapsedMs": 0]
+        let ltOn = EnginePrefs.ltEnabled()
+        var ltOK = ltOn ? await LocalEngine.available() : false
+        if ltOn && !ltOK {
+            // 可能是刚被拉起来还没就绪；探活缓存 60s 会把「未就绪」当成「不可用」，
+            // 这里强制复探一次（LT 热态 300ms 内返回），免得白丢一轮语法
+            LocalEngineBootstrap.ensureRunningThrottled()
+            ltOK = await LocalEngine.available(force: true)
+        }
+        if ltOn && ltOK {
+            // 走本地 LT（下面继续）
+        } else {
+            // 没开 LT：只返回零进程能做的（拼写 + 清晰度/风格），并如实标注
+            let items = DiffSanitize.consolidate(SpellCheck.items(in: text) + StyleRules.apply(to: text), in: text)
+            return ["edits": items.map { ["start": $0.start, "length": $0.length, "original": $0.original,
+                                          "replacement": $0.replacement, "type": $0.type, "reason": $0.reason] },
+                    "engine": ltOn ? "lt-offline" : "local-only",
+                    "elapsedMs": Int(Date().timeIntervalSince(t0) * 1000)]
         }
         do {
             let out = try await LocalEngine.review(text: text, language: language)

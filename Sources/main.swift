@@ -102,7 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 常驻输入感知（M2）：AXObserver + 800ms 去抖；无授权时静默降级
         if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1" {
-            LocalEngineBootstrap.ensureRunning()     // 本地引擎没起就悄悄拉起来（不弹窗）
+            if EnginePrefs.ltEnabled() {
+                LocalEngineBootstrap.ensureRunning()   // 只在开关打开时才拉 JVM（默认关，省 368MB）
+            }
             InlineController.shared.start()
         }
 

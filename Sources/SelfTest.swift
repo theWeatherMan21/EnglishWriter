@@ -43,7 +43,7 @@ enum SelfTest {
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
         if argv.contains("--m3") { m3Tests(); mergeTests(); webReplaceTests() }
-        if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests() }
+        if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests(); routerTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -550,6 +550,35 @@ enum SelfTest {
         if !items.isEmpty, sorted, noOverlap {
             ok("规则·多命中不重叠", "\(items.count) 条，升序且不重叠")
         } else { bad("规则·多命中不重叠", "count=\(items.count) sorted=\(sorted) noOverlap=\(noOverlap)") }
+    }
+
+    // MARK: 引擎路由（四类由三条通道拼出来）
+    static func routerTests() {
+        print("\n--- 引擎路由 ---")
+        let cases: [(Bool, Bool, Bool, String)] = [
+            (true,  true,  false, "localLanguageTool"),
+            (true,  false, true,  "remoteModel"),
+            (true,  false, false, "none"),
+            (false, true,  true,  "remoteModel"),   // LT 关着：即使探活能得到，也不该用它
+            (false, false, false, "none"),
+            (false, false, true,  "remoteModel"),
+        ]
+        for (ltOn, ltOK, model, want) in cases {
+            let got = EngineRouter.choose(ltEnabled: ltOn, ltAvailable: ltOK, modelConfigured: model)
+            if got.rawValue == want {
+                ok("路由·ltOn=\(ltOn) ltOK=\(ltOK) model=\(model)", want)
+            } else {
+                bad("路由·ltOn=\(ltOn) ltOK=\(ltOK) model=\(model)", "得到 \(got.rawValue)，期望 \(want)")
+            }
+        }
+        // 提示词必须点明四类，否则模型只出拼写/语法
+        let prompt = systemPromptV2()
+        let four = ["spelling", "grammar", "clarity", "style"].allSatisfy { prompt.contains($0) }
+        if four { ok("提示词·四类齐", "spelling/grammar/clarity/style 都在提示词里") }
+        else { bad("提示词·四类齐", "提示词缺类型") }
+        if prompt.contains("in order to") && prompt.contains("very unique") {
+            ok("提示词·给了 clarity/style 例子", "模型有可照的样例")
+        } else { bad("提示词·给了 clarity/style 例子", "缺例子") }
     }
 
     // MARK: 系统拼写通道（NSSpellChecker，零进程）

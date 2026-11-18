@@ -259,8 +259,9 @@ final class InlineController {
         var lastError = "-"
         var lastElapsed = "-"
         var lastRectCount = 0
+        var engineChoice = "语法：未定"
         var description: String {
-            "checks=\(checks) requests=\(requests) cjkSkip=\(skippedChinese) dedupe=\(dedupedHits) fallback=\(fallbackTextArea) rects=\(lastRectCount) elapsed=\(lastElapsed) err=\(lastError)"
+            "checks=\(checks) requests=\(requests) cjkSkip=\(skippedChinese) dedupe=\(dedupedHits) fallback=\(fallbackTextArea) rects=\(lastRectCount) elapsed=\(lastElapsed) err=\(lastError) | \(engineChoice)"
         }
     }
 
@@ -491,9 +492,17 @@ final class InlineController {
         // 引擎选择：本地 LanguageTool 在线就优先用它（毫秒级、零成本、不出网）；
         // 不可用且用户填了模型三件套 → 走 OpenAI 兼容逐条 diff；两者都没有 → Mock（自测路径）
         Task { [weak self] in
-            let ltOK = await LocalEngine.available()
-            if !ltOK { LocalEngineBootstrap.ensureRunningThrottled() }   // 闲置退出后按需拉回（节流 120s）
-            if ltOK {
+            // 路由：LT 开关（默认关，省 368MB）优先，其次模型接口，都没有就只出拼写/清晰度/风格
+            let ltOn = EnginePrefs.ltEnabled()
+            var ltOK = ltOn ? await LocalEngine.available() : false
+            if ltOn && !ltOK {
+                // 探活缓存 60s：可能刚拉起未就绪就被判死 → 节流拉一次 + 强制复探
+                LocalEngineBootstrap.ensureRunningThrottled()
+                ltOK = await LocalEngine.available(force: true)
+            }
+            let choice = EngineRouter.choose(ltEnabled: ltOn, ltAvailable: ltOK, modelConfigured: cfg.isComplete)
+            await MainActor.run { self?.diag.engineChoice = EngineRouter.describe(choice) }
+            if choice == .localLanguageTool {
                 do {
                     let out = try await LocalEngine.review(text: sentence, language: EnginePrefs.language())
                     await MainActor.run {
@@ -509,6 +518,7 @@ final class InlineController {
                 }
             }
             guard cfg.isComplete else {
+                await MainActor.run { self?.diag.lastError = "只启用本地：拼写/清晰度/风格（语法需打开 LT 或填模型接口）" }
                 if ProcessInfo.processInfo.environment["EW_MOCK_ENGINE"] == "1" {
                     await MainActor.run {
                         self?.apply(items: MockDiff.items(for: full), sentenceRange: sentenceRange, element: el, pid: pid)

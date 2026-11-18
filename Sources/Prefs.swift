@@ -28,6 +28,18 @@ enum EnginePrefs {
         s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: 本地 LanguageTool 开关（默认关）
+    //
+    // 理由（2026-11-18 实测）：LT 是 JVM，Xmx 从 1g 砍到 256m，RSS 仍 368MB；
+    // 关掉它就只剩 App 本体 61MB，拼写走 NSSpellChecker、清晰度/风格走本地规则、语法走模型接口。
+    static func ltEnabled(_ d: UserDefaults = SettingsStore.store) -> Bool {
+        d.bool(forKey: SettingsStore.kLTEnabled)
+    }
+
+    static func setLTEnabled(_ on: Bool, _ d: UserDefaults = SettingsStore.store) {
+        d.set(on, forKey: SettingsStore.kLTEnabled)
+    }
+
     // MARK: 本地引擎地址
 
     static func ltBaseURL(_ d: UserDefaults = SettingsStore.store) -> String {
