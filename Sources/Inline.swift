@@ -266,7 +266,10 @@ final class InlineController {
     /// 外部注册的观察者（--passive 用）。默认 nil = 零开销。
     var onCheck: ((CheckEvent) -> Void)?
 
-    private func emit(_ e: CheckEvent) { onCheck?(e) }
+    private func emit(_ e: CheckEvent) {
+        onCheck?(e)
+        CheckLog.append(e)      // 常驻落盘：爹地「打了没反应」时，我能拿事实说话
+    }
 
     struct InlineDiag: CustomStringConvertible {
         var checks = 0
@@ -527,6 +530,8 @@ final class InlineController {
         guard sentence.trimmingCharacters(in: .whitespacesAndNewlines).count > 2 else {
             overlay.clear(); items = []; return
         }
+        // 先把这次看到的文本记下：否则轮询每秒都认为「文本变了」，日志 1 秒刷一条（踩过）
+        lastText = full
         // 语言门控：中文占比超阈值 → 一个请求都不发
         if shouldSkipAsChinese(sentence) {
             diag.skippedChinese += 1

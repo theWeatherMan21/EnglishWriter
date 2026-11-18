@@ -202,3 +202,6 @@ bash scripts/passive-selfcheck.sh
   返回的是滚动空间坐标（y 上千），按全文档扫会把它们误判成「矩形越界」→ 必须按窗口 bounds 只查可见块。
 - **命中 0 要能区分三种原因**：可见文本是中文（按设计跳过）/ 英文但本身无误 / 链路坏了。
   探针现在分开输出中文块数、英文字数、命中数，别用一个 0 糊过去。
+- **常驻检查日志**：`~/Library/Application Support/EnglishWriter/check-log.jsonl`
+  每次 attach / skip-cjk / no-text / check / render 落一行（app、role、文本长度、命中数、矩形数、耗时、错误）。
+  用户报「打了没反应」时先读它——里面能看出是没挂上元素、读到 0 字、还是中文被跳过。单文件超 5MB 自动轮转。
