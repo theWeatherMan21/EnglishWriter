@@ -214,7 +214,7 @@ final class InlineController {
     /// 最近一次检查的落点：卡片接受/忽略要往这里写回
     private(set) var currentElement: AXUIElement?
     private(set) var currentPid: pid_t = 0
-    private var currentSentenceRange: NSRange = NSRange(location: 0, length: 0)
+    private(set) var currentSentenceRange: NSRange = NSRange(location: 0, length: 0)
     /// Web 正文的文本块 + items[i] 属于哪个块（-1 = 原生输入框，偏移是全文的）
     private(set) var blocks: [WebText.Block] = []
     private(set) var itemBlock: [Int] = []
@@ -286,6 +286,17 @@ final class InlineController {
             lastFocusPid = front.processIdentifier
             attachObserver(pid: front.processIdentifier)
         }
+    }
+
+    /// 改写建议：把候选的逐条 diff 当作本次条目（不刷新 UI、不重查）
+    func adoptForRewrite(_ newItems: [DiffItem]) {
+        items = newItems
+        itemBlock = newItems.map { _ in -1 }
+    }
+
+    /// 改写建议：留一个「整段」撤销快照，回滚仍走 undoLastAccept()
+    func setUndoSnapshot(_ item: DiffItem, element: AXUIElement?) {
+        lastAccept = (item, -1, element)
     }
 
     /// 被动/验收模式用：onCheck 装好之后再补挂一次前台 App
