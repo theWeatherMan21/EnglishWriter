@@ -101,6 +101,31 @@ struct SettingsView: View {
                 }
 
                 Divider()
+                Text("检查范围").font(.system(size: 13, weight: .semibold))
+                HStack(spacing: 14) {
+                    ForEach(CategoryPrefs.allTypes, id: \.self) { t in
+                        Toggle(isOn: Binding(get: { CategoryPrefs.isEnabled(t) },
+                                             set: { on in
+                                                 var s = CategoryPrefs.enabledTypes()
+                                                 if on { s.insert(t) } else { s.remove(t) }
+                                                 CategoryPrefs.setEnabledTypes(s)
+                                             })) {
+                            Text(label(t)).font(.system(size: 12))
+                        }.toggleStyle(.checkbox)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Text("敏感度").font(.system(size: 12, weight: .medium))
+                    Picker("", selection: Binding(get: { CategoryPrefs.sensitivity() },
+                                                 set: { CategoryPrefs.setSensitivity($0) })) {
+                        ForEach(Sensitivity.allCases, id: \.self) { s in
+                            Text(s.rawValue).tag(s)
+                        }
+                    }.pickerStyle(.segmented).frame(width: 240)
+                    Text(CategoryPrefs.sensitivity().note).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+
+                Divider()
                 Text("个人词典（自己加的词一律不报）").font(.system(size: 13, weight: .semibold))
                 HStack(spacing: 8) {
                     TextField("", text: $prefs.newWord)
@@ -160,6 +185,16 @@ struct SettingsView: View {
             .padding(18)
         }
         .frame(width: 560, height: 640)
+    }
+
+    private func label(_ t: String) -> String {
+        switch t {
+        case "spelling": return "拼写"
+        case "grammar": return "语法"
+        case "clarity": return "清晰度"
+        case "style": return "风格"
+        default: return t
+        }
     }
 
     private func field(_ title: String, text: Binding<String>, hint: String) -> some View {

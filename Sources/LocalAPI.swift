@@ -185,7 +185,8 @@ final class LocalAPI {
             // 走本地 LT（下面继续）
         } else {
             // 没开 LT：只返回零进程能做的（拼写 + 清晰度/风格），并如实标注
-            let items = DiffSanitize.consolidate(SpellCheck.items(in: text) + StyleRules.apply(to: text), in: text)
+            let items = CategoryPrefs.filterForDisplay(
+                DiffSanitize.consolidate(SpellCheck.items(in: text) + StyleRules.apply(to: text), in: text))
             return ["edits": items.map { ["start": $0.start, "length": $0.length, "original": $0.original,
                                           "replacement": $0.replacement, "type": $0.type, "reason": $0.reason] },
                     "engine": ltOn ? "lt-offline" : "local-only",
@@ -194,7 +195,8 @@ final class LocalAPI {
         do {
             let out = try await LocalEngine.review(text: text, language: language)
             // 四类齐：LT（拼写/语法）+ 本地规则（清晰度/风格），统一收口
-            let merged = DiffSanitize.consolidate(out.items + StyleRules.apply(to: text), in: text)
+            let merged = CategoryPrefs.filterForDisplay(
+                DiffSanitize.consolidate(out.items + StyleRules.apply(to: text), in: text))
             let edits = merged.map { it -> [String: Any] in
                 ["start": it.start, "length": it.length, "original": it.original,
                  "replacement": it.replacement, "type": it.type, "reason": it.reason]
