@@ -477,6 +477,11 @@ final class InlineController {
 
         diag.checks += 1
         lastText = full
+        // 立即出「零进程」结果：系统词典拼写 + 本地 clarity/style 规则（毫秒级、不依赖 LT 是否在跑）
+        let instant = DiffSanitize.consolidate(SpellCheck.items(in: sentence) + StyleRules.apply(to: sentence), in: sentence)
+        if !instant.isEmpty {
+            apply(items: shift(instant, by: sentenceRange.location), sentenceRange: sentenceRange, element: el, pid: pid)
+        }
         emit(CheckEvent(kind: "check", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
                         textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
                         itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
@@ -487,6 +492,7 @@ final class InlineController {
         // 不可用且用户填了模型三件套 → 走 OpenAI 兼容逐条 diff；两者都没有 → Mock（自测路径）
         Task { [weak self] in
             let ltOK = await LocalEngine.available()
+            if !ltOK { LocalEngineBootstrap.ensureRunningThrottled() }   // 闲置退出后按需拉回（节流 120s）
             if ltOK {
                 do {
                     let out = try await LocalEngine.review(text: sentence, language: EnginePrefs.language())
@@ -556,6 +562,7 @@ final class InlineController {
         Task { [weak self] in
             guard let self else { return }
             let ltOK = await LocalEngine.available()
+            if !ltOK { LocalEngineBootstrap.ensureRunningThrottled() }   // 闲置退出后按需拉回（节流 120s）
             var all: [DiffItem] = []
             var map: [Int] = []
             var firstError: String?

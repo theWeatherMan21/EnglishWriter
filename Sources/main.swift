@@ -13,6 +13,15 @@ enum LocalEngineBootstrap {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    private static var lastSpawn: Date = .distantPast
+
+    /// 节流版：闲置退出之后用户继续打字时自动把 LT 拉回来（120s 内最多一次，避免反复起 JVM）
+    static func ensureRunningThrottled() {
+        guard Date().timeIntervalSince(lastSpawn) > 120 else { return }
+        lastSpawn = Date()
+        ensureRunning()
+    }
+
     /// 已经在跑就什么都不做；没装也不打扰用户（回落模型接口）
     static func ensureRunning() {
         Task.detached {
@@ -87,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 本机 HTTP 接口（给浏览器扩展用）：只绑 127.0.0.1 + token 鉴权
         LocalAPI.shared.start()
+
+        // LT 是 JVM（常驻 368MB）：闲置 10 分钟就让它退出，下次检查再按需拉起
+        LocalEngine.startIdleWatchdog()
 
         // 常驻输入感知（M2）：AXObserver + 800ms 去抖；无授权时静默降级
         if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1" {

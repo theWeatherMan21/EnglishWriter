@@ -111,6 +111,56 @@ enum LocalEngine {
 
     private static var lastProbe: (ok: Bool, at: Date) = (false, .distantPast)
 
+    // MARK: 闲置退出（2026-11-18：LT 是 JVM，常驻 368MB，闲置就得让位）
+    //
+    // 实测：Xmx192m → OOM；Xmx256m → 可用、冷启动 1.8s、RSS 368MB。
+    // 堆调小压不动 RSS，真正省内存只有「不检查时别驻留」这条路。
+    private(set) static var lastUsed: Date = .distantPast
+    static func touch() { lastUsed = Date() }
+
+    /// 闲置秒数（默认 600s；EW_LT_IDLE 可覆盖，测试用短值）
+    static var idleLimit: TimeInterval {
+        Double(ProcessInfo.processInfo.environment["EW_LT_IDLE"] ?? "") ?? 600
+    }
+
+    /// 是否还在跑（用 pgrep 认 java + languagetool jar，避免误杀别的 java）
+    static func runningPID() -> Int32? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        p.arguments = ["-f", "languagetool-server.jar"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        p.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return Int32(out.split(separator: "\n").first.map(String.init) ?? "")
+    }
+
+    /// 闲置超时就退出；返回是否真的退了一个
+    @discardableResult
+    static func idleExitIfNeeded() -> Bool {
+        guard let pid = runningPID() else { return false }
+        let idle = Date().timeIntervalSince(lastUsed)
+        guard idle >= idleLimit else { return false }
+        kill(pid, SIGTERM)
+        usleep(400_000)
+        if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        lastProbe = (false, .distantPast)
+        FileHandle.standardError.write("[lt] idle \(Int(idle))s >= \(Int(idleLimit))s → 已退出 (pid \(pid))\n".data(using: .utf8)!)
+        return true
+    }
+
+    /// App 起来时挂一次兜底巡检（每 30s 看一次；不是轮询服务器，只看本地进程）
+    static func startIdleWatchdog() {
+        Task.detached {
+            while true {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                _ = idleExitIfNeeded()
+            }
+        }
+    }
+
     /// 探活结果缓存 60 秒：避免每句话都探测一次（不是轮询 Timer）
     static func available(force: Bool = false) async -> Bool {
         if !force, Date().timeIntervalSince(lastProbe.at) < 60 { return lastProbe.ok }
@@ -146,6 +196,7 @@ enum LocalEngine {
         ]
         req.httpBody = comps.percentEncodedQuery?.data(using: .utf8)
 
+        touch()
         let t0 = Date()
         let data: Data, response: URLResponse
         do {

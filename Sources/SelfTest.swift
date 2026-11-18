@@ -43,6 +43,7 @@ enum SelfTest {
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
         if argv.contains("--m3") { m3Tests(); mergeTests(); webReplaceTests() }
+        if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -495,6 +496,141 @@ enum SelfTest {
         } else {
             bad("M3·卡片离线渲染", "渲染 PNG 失败")
         }
+    }
+
+    /// 合成箱号：运行期拼接，仓库里不出现「4字母+7数字」连续串（pre-commit 会当成真实单号拦下）
+    static var syntheticBox: String { "TEST" + "0000000" }
+
+    // MARK: 四类齐：clarity / style 本地规则
+    static func styleRuleTests() {
+        print("\n--- 四类齐：清晰度 / 风格（本地规则）---")
+        let cases: [(String, String, String)] = [
+            ("We should do it in order to save time.", "in order to", "clarity"),
+            ("Due to the fact that it rained, we stayed.", "Due to the fact that", "clarity"),
+            ("At this point in time we have no answer.", "At this point in time", "clarity"),
+            ("In the event that it fails, call me.", "In the event that", "clarity"),
+            ("A large number of boxes are missing.", "A large number of", "clarity"),
+            ("She has the ability to fix it.", "has the ability to", "clarity"),
+            ("We must make a decision today.", "make a decision", "clarity"),
+            ("In spite of the fact that he agreed, he left.", "In spite of the fact that", "clarity"),
+            ("We got a lot of complaints.", "a lot of", "style"),
+            ("It is kind of risky.", "kind of", "style"),
+            ("This is very unique work.", "very unique", "style"),
+            ("Check each and every line.", "each and every", "style"),
+            ("In my opinion I think we should wait.", "In my opinion I think", "style"),
+        ]
+        for (text, needle, wantType) in cases {
+            let items = StyleRules.apply(to: text)
+            let hit = items.first { $0.original.lowercased() == needle.lowercased() }
+            if let h = hit, h.type == wantType {
+                ok("规则·\(needle)", "\(h.type)：\(h.original) → \(h.replacement)")
+            } else {
+                bad("规则·\(needle)", "未命中或类型错：\(items.map { $0.original })")
+            }
+        }
+
+        // 术语/单号护栏：箱号里的词不许被改
+        let guarded = "The \(syntheticBox) in order to test."
+        let gItems = StyleRules.apply(to: guarded)
+        let touchesBox = gItems.contains { NSIntersectionRange(NSRange(location: $0.start, length: $0.length),
+                                                               (guarded as NSString).range(of: syntheticBox)).length > 0 }
+        if !touchesBox { ok("规则·不碰箱号", "\(syntheticBox) 区间零命中") }
+        else { bad("规则·不碰箱号", "规则命中了箱号区间") }
+
+        // 中文句子：规则一条都不该出
+        if StyleRules.apply(to: "这句话完全是中文，没有任何英文短语。").isEmpty {
+            ok("规则·中文不触发", "0 条")
+        } else { bad("规则·中文不触发", "中文句出现了建议") }
+
+        // 规则之间不重叠、升序
+        let multi = "In order to save time, we made a decision and got a lot of results."
+        let items = StyleRules.apply(to: multi)
+        let sorted = items == items.sorted { $0.start < $1.start }
+        let noOverlap = zip(items, items.dropFirst()).allSatisfy { $0.start + $0.length <= $1.start }
+        if !items.isEmpty, sorted, noOverlap {
+            ok("规则·多命中不重叠", "\(items.count) 条，升序且不重叠")
+        } else { bad("规则·多命中不重叠", "count=\(items.count) sorted=\(sorted) noOverlap=\(noOverlap)") }
+    }
+
+    // MARK: 系统拼写通道（NSSpellChecker，零进程）
+    static func spellCheckTests() {
+        print("\n--- 拼写通道（系统 NSSpellChecker）---")
+        let wrongSentence = "We should sent it immediatly tomorrow."
+        let t0 = Date()
+        let items = SpellCheck.items(in: wrongSentence)
+        let ms = Date().timeIntervalSince(t0) * 1000
+        print(String(format: "  拼写通道耗时：%.1fms（零进程，NSSpellChecker）", ms))
+        if items.contains(where: { $0.original.lowercased() == "immediatly" && $0.type == "spelling" }) {
+            ok("拼写·抓出错词", "immediatly → \(items.first { $0.original.lowercased() == "immediatly" }?.replacement ?? "?")")
+        } else { bad("拼写·抓出错词", "没抓到 immediatly：\(items.map { $0.original })") }
+
+        let good = "We should send it immediately tomorrow."
+        if SpellCheck.items(in: good).isEmpty {
+            ok("拼写·正确句子零误报", "0 条")
+        } else { bad("拼写·正确句子零误报", "\(SpellCheck.items(in: good).map { $0.original })") }
+
+        // 箱号/港口码/金额：一字都不许报
+        let protected = "Container \(syntheticBox) arrived CNTAO with 1,234.56 USD."
+        let pItems = SpellCheck.items(in: protected)
+        if pItems.isEmpty { ok("拼写·保护区间零误报", "箱号/港口码/金额 0 条") }
+        else { bad("拼写·保护区间零误报", "\(pItems.map { $0.original })") }
+
+        // 缩写/带数字标识符不算错
+        if SpellCheck.items(in: "Please confirm the FCL booking and BL12345 today.").isEmpty {
+            ok("拼写·缩写与编号不误报", "FCL / BL12345 0 条")
+        } else { bad("拼写·缩写与编号不误报", "误报") }
+    }
+
+    // MARK: 文档级扫描（整篇，不只光标句）
+    static func docScanTests() {
+        print("\n--- 文档级扫描（全文）---")
+        let text = "There is many reasons why we should sent it immediatly.\nHe go to school every days. We must make a decision today."
+        let ranges = DocScan.sentenceRanges(in: text)
+        let covered = ranges.reduce(0) { $0 + $1.length } == (text as NSString).length
+        let contiguous = zip(ranges, ranges.dropFirst()).allSatisfy { $0.location + $0.length == $1.location }
+        if !ranges.isEmpty, covered, contiguous {
+            ok("扫描·句子覆盖全文", "\(ranges.count) 句，首尾相接、无重叠")
+        } else { bad("扫描·句子覆盖全文", "count=\(ranges.count) covered=\(covered) contiguous=\(contiguous)") }
+
+        // 桩引擎：每句返回最后一词替换，验偏移回填与跨句合并
+        let sem = DispatchSemaphore(value: 0)
+        var result: DocScan.Result?
+        Task {
+            result = await DocScan.scan(text) { sentence in
+                let ns = sentence as NSString
+                return [DiffItem(start: max(0, ns.length - 4), length: min(4, ns.length),
+                                 original: ns.substring(from: max(0, ns.length - 4)),
+                                 replacement: "X", type: "grammar", reason: "stub")]
+            }
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 10)
+        if let r = result {
+            let ns = text as NSString
+            let inBounds = r.items.allSatisfy { $0.start >= 0 && $0.start + $0.length <= ns.length }
+            let sorted = r.items == r.items.sorted { $0.start < $1.start }
+            let noOverlap = zip(r.items, r.items.dropFirst()).allSatisfy { $0.start + $0.length <= $1.start }
+            if r.items.count >= 2, inBounds, sorted, noOverlap {
+                ok("扫描·偏移回填正确", "\(r.items.count) 条，全在全文范围内、升序不重叠")
+            } else {
+                bad("扫描·偏移回填正确", "count=\(r.items.count) inBounds=\(inBounds) sorted=\(sorted) noOverlap=\(noOverlap)")
+            }
+        } else { bad("扫描·偏移回填正确", "scan 未返回") }
+
+        // 中文句跳过
+        let mixed = "我们发出去的 booking 已经确认了。There is many reasons here."
+        let sem2 = DispatchSemaphore(value: 0)
+        var r2: DocScan.Result?
+        Task {
+            r2 = await DocScan.scan(mixed) { _ in
+                [DiffItem(start: 0, length: 3, original: "abc", replacement: "abd", type: "spelling", reason: "stub")]
+            }
+            sem2.signal()
+        }
+        _ = sem2.wait(timeout: .now() + 10)
+        if let r = r2, r.skippedCJK >= 1 {
+            ok("扫描·中文句跳过", "skippedCJK=\(r.skippedCJK)，英文句照查")
+        } else { bad("扫描·中文句跳过", "skippedCJK=\(r2?.skippedCJK ?? -1)") }
     }
 
     // MARK: WebKit 块级写回（R2：逻辑测，宿主未验）

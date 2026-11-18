@@ -1,0 +1,19 @@
+{
+  "measuredAt": "2026-11-18",
+  "method": "ps -o rss= / pgrep -f languagetool-server.jar / 秒表测冷启动",
+  "appRssMB": 61,
+  "ltRssMB_whenRunning": 368,
+  "totalRssMB_whenLtIdle": 61,
+  "ltColdStartSeconds": 1.8,
+  "spellChannelMs": 15.7,
+  "spellChannelNote": "NSSpellChecker，零进程、零常驻内存",
+  "ltWarmCheckMs": "20-60（--selftest --lt 实测）",
+  "heapProbe": [
+    {"xmx": "192m", "result": "OutOfMemoryError（不可用）"},
+    {"xmx": "256m", "result": "可用，冷启动 1.8s，RSS 368MB"},
+    {"xmx": "384m", "result": "可用，冷启动 1.2s，RSS 448MB"},
+    {"xmx": "512m", "result": "可用，冷启动 1.2s，RSS 447MB"}
+  ],
+  "idleExit": {"limitSeconds": 600, "watchdogTickSeconds": 30, "verifiedWith": "EW_LT_IDLE=5 → 40s 内 LT 退出，App RSS 61MB"},
+  "conclusion": "堆调小压不动 RSS（metaspace + 规则对象占大头）；真正省内存只能靠闲置退出。闲置时总常驻 61MB，工作时 61+368MB。"
+}

@@ -25,7 +25,10 @@ if [ -z "${JDK:-}" ] || [ -z "${JAR:-}" ]; then
 fi
 
 mkdir -p "$LT_HOME"
-nohup "$JDK/bin/java" -Xmx1g -jar "$JAR" --port "$PORT" >>"$LOG" 2>&1 &
+# 堆封顶（2026-11-18 实测）：192m → OOM；256m → 可用，冷启动 1.8s，RSS 368MB。
+# 注意：堆调小并不能把 RSS 压到理想值（metaspace + 规则对象占大头），真正省内存靠闲置退出。
+nohup "$JDK/bin/java" -Xmx256m -Xms64m -XX:+UseSerialGC -XX:MaxMetaspaceSize=96m \
+  -jar "$JAR" --port "$PORT" >>"$LOG" 2>&1 &
 disown 2>/dev/null || true
 
 for _ in $(seq 1 40); do
