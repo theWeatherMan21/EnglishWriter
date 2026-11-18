@@ -230,6 +230,14 @@ if argv.contains("--selftest") {
 }
 
 // 真模型改写 / 语气（--live-rewrite / --live-tone）：key 只走环境变量
+if argv.contains("--live-ab") {
+    var ok = false
+    let sem = DispatchSemaphore(value: 0)
+    Task { ok = await LiveAB.run(); sem.signal() }
+    sem.wait()
+    exit(ok ? 0 : 1)
+}
+
 if argv.contains("--live-rewrite") || argv.contains("--live-tone") {
     var ok = true
     let sem = DispatchSemaphore(value: 0)

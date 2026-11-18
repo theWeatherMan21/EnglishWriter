@@ -128,6 +128,11 @@ struct SettingsView: View {
                     Text(CategoryPrefs.sensitivity().note).font(.system(size: 10)).foregroundStyle(.secondary)
                 }
 
+                Toggle(isOn: Binding(get: { CategoryPrefs.fastMode() },
+                                     set: { CategoryPrefs.setFastMode($0) })) {
+                    Text("快速模式（关推理链：改写 18s → ~2s；复杂长句出现质量下降时再关掉）").font(.system(size: 12))
+                }
+
                 Divider()
                 Text("个人词典（自己加的词一律不报）").font(.system(size: 13, weight: .semibold))
                 HStack(spacing: 8) {

@@ -922,7 +922,14 @@ enum SelfTest {
               !EnginePrefs.isExcluded(bundleId: "com.example.other", appName: "Other", d),
               "Other → 正常检查")
 
-        // 5) 证据落盘
+        // 5) 调试 UI 门控（2026-11-18 爹地红线）：设置窗正常态零调试元素，只有 EW_DEBUG=1 才渲染诊断区。
+        //    本断言与渲染分支读同一个 `SettingsView.debugUI`；脚本跑两次（无 env / EW_DEBUG=1）覆盖两态。
+        let envDebug = ProcessInfo.processInfo.environment["EW_DEBUG"] == "1"
+        check("调试UI门控=EW_DEBUG",
+              SettingsView.debugUI == envDebug,
+              "EW_DEBUG=\(envDebug ? "1" : "未设") → SettingsView.debugUI=\(SettingsView.debugUI)（诊断区此时\(SettingsView.debugUI ? "渲染" : "不渲染")）")
+
+        // 6) 证据落盘
         evidence["check"] = "settings-selftest"
         evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())
         evidence["assertions"] = assertions

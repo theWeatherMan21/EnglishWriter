@@ -66,7 +66,7 @@ enum Rewrite {
     /// 组请求体（OpenAI 兼容）
     static func requestBody(segment: String, config: LLMConfig,
                             labels: [String] = defaultLabels) -> [String: Any] {
-        [
+        var body: [String: Any] = [
             "model": config.model.trimmingCharacters(in: .whitespacesAndNewlines),
             "temperature": 0.3,
             "response_format": ["type": "json_object"],
@@ -75,6 +75,10 @@ enum Rewrite {
                 ["role": "user", "content": userMessage(segment)],
             ],
         ]
+        if CategoryPrefs.fastMode() {
+            body["reasoning_effort"] = "none"   // 实测 18.3s → ~2s，候选质量不掉
+        }
+        return body
     }
 
     // MARK: 解析

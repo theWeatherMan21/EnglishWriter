@@ -49,6 +49,11 @@
       "detail" : "Other → 正常检查",
       "name" : "排除·无关 App 不误伤",
       "pass" : true
+    },
+    {
+      "detail" : "EW_DEBUG=1 → SettingsView.debugUI=true（诊断区此时渲染）",
+      "name" : "调试UI门控=EW_DEBUG",
+      "pass" : true
     }
   ],
   "check" : "settings-selftest",
@@ -61,7 +66,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-18T08:50:52Z",
+  "generatedAt" : "2026-11-18T08:53:53Z",
   "note" : "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。",
   "pass" : true,
   "plistPath" : "\/Users\/russospencer\/Library\/Preferences\/com.wanyi.englishwriter.plist",

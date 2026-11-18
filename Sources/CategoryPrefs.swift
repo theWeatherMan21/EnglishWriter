@@ -39,6 +39,7 @@ enum CategoryPrefs {
     static let allTypes = ["spelling", "grammar", "clarity", "style"]
     private static let kTypes = "check.enabledTypes"
     private static let kSensitivity = "check.sensitivity"
+    private static let kFastMode = "check.fastMode"
 
     static func enabledTypes(_ d: UserDefaults = SettingsStore.store) -> Set<String> {
         guard let arr = d.array(forKey: kTypes) as? [String], !arr.isEmpty else { return Set(allTypes) }
@@ -60,6 +61,20 @@ enum CategoryPrefs {
 
     static func setSensitivity(_ s: Sensitivity, _ d: UserDefaults = SettingsStore.store) {
         d.set(s.rawValue, forKey: kSensitivity)
+    }
+
+    // MARK: 快速模式（关推理链）
+    //
+    // 实测（11-18，deepseek-flash）：同一句同一 prompt，带推理链改写 18.3s；
+    // 加 reasoning_effort:"none" 后 1–2s，三候选/逐条 edit/术语零触碰都不掉。
+    // 默认开；复杂长句若效果掉了，用户可一键关掉回到带推理。
+    static func fastMode(_ d: UserDefaults = SettingsStore.store) -> Bool {
+        if d.object(forKey: kFastMode) == nil { return true }
+        return d.bool(forKey: kFastMode)
+    }
+
+    static func setFastMode(_ on: Bool, _ d: UserDefaults = SettingsStore.store) {
+        d.set(on, forKey: kFastMode)
     }
 
     // MARK: 过滤（纯函数）

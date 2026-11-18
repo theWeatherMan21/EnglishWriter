@@ -1,18 +1,18 @@
 
 --- 真模型·改写建议（--live-rewrite）---
   endpoint=https://api.deepseek.com/v1 model=deepseek-flash labels=更简洁/更正式/更清晰
-  耗时 18305ms；原始响应 841 字
-  原始片段：{"candidates":[{"label":"更简洁","note":"用 decide 替代 make a decision，减少冗词。","edits":[{"start":8,"length":15,"original":"make a decision","replacement":"decide","type":"style","reason":"将名词短语改为动词，表达更直接。"}]},{"label":"更正式","note":"采用更正式的动词搭配与状态表述。","edits":[{"start":8,"length":15,"original":"make a decision","replacement":"reach a decision","type":"style","reason":"reach a decision 更正式。"},{"start":81,"
-  · [更简洁] 1 条 → We must decide in order to save time, and the FCL booking BKG-TEST-0001 is still pending.
-  · [更正式] 2 条 → We must reach a decision in order to save time, and the FCL booking BKG-TEST-0001 remains pending.
-  · [更清晰] 2 条 → We must decide in order to save time; the FCL booking BKG-TEST-0001 is still pending.
+  耗时 2453ms；原始响应 1275 字
+  原始片段：{"candidates":[{"label":"更简洁","note":"删去冗余连接词，句子更紧凑。","edits":[{"start":7,"length":28,"original":"make a decision in order to","replacement":"decide to","type":"clarity","reason":"用动词decide替代make a decision in order to，减少字数。"},{"start":36,"length":4,"original":"and ","replacement":"","type":"style","reason":"删去并列连词，两个分句用逗号衔接更简洁。"}]},{"label":"更正式","note":"改用正式书面表达，语气更庄重。","edits":[{"start":0,"leng
+  · [更简洁] 2 条 → We must decide to save time, the FCL booking BKG-TEST-0001 is still pending.
+  · [更正式] 3 条 → It is necessary for us to make a decision so as to save time, and the FCL booking BKG-TEST-0001 is currently pending.
+  · [更清晰] 3 条 → We must decide on this matter in order to save time, meanwhile, the FCL booking BKG-TEST-0001 is still currently pending.
 RESULT: PASS（3 个候选）
 
 --- 真模型·语气（--live-tone）---
   endpoint=https://api.deepseek.com/v1 model=deepseek-flash labels=更正式/更简洁/更直接
-  耗时 18085ms；原始响应 1518 字
-  原始片段：{"candidates":[{"label":"更正式","note":"采用被动语态和更正式的用词，语气更符合正式商务沟通。","edits":[{"start":0,"length":23,"original":"We must make a decision","replacement":"A decision must be made","type":"style","reason":"使用被动语态，语气更正式。"},{"start":24,"length":21,"original":"in order to save time","replacement":"to save time","type":"clarity","reason":"删除冗余表达，保持正式简洁。"},{"start":81,"length":16,"original":"is still pending
-  · [更正式] 3 条 → A decision must be made to save time, and the FCL booking BKG-TEST-0001 remains pending.
-  · [更简洁] 4 条 → We must decide to save time, and FCL booking BKG-TEST-0001 remains pending.
-  · [更直接] 3 条 → We must decide to save time, and FCL booking BKG-TEST-0001 is still pending.
+  耗时 2516ms；原始响应 1324 字
+  原始片段：{"candidates":[{"label":"更正式","note":"使用正式书面表达，提升商务文书的严谨性。","edits":[{"start":0,"length":4,"original":"We must","replacement":"It is necessary for us to","type":"style","reason":"将口语化的must改为正式书面表达"},{"start":22,"length":2,"original":"in","replacement":"with a view to","type":"style","reason":"使用更正式的书面连接表达"},{"start":25,"length":4,"original":"save","replacement":"conserve","type":"style","reason":"
+  · [更正式] 3 条 → It is necessary for us to make a decision with a view to order to conserve time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更简洁] 4 条 → We must make a decision to order to save time, and the FCL booking BKG-TEST-0001 is still pending.
+  · [更直接] 4 条 → We must make a decision to order to save time, and the FCL booking BKG-TEST-0001 is still pending.
 RESULT: PASS（3 个候选）

@@ -1,0 +1,167 @@
+{
+  "model" : "deepseek-flash",
+  "rows" : [
+    {
+      "case" : 0,
+      "edits" : 3,
+      "error" : "",
+      "fast" : true,
+      "hit" : 3,
+      "miss" : 0,
+      "ms" : 4311,
+      "termViolations" : 0,
+      "types" : [
+        "grammar",
+        "grammar",
+        "spelling"
+      ]
+    },
+    {
+      "case" : 1,
+      "edits" : 4,
+      "error" : "",
+      "fast" : true,
+      "hit" : 4,
+      "miss" : 0,
+      "ms" : 11957,
+      "termViolations" : 0,
+      "types" : [
+        "grammar",
+        "grammar",
+        "grammar",
+        "style"
+      ]
+    },
+    {
+      "case" : 2,
+      "edits" : 2,
+      "error" : "",
+      "fast" : true,
+      "hit" : 2,
+      "miss" : 0,
+      "ms" : 4689,
+      "termViolations" : 0,
+      "types" : [
+        "grammar",
+        "spelling"
+      ]
+    },
+    {
+      "case" : 3,
+      "edits" : 1,
+      "error" : "",
+      "fast" : true,
+      "hit" : 1,
+      "miss" : 0,
+      "ms" : 9088,
+      "termViolations" : 0,
+      "types" : [
+        "clarity"
+      ]
+    },
+    {
+      "case" : 4,
+      "edits" : 3,
+      "error" : "",
+      "fast" : true,
+      "hit" : 3,
+      "miss" : 0,
+      "ms" : 20892,
+      "termViolations" : 0,
+      "types" : [
+        "clarity",
+        "style",
+        "style"
+      ]
+    },
+    {
+      "case" : 0,
+      "edits" : 3,
+      "error" : "",
+      "fast" : false,
+      "hit" : 3,
+      "miss" : 0,
+      "ms" : 3716,
+      "termViolations" : 0,
+      "types" : [
+        "grammar",
+        "grammar",
+        "spelling"
+      ]
+    },
+    {
+      "case" : 1,
+      "edits" : 4,
+      "error" : "",
+      "fast" : false,
+      "hit" : 4,
+      "miss" : 0,
+      "ms" : 14553,
+      "termViolations" : 0,
+      "types" : [
+        "grammar",
+        "grammar",
+        "grammar",
+        "clarity"
+      ]
+    },
+    {
+      "case" : 2,
+      "edits" : 2,
+      "error" : "",
+      "fast" : false,
+      "hit" : 2,
+      "miss" : 0,
+      "ms" : 4960,
+      "termViolations" : 0,
+      "types" : [
+        "grammar",
+        "spelling"
+      ]
+    },
+    {
+      "case" : 3,
+      "edits" : 2,
+      "error" : "",
+      "fast" : false,
+      "hit" : 2,
+      "miss" : 0,
+      "ms" : 4448,
+      "termViolations" : 0,
+      "types" : [
+        "clarity",
+        "clarity"
+      ]
+    },
+    {
+      "case" : 4,
+      "edits" : 2,
+      "error" : "",
+      "fast" : false,
+      "hit" : 2,
+      "miss" : 0,
+      "ms" : 44501,
+      "termViolations" : 0,
+      "types" : [
+        "clarity",
+        "style"
+      ]
+    }
+  ],
+  "summary" : {
+    "fast" : {
+      "edits" : 13,
+      "hit" : 13,
+      "miss" : 0,
+      "ms" : 50937,
+      "termViol" : 0
+    },
+    "slow" : {
+      "edits" : 13,
+      "hit" : 13,
+      "miss" : 0,
+      "ms" : 72178,
+      "termViol" : 0
+    }
+  }
+}

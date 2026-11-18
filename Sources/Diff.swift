@@ -196,7 +196,7 @@ enum InlineEngine {
         req.timeoutInterval = timeout
         req.setValue("Bearer \(config.apiKey.trimmed)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": config.model.trimmed,
             "temperature": 0,
             "response_format": ["type": "json_object"],
