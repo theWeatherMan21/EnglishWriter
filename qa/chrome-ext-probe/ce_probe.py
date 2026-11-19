@@ -33,7 +33,17 @@ def main():
                        " ce.textContent = ''; document.getElementById('ce').focus(); return 1; })()")
     for ch in "I have send the invoice. We was late yesterday.":
         ws.send("Input.insertText", {"text": ch}); time.sleep(0.006)
-    time.sleep(3.0)
+    # 真模型要几秒：轮询到画线出现（最多 20 秒）
+    n = 0
+    for _ in range(80):
+        time.sleep(0.25)
+        n = drive.evaluate(
+            ws,
+            "(() => { const h = document.getElementById('__ew_host__');"
+            " if (!h || !h.shadowRoot) return 0;"
+            " return h.shadowRoot.querySelectorAll('.u').length; })()")
+        if isinstance(n, int) and n >= 2:
+            break
 
     n = drive.evaluate(
         ws,

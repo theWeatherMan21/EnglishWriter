@@ -76,7 +76,14 @@ def main():
                        " t.focus(); t.value=''; t.setSelectionRange(0,0); return true; })()")
     for ch in "I have send the report immediatly.":
         ws.send("Input.insertText", {"text": ch}); time.sleep(0.008)
-    time.sleep(2.5)
+    # 检查现在走真模型（约 3 秒/句）：轮询到画线出现为止，最多 20 秒
+    for _ in range(80):
+        time.sleep(0.25)
+        n = drive.evaluate(ws, "(() => { const h = document.getElementById('__ew_host__');"
+                               " if (!h || !h.shadowRoot) return 0;"
+                               " return h.shadowRoot.querySelectorAll('.u').length; })()")
+        if isinstance(n, int) and n > 0:
+            break
 
     fails = 0
     if not click_line(ws, 0):
