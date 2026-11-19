@@ -473,7 +473,24 @@
     }
   }, true);
 
+  // 同一时刻只跑一个检查：打字期间连续触发会排队，导致最后一个结果 10 秒后才回来
+  let runSeq = 0;
+  let running = false;
+  let rerunWanted = false;
+
   async function runCheck(force) {
+    if (running) { rerunWanted = true; return; }
+    running = true;
+    const mySeq = ++runSeq;
+    try {
+      await runCheckInner(force, mySeq);
+    } finally {
+      running = false;
+      if (rerunWanted) { rerunWanted = false; runCheck(true); }
+    }
+  }
+
+  async function runCheckInner(force, mySeq) {
     const el = lastTarget;
     if (force) window.__EW_DEBUG.notes.push('run target=' + (el ? el.tagName + (el.id ? '#' + el.id : '') : 'null'));
     if (!el) return;
@@ -520,6 +537,16 @@
       drawUnderlines(el, edits, scopeStart);
     };
     try {
+      // 第一段：本地即时（服务端 mode:"local"，~40ms）→ 线立刻出现
+      try {
+        const fr = await post({ text: scopeText, language: 'en-GB', mode: 'local' });
+        if (fr.ok) {
+          const fj = await fr.json();
+          if (mySeq === runSeq) draw(fj);
+        }
+      } catch (fe) {
+        window.__EW_DEBUG.notes.push('fast err=' + fe.message);
+      }
       const res = await fetch(API + '/v1/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
@@ -527,6 +554,7 @@
       });
       if (res.status === 401) { window.__EW_DEBUG.notes.push('401 bad token'); return; }
       const j = await res.json();
+      if (mySeq !== runSeq) return;      // 过期结果直接丢，别覆盖更新的线
       draw(j);
     } catch (e) {
       window.__EW_DEBUG.notes.push('fetch fail: ' + e.message);
