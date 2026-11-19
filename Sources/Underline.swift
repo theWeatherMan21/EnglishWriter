@@ -72,6 +72,17 @@ struct UnderlineSpec: Equatable {
     var rect: CGRect
     var kind: UnderlineKind
     var itemID: Int = -1
+    /// 最后一次被检查确认的时间。超过 2s 没被确认 → 自动隐藏，屏幕上不留没人管的线
+    var stamp: Date = Date()
+
+    static func == (a: UnderlineSpec, b: UnderlineSpec) -> Bool {
+        a.rect == b.rect && a.kind == b.kind && a.itemID == b.itemID
+    }
+
+    /// 纯函数：挑出「还有效」的线（now - stamp <= ttl）。滚走/切窗/挪窗的残影靠它自灭。
+    static func alive(_ specs: [UnderlineSpec], now: Date, ttl: TimeInterval) -> [UnderlineSpec] {
+        specs.filter { now.timeIntervalSince($0.stamp) <= ttl }
+    }
 }
 
 // MARK: - 画布
@@ -211,6 +222,31 @@ final class UnderlineOverlay: NSPanel {
     func clearHighlight() {
         flash = nil
         render(specs)
+    }
+
+    /// 屏幕上当前有没有线（给定期复验用）
+    var hasUnderlines: Bool { !specs.isEmpty }
+
+    /// 每条线的最大存活时间：2s 内没被新一轮检查确认就撤掉
+    private let specTTL: TimeInterval = 2.0
+    private var ttlTimer: Timer?
+
+    /// 清掉所有超过 TTL 没被确认的线（滚走 / 窗口移走 / 切 App 的残影兜底）
+    func pruneStale(maxAge: TimeInterval? = nil) {
+        let ttl = maxAge ?? specTTL
+        let now = Date()
+        let keep = UnderlineSpec.alive(specs, now: now, ttl: ttl)
+        guard keep.count != specs.count else { return }
+        specs = keep
+        canvas.specs = keep
+        if keep.isEmpty { orderOut(nil) }
+    }
+
+    func startTTLWatchdog() {
+        guard ttlTimer == nil else { return }
+        ttlTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pruneStale() }
+        }
     }
 
     func clear() {

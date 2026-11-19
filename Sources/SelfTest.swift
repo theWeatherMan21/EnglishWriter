@@ -59,7 +59,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1822,5 +1822,28 @@ extension SelfTest {
         if p4.x + s <= 1440, p4.y >= 4 {
             SelfTest.ok("ball: 部分出屏仍夹回", "\(Int(p4.x)),\(Int(p4.y))")
         } else { SelfTest.bad("ball: 部分出屏", "\(p4)") }
+    }
+}
+
+// MARK: 残影自灭（切 App / 滚动 / 窗口移走之后不许留线）
+extension SelfTest {
+    static func staleUnderlineTests() {
+        let now = Date()
+        let fresh = UnderlineSpec(rect: CGRect(x: 10, y: 10, width: 40, height: 4), kind: .spelling,
+                                  itemID: 1, stamp: now.addingTimeInterval(-0.5))
+        let stale = UnderlineSpec(rect: CGRect(x: 10, y: 60, width: 40, height: 4), kind: .grammar,
+                                  itemID: 2, stamp: now.addingTimeInterval(-3.0))
+        let kept = UnderlineSpec.alive([fresh, stale], now: now, ttl: 2.0)
+        if kept.count == 1, kept[0].itemID == 1 {
+            SelfTest.ok("stale: 超 2s 的线自灭", "保留 1 / 原始 2")
+        } else { SelfTest.bad("stale: 自灭", "\(kept.count)") }
+
+        let all = UnderlineSpec.alive([fresh], now: now, ttl: 2.0)
+        if all.count == 1 { SelfTest.ok("stale: 新鲜线不被误杀", "保留 1") }
+        else { SelfTest.bad("stale: 误杀", "\(all.count)") }
+
+        let none = UnderlineSpec.alive([stale], now: now, ttl: 2.0)
+        if none.isEmpty { SelfTest.ok("stale: 全过期则清空", "0") }
+        else { SelfTest.bad("stale: 清空", "\(none.count)") }
     }
 }

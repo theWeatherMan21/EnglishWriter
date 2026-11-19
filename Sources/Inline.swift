@@ -82,6 +82,66 @@ enum AXInline {
         return findEditableAncestor(el) ?? el
     }
 
+    // MARK: Web 正文与 Chromium 无障碍（真机 2026-11-19 实测的两处断点）
+
+    /// Chromium 系（Chrome / Edge / Brave / Electron）：不显式置这两个属性，AX 树里永远没有 AXWebArea，
+    /// 现场表现就是 attach-el-fail「没有焦点元素」（本机 Chrome 逐条实测）。
+    static let chromiumBundles: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.canary", "org.chromium.Chromium",
+        "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi",
+        "com.operasoftware.Opera", "com.github.Electron",
+    ]
+
+    static func isChromium(_ pid: pid_t) -> Bool {
+        guard pid > 0, let b = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return false }
+        return chromiumBundles.contains(b) || b.hasSuffix(".Electron")
+    }
+
+    @discardableResult
+    static func enableWebAX(_ pid: pid_t) -> Bool {
+        guard isChromium(pid) else { return false }
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 2.0)
+        let m = AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        let e = AXUIElementSetAttributeValue(appEl, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        return m == .success || e == .success
+    }
+
+    /// 前台窗口里的正文容器：优先 AXWebArea（Mail 写信 / 网页），没有才落 AXTextArea。
+    /// 真机 2026-11-19：Mail 写信窗口的焦点元素落在 WebArea 外层、AXValue 恒空 →
+    /// checkNow 停在 no-text「读不到文本框内容」，一个字都不检查；探针能读到正文，差的就是这一层兜底。
+    static func frontWindowBody(pid: pid_t) -> AXUIElement? {
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 1.0)
+        var ordered: [AXUIElement] = []
+        for key in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+            if let v = attr(appEl, key as String), CFGetTypeID(v) == AXUIElementGetTypeID() {
+                ordered.append(v as! AXUIElement)
+            }
+        }
+        ordered.append(contentsOf: (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? [])
+        for w in ordered {
+            if let b = WebText.body(in: w) { return b }
+        }
+        return nil
+    }
+
+    /// WebArea 里的真输入控件：网页里的 textarea/input 在 AX 树里是 AXTextArea/AXTextField，
+    /// AXValue 直接有内容（Chromium 真机实测）。有它就优先用它 —— 整页静态文本当正文会查错地方。
+    static func textField(in body: AXUIElement) -> AXUIElement? {
+        var best: (el: AXUIElement, len: Int)?
+        for el in descendants(body, depth: 10) {
+            let role = attrString(el, kAXRoleAttribute as String) ?? ""
+            guard role == "AXTextArea" || role == "AXTextField" else { continue }
+            let v = attrString(el, kAXValueAttribute as String) ?? ""
+            guard !v.isEmpty else { continue }
+            let f = WebText.frame(el)
+            guard f.width * f.height > 2000 else { continue }        // 搜索框之类的小控件不要
+            if best == nil || v.utf16.count > best!.len { best = (el, v.utf16.count) }
+        }
+        return best?.el
+    }
+
     static func selectedRange(_ el: AXUIElement) -> NSRange? {
         guard let r = attr(el, kAXSelectedTextRangeAttribute as String),
               CFGetTypeID(r) == AXValueGetTypeID() else { return nil }
@@ -244,6 +304,8 @@ final class InlineController {
     private var observer: AXObserver?
     private var observedPid: pid_t = 0
     private var observedElement: AXUIElement?
+    /// Chromium AX 树异步出现 → 挂载失败后的重试计数（每个 pid 独立，成功即清零）
+    private var attachRetries: [pid_t: Int] = [:]
     private var pending: DispatchWorkItem?
     private var lastHash: [pid_t: String] = [:]
     private var focusObserver: Any?
@@ -297,6 +359,7 @@ final class InlineController {
     func start() {
         guard focusObserver == nil else { return }
         HoverCoordinator.shared.start()      // 悬停卡片（全局 mouseMoved + 200ms 停留）
+        overlay.startTTLWatchdog()           // 线超过 2s 没被确认就自灭，屏幕上不留残影
         focusObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
@@ -304,11 +367,22 @@ final class InlineController {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             MainActor.assumeIsolated {
+                // 切 App：立刻清线（否则旧 App 的线留在屏幕上飘）
+                self?.overlay.clear()
                 self?.lastFocusPid = app.processIdentifier
                 self?.attachObserver(pid: app.processIdentifier)
+                self?.scheduleQuickCheck(after: 0.08)   // 清完马上重画，不是留空白
             }
         }
         startPolling()
+        // 定期复验：有线挂着就每秒重跑一次检查，把 stamp 刷新到当下。
+        // 没有这一步，2s 自灭会把「一直没改动的正确线」也灭掉。
+        recheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.overlay.hasUnderlines else { return }
+                self.checkNow()
+            }
+        }
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
@@ -504,6 +578,14 @@ final class InlineController {
     func reattachFrontmost() {
         guard enabled, AXPermission.granted() else { return }
         startPolling()
+        // 定期复验：有线挂着就每秒重跑一次检查，把 stamp 刷新到当下。
+        // 没有这一步，2s 自灭会把「一直没改动的正确线」也灭掉。
+        recheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.overlay.hasUnderlines else { return }
+                self.checkNow()
+            }
+        }
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
@@ -572,29 +654,46 @@ final class InlineController {
     private func attachElementObserver(pid: pid_t) {
         guard let observer else { return }
         if Self.excludedGate(pid: pid) { return }        // 排除的 App 不挂元素观察者
+        // Chromium 懒开无障碍（真机 2026-11-19 Chrome 实测）：不置这两个属性，AX 树里永远没有 AXWebArea
+        _ = AXInline.enableWebAX(pid)
+
         // 焦点可能落在窗口/工具栏（AXWindow）上而不是文本区：那样 valueChanged 永远不会来。
         // 真机实测（TextEdit）：刚激活时 focusedElement 就是 AXWindow → 必须改挂窗口里最大的可读 AXTextArea。
-        if var cand = AXInline.focusedElement(pid: pid) {
-            let role = attrString(cand, kAXRoleAttribute as String) ?? ""
-            if role != "AXTextArea" && role != "AXTextField" && role != "AXWebArea" {
-                if let better = AXInline.biggestTextArea(pid: pid) { cand = better }
+        var cand = AXInline.focusedElement(pid: pid)
+        var role = cand.map { attrString($0, kAXRoleAttribute as String) ?? "" } ?? ""
+        let textRole = (role == "AXTextArea" || role == "AXTextField" || role == "AXWebArea")
+        let readable = cand.map { AXInline.fullText(of: $0) != nil || WebText.isWebBody($0) } ?? false
+        if cand == nil || !textRole || !readable {
+            // WebKit 正文（Mail 写信）这里是最关键的一刀：焦点元素是 WebArea 外层、AXValue 恒空，
+            // 不接手前台窗口正文的话永远停在 no-text（真机 2026-11-19 实测）。
+            if let wb = AXInline.frontWindowBody(pid: pid) {
+                // 网页输入控件优先（Chrome：textarea 在 AX 树里是 AXTextArea，AXValue 有字）
+                cand = AXInline.textField(in: wb) ?? wb
+                role = attrString(cand!, kAXRoleAttribute as String) ?? ""
+                emit(CheckEvent(kind: "attach-web", pid: pid, app: appName(pid), role: role,
+                                textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                                elapsed: "-", err: "焦点不可读 → 改挂前台窗口正文", at: Date()))
+            } else if let better = AXInline.biggestTextArea(pid: pid) {
+                cand = better
+                role = attrString(better, kAXRoleAttribute as String) ?? ""
             }
-            let refcon2 = Unmanaged.passUnretained(self).toOpaque()
-            if let old = observedElement, CFEqual(old, cand) { return }
-            for n in [kAXValueChangedNotification, kAXSelectedTextChangedNotification] {
-                AXObserverAddNotification(observer, cand, n as CFString, refcon2)
-            }
-            observedElement = cand
-            emit(CheckEvent(kind: "attach-el", pid: pid, app: appName(pid),
-                            role: attrString(cand, kAXRoleAttribute as String) ?? "?", textLen: 0, sentenceLen: 0,
-                            itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
-            return
         }
-        guard let el = AXInline.focusedElement(pid: pid) else {
+        guard let el = cand else {
             emit(CheckEvent(kind: "attach-el-fail", pid: pid, app: appName(pid), role: "-", textLen: 0,
                             sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-", err: "没有焦点元素", at: Date()))
+            // Chromium 的 AX 树是异步长出来的：1.5s 后再试（最多 3 次），别一次取样就判死
+            if AXInline.isChromium(pid) {
+                let n = (attachRetries[pid] ?? 0) + 1
+                attachRetries[pid] = n
+                if n <= 3 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                        Task { @MainActor in self?.attachElementObserver(pid: pid) }
+                    }
+                }
+            }
             return
         }
+        attachRetries[pid] = 0
         if let old = observedElement, CFEqual(old, el) { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for n in [kAXValueChangedNotification, kAXSelectedTextChangedNotification] {
@@ -656,7 +755,16 @@ final class InlineController {
                             elapsed: "-", err: "-", at: Date()))
             return
         }
-        guard var el = explicit ?? AXInline.focusedElement(pid: pid) else { diag.lastError = "没有焦点文本框"; return }
+        _ = AXInline.enableWebAX(pid)
+        var el: AXUIElement
+        if let e = explicit ?? AXInline.focusedElement(pid: pid) {
+            el = e
+        } else if let wb = AXInline.frontWindowBody(pid: pid) {
+            el = wb                       // 没有焦点元素（Chromium 冷启）：直接接前台窗口正文
+            diag.fallbackTextArea += 1
+        } else {
+            diag.lastError = "没有焦点文本框"; return
+        }
         var full = AXInline.fullText(of: el)
         if full == nil {
             // 焦点落在窗口/工具栏上时读到空：改取该 App 前台窗口里最大的可读 AXTextArea，别白丢这次检查
@@ -665,6 +773,26 @@ final class InlineController {
                 full = f2
                 diag.fallbackTextArea += 1
             }
+        }
+        // WebKit 正文（Mail 写信 / 网页）：焦点元素是 WebArea 外层、AXValue 恒空 →
+        // 必须在 no-text 判定之前接前台窗口正文，否则「读不到文本框内容」，一个字都不查。
+        if !WebText.isWebBody(el), full == nil || (full?.isEmpty ?? true),
+           let wb = AXInline.frontWindowBody(pid: pid),
+           WebText.isWebBody(wb), !WebText.blocks(of: wb).isEmpty {
+            el = wb
+            full = ""
+            diag.fallbackTextArea += 1
+            emit(CheckEvent(kind: "fallback-web", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "焦点不可读 → 接前台窗口正文", at: Date()))
+        }
+        // 网页里的输入控件（textarea/input）：WebArea 下挂着 AXTextArea 就先换成它，
+        // 走原生 AXValue 通道。整页静态文本（标题/提示语）当正文 = 查错地方（Chrome 真机实测）。
+        if WebText.isWebBody(el), let tf = AXInline.textField(in: el),
+           let v = AXInline.fullText(of: tf), !v.isEmpty {
+            el = tf
+            full = v
+            diag.fallbackTextArea += 1
         }
         // WebKit 正文（Mail / Slack / 网页）：AXValue 通常读不到（实测 Mail 写信窗口 len=0），
         // 必须在「full 为空」判定之前先走文本块通道，否则永远停在 no-text、一个字都不检查。
@@ -851,25 +979,28 @@ final class InlineController {
             if !ltOK { LocalEngineBootstrap.ensureRunningThrottled() }   // 闲置退出后按需拉回（节流 120s）
             var all: [DiffItem] = []
             var map: [Int] = []
+            var cjkSkipped = 0
             var firstError: String?
             var seenWords = Set<String>()
         let maxItems = 20
+        var ltMs: Double = 0
         for (bi, b) in blks.enumerated() {
             // 区域/噪声过滤：邮件列表行、签名、引用链的文字通常很短，没有完整句子
             let blen = (b.text as NSString).length
             if blen < 12 || !b.text.contains(" ") { continue }
                 let t = b.text
                 guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
-                if !LanguageGate.isEnglish(t) { continue }
+                if !LanguageGate.isEnglish(t) { cjkSkipped += 1; continue }
                 // 整块就是签名行 → 不检查
                 let lowered = t.lowercased()
                 if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
                 guard ltOK else { firstError = "本地引擎未启动"; continue }
                 do {
-                    let out = try await LocalEngine.review(text: t, language: EnginePrefs.language())
                     let t0 = Date()
+                    let out = try await LocalEngine.review(text: t, language: EnginePrefs.language())
+                    ltMs += Date().timeIntervalSince(t0) * 1000
                     await MainActor.run {
-                        self.diag.lastElapsed = String(format: "%.0fms", Date().timeIntervalSince(t0) * 1000)
+                        self.diag.lastElapsed = String(format: "%.0fms", ltMs)
                     }
                     for it in out.items { all.append(it); map.append(bi) }
                 } catch {
@@ -878,6 +1009,14 @@ final class InlineController {
             }
             await MainActor.run {
                 if let e = firstError { self.diag.lastError = e } else { self.diag.lastError = "-" }
+                // 语言门控留痕：块全是中文 → 一个引擎请求都没发
+                if all.isEmpty, cjkSkipped > 0, firstError == nil {
+                    self.diag.skippedChinese += 1
+                    self.emit(CheckEvent(kind: "skip-lang", pid: pid, app: appName(pid), role: "web",
+                                         textLen: (self.lastText as NSString).length, sentenceLen: 0,
+                                         itemCount: 0, rectCount: 0, elapsed: "-",
+                                         err: "中文块 \(cjkSkipped) · 0 请求", at: Date()))
+                }
                 self.applyWeb(items: all, blockMap: map, blocks: blks, pid: pid)
             }
         }
@@ -919,6 +1058,11 @@ final class InlineController {
                             elapsed: "-", err: "原始 \(newItems.count) 条 → 保留 \(kept.count)", at: Date()))
         }
         diag.lastRectCount = specs.count
+        // 绘制留痕：items/rects/耗时都要能事后核（卡片验收靠这一行）
+        emit(CheckEvent(kind: specs.isEmpty ? "render-none" : "render", pid: pid, app: appName(pid), role: "web",
+                        textLen: (lastText as NSString).length, sentenceLen: 0,
+                        itemCount: kept.count, rectCount: specs.count,
+                        elapsed: diag.lastElapsed, err: diag.lastError, at: Date()))
         guard !specs.isEmpty else {
             overlay.clear()
             return
@@ -1174,6 +1318,19 @@ final class InlineController {
             if f.width > 0, f.height > 0 { return f }
         }
         return elementRectQuartz(el)
+    }
+
+    /// 清线之后的补偿检查：宁可闪一下重画，也不许留残影
+    private var quickCheckTask: Task<Void, Never>?
+    private var recheckTimer: Timer?
+
+    private func scheduleQuickCheck(after delay: TimeInterval) {
+        quickCheckTask?.cancel()
+        quickCheckTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.checkNow()
+        }
     }
 
     private func CategoryPrefsSeverity(_ k: UnderlineKind) -> Int {
