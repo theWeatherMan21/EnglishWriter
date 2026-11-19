@@ -172,6 +172,8 @@ extension Sidebar: WKScriptMessageHandler {
             onAcceptAll?(); showSaved()
         case "close":
             orderOut(nil)
+        case "settings":
+            if let model = AppModel.diagRef { SettingsWindowController.shared.show(model: model) }
         default:
             break
         }

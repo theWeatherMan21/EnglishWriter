@@ -34,6 +34,12 @@ const EW = {
       + `<button class="allbtn" title="一次改完所有建议，可用 ⌘Z 撤销" onclick="EW.post({action:'acceptAll'})">全部接受</button>`;
 
     const groups = (d.groups || []).filter(g => !this.filter || g.type === this.filter);
+    if (!groups.length) {
+      document.getElementById('list').innerHTML =
+        `<div class="empty"><div class="tick">✓</div><div>没有发现问题</div></div>`;
+      document.getElementById('tone').textContent = d.tone ? ('语气：' + d.tone) : '';
+      return;
+    }
     document.getElementById('list').innerHTML = groups.map(g => `<div class="group">
       <div class="ghead"><em style="background:${typeColor(g.type)}"></em>
         ${esc(g.title)} <span>${g.items.length}</span></div>
@@ -42,11 +48,18 @@ const EW = {
           <div class="reason">${esc(it.reason)}</div>
           <div class="acts">
             <button class="btn" onclick="event.stopPropagation();EW.post({action:'dismiss',id:${it.id}})">忽略</button>
-            <button class="btn primary" onclick="event.stopPropagation();EW.post({action:'accept',id:${it.id}})">接受</button>
+            <button class="btn primary" onclick="event.stopPropagation();EW.accept(${it.id}, this)">接受</button>
           </div></div>`).join('')}
     </div>`).join('') || '<div class="foot">没有更多建议</div>';
 
     document.getElementById('tone').textContent = d.tone ? ('语气：' + d.tone) : '';
+  },
+
+  // 接受：先在 200ms 内淡出这张卡，再通知 Swift（Swift 会重推新的计数与分数）
+  accept(id, btn) {
+    const row = btn.closest('.row');
+    if (row) { row.classList.add('leaving'); }
+    setTimeout(() => this.post({ action: 'accept', id: id }), 180);
   },
 
   pick(i) { this.filter = i === 0 ? null : ['grammar', 'clarity', 'style'][i - 1]; this.render(this.data); },

@@ -56,7 +56,7 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
         {"overall":72,"band":"需注意 · 72","tone":"正式（次要 友好，本地）",
          "dims":[{"name":"正确性","value":72,"note":"拼写 1"},{"name":"清晰度","value":58,"note":"冗长 2"},
                  {"name":"吸引力","value":81,"note":"多样性 74%"},{"name":"表达","value":75,"note":"中性"}],
-         "tabs":[{"name":"全部","n":3},{"name":"语法","n":1},{"name":"清晰度","n":1},{"name":"表达","n":1}],
+         "tabs":[{"name":"全部","n":3},{"name":"正确性","n":1},{"name":"清晰度","n":1},{"name":"表达","n":1}],
          "groups":[{"title":"正确性 · 拼写与语法","type":"grammar","items":[
                      {"id":0,"original":"immediatly","replacement":"immediately","reason":"拼写错误"}]},
                    {"title":"清晰度 · 精简表达","type":"clarity","items":[
@@ -124,7 +124,7 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
             try? await Task.sleep(nanoseconds: 300_000_000)
             try? await Task.sleep(nanoseconds: 300_000_000)
             let cfg = WKSnapshotConfiguration()
-            cfg.rect = CGRect(x: 0, y: 0, width: 360, height: 640)
+            cfg.rect = CGRect(x: 0, y: 0, width: 360, height: 720)
             let img: NSImage? = await withCheckedContinuation { cont in
                 w.takeSnapshot(with: cfg) { image, _ in cont.resume(returning: image) }
             }
