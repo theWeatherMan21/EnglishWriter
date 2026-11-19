@@ -1148,8 +1148,9 @@ final class InlineController {
     /// 浮动球：三态（unknown 读不到文本 / clear 检查过没问题 / issues N 条）
     private func updateFloatBall(items: [DiffItem], specs: [UnderlineSpec], element el: AXUIElement, pid: pid_t) {
         guard !UnderlineOverlay.globallySilent else { return }   // 被动模式一个像素都不上
-        let box = specs.isEmpty ? elementRectQuartz(el)
-                                : specs.reduce(CGRect.null) { $0.union($1.rect) }
+        // anchor 必须是「当前聚焦的那个文本框」，不是 513 块拼出来的并集
+        // （并集每次检查都在变，球就满屏乱跳 —— 爹地原话）
+        let box = ballAnchor(pid: pid, fallback: el)
         guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
         let worst = items.map { CategoryPrefsSeverity($0.kind) }.max() ?? 0
         let sev: UnderlineKind = items.first(where: { CategoryPrefsSeverity($0.kind) == worst })?.kind ?? .grammar
@@ -1161,9 +1162,18 @@ final class InlineController {
     private func floatUnknown(pid: pid_t, element el: AXUIElement?) {
         guard !UnderlineOverlay.globallySilent else { return }
         guard let el else { return }
-        let box = elementRectQuartz(el)
+        let box = ballAnchor(pid: pid, fallback: el)
         guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
         FloatBall.shared.update(.init(phase: .unknown, count: 0, severity: .grammar, pid: pid, anchor: box))
+    }
+
+    /// 球的锚点：优先当前聚焦元素（正在打字的框），拿不到才退回传入的容器
+    private func ballAnchor(pid: pid_t, fallback el: AXUIElement) -> CGRect {
+        if let focused = AXInline.focusedElement(pid: pid) {
+            let f = elementRectQuartz(focused)
+            if f.width > 0, f.height > 0 { return f }
+        }
+        return elementRectQuartz(el)
     }
 
     private func CategoryPrefsSeverity(_ k: UnderlineKind) -> Int {

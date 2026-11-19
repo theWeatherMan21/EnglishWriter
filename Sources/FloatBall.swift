@@ -68,6 +68,7 @@ final class FloatBall: NSPanel {
     /// 每次检查后调用（三态：unknown / clear / issues）
     func update(_ st: State?) {
         guard let st else { hide(); return }
+        if st.phase == .unknown { hide(); return }   // 读不到文本 / 不支持的 App：不显示球，别挂问号
         phase = st.phase
         count = st.phase == .issues ? st.count : 0
         severity = st.severity
@@ -84,12 +85,15 @@ final class FloatBall: NSPanel {
     }
 
     private func place(near q: CGRect) {
-        // Quartz → AppKit：y 用主屏高度翻
-        let h = NSScreen.screens.first?.frame.height ?? 900
-        let x = q.maxX + 6
-        let yTop = q.minY + 2
-        let appKitY = h - yTop - size
-        setFrame(NSRect(x: x, y: appKitY, width: size, height: size), display: false)
+        // 用 anchor 所在那块屏（不是永远主屏），并按可见区夹紧
+        let screen = NSScreen.screens.first { s in
+            ScreenGeom.toQuartz(s.frame).intersects(q)
+        } ?? NSScreen.main
+        let visible = ScreenGeom.toQuartz(screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let p = BallPlacement.resolve(anchor: q, screenVisible: visible, size: size)
+        // Quartz（左上原点）→ AppKit：用该屏的坐标系换算
+        let h = screen?.frame.height ?? 900
+        setFrame(NSRect(x: p.x, y: h - p.y - size, width: size, height: size), display: false)
     }
 
     // MARK: 交互

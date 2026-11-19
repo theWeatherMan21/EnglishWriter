@@ -51,7 +51,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1731,5 +1731,42 @@ extension SelfTest {
         let onlyEmpty = DiffParse.parse("{\"edits\":[{\"start\":0,\"length\":2,\"original\":\"my\",\"replacement\":\"my\",\"type\":\"grammar\",\"reason\":\"x\"}]}") ?? []
         if onlyEmpty.isEmpty { SelfTest.ok("diff: 全是空修改时返回空集") }
         else { SelfTest.bad("diff: 全空修改", "\(onlyEmpty.count) 条") }
+    }
+}
+
+// MARK: 浮动球位置（四条断言：右下/左上/副屏/部分出屏）
+extension SelfTest {
+    static func ballPlacementTests() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let s: CGFloat = 22
+
+        // 1) 文本框在屏幕右下角：球仍在屏内，贴右下内侧
+        let a1 = CGRect(x: 1300, y: 800, width: 200, height: 120)
+        let p1 = BallPlacement.resolve(anchor: a1, screenVisible: screen)
+        if p1.x >= 0, p1.x + s <= 1440, p1.y >= 0, p1.y + s <= 900 {
+            SelfTest.ok("ball: 右下角不出屏", "\(Int(p1.x)),\(Int(p1.y))")
+        } else { SelfTest.bad("ball: 右下角", "\(p1)") }
+
+        // 2) 文本框在左上角：球贴框右下内侧，不跑出屏幕外
+        let a2 = CGRect(x: 10, y: 10, width: 300, height: 200)
+        let p2 = BallPlacement.resolve(anchor: a2, screenVisible: screen)
+        if p2.x >= 4, p2.y >= 4, p2.x <= a2.maxX, p2.y <= a2.maxY {
+            SelfTest.ok("ball: 左上角贴框内缩", "\(Int(p2.x)),\(Int(p2.y))")
+        } else { SelfTest.bad("ball: 左上角", "\(p2)") }
+
+        // 3) 副屏：按副屏可见区夹，不按主屏
+        let second = CGRect(x: 1512, y: 0, width: 1440, height: 900)
+        let a3 = CGRect(x: 2900, y: 850, width: 40, height: 40)
+        let p3 = BallPlacement.resolve(anchor: a3, screenVisible: second)
+        if p3.x >= second.minX, p3.x + s <= second.maxX, p3.y >= 0, p3.y + s <= 900 {
+            SelfTest.ok("ball: 副屏夹紧", "\(Int(p3.x)),\(Int(p3.y))")
+        } else { SelfTest.bad("ball: 副屏", "\(p3)") }
+
+        // 4) 部分出屏：框一半在屏外，球仍必须在屏内
+        let a4 = CGRect(x: 1380, y: -60, width: 200, height: 120)
+        let p4 = BallPlacement.resolve(anchor: a4, screenVisible: screen)
+        if p4.x + s <= 1440, p4.y >= 4 {
+            SelfTest.ok("ball: 部分出屏仍夹回", "\(Int(p4.x)),\(Int(p4.y))")
+        } else { SelfTest.bad("ball: 部分出屏", "\(p4)") }
     }
 }
