@@ -280,9 +280,11 @@ final class InlineController {
         var lastError = "-"
         var lastElapsed = "-"
         var lastRectCount = 0
+        var lastTextLen = 0            // 上一次真正取到的字数（0 = 没读到，球该是灰的）
+        var lastPath = "-"             // 走的那条通道：value / statictext(块N) / none
         var engineChoice = "语法：未定"
         var description: String {
-            "checks=\(checks) requests=\(requests) cjkSkip=\(skippedChinese) dedupe=\(dedupedHits) fallback=\(fallbackTextArea) rects=\(lastRectCount) elapsed=\(lastElapsed) err=\(lastError) | \(engineChoice)"
+            "checks=\(checks) requests=\(requests) cjkSkip=\(skippedChinese) dedupe=\(dedupedHits) fallback=\(fallbackTextArea) rects=\(lastRectCount) chars=\(lastTextLen) path=\(lastPath) elapsed=\(lastElapsed) err=\(lastError) | \(engineChoice)"
         }
     }
 
@@ -638,6 +640,10 @@ final class InlineController {
             emit(CheckEvent(kind: "no-text", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-",
                             err: "读不到文本框内容", at: Date()))
+            // 读不到字 = 不知道，不许打成绿点（三态球）
+            diag.lastTextLen = 0
+            diag.lastPath = "none"
+            floatUnknown(pid: pid, element: el)
         }
         guard let full else { diag.lastError = "读不到文本框内容"; return }
         // ① 逐 App 适配：没有配置或配置为关 → 不工作（不再靠「通用探测」猜）
@@ -683,12 +689,15 @@ final class InlineController {
         }
         // 先把这次看到的文本记下：否则轮询每秒都认为「文本变了」，日志 1 秒刷一条（踩过）
         lastText = full
+        diag.lastTextLen = (full as NSString).length
+        diag.lastPath = "value"
         // 语言门控：中文占比超阈值 → 一个请求都不发
         if !LanguageGate.isEnglish(sentence) {
             diag.skippedChinese += 1
             emit(CheckEvent(kind: "skip-lang", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
                             textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
                             itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
+            floatUnknown(pid: pid, element: el)
             overlay.clear(); items = []
             return
         }
@@ -788,6 +797,8 @@ final class InlineController {
         }
         blocks = blks
         lastText = blks.map(\.text).joined(separator: "\n")
+        diag.lastTextLen = (lastText as NSString).length
+        diag.lastPath = "statictext(块\(blks.count))"
         diag.checks += 1
 
         let sigMarkers = SpanGuard.signatureMarkers
@@ -1004,6 +1015,8 @@ final class InlineController {
         guard !cleaned.isEmpty else {
             overlay.clear(); items = []
             diag.lastRectCount = 0
+            // 检查过、0 命中 → 绿点。原来这里直接 return，球会留着上一轮的旧数字（假的）
+            updateFloatBall(items: [], specs: [], element: el, pid: pid)
             return
         }
         var specs: [UnderlineSpec] = []
@@ -1029,7 +1042,7 @@ final class InlineController {
         FloatBall.shared.hide()
     }
 
-    /// 浮动球：无问题绿点 / N 条环+数字（Grammarly 那个「我在盯着」的信号）
+    /// 浮动球：三态（unknown 读不到文本 / clear 检查过没问题 / issues N 条）
     private func updateFloatBall(items: [DiffItem], specs: [UnderlineSpec], element el: AXUIElement, pid: pid_t) {
         guard !UnderlineOverlay.globallySilent else { return }   // 被动模式一个像素都不上
         let box = specs.isEmpty ? elementRectQuartz(el)
@@ -1037,7 +1050,17 @@ final class InlineController {
         guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
         let worst = items.map { CategoryPrefsSeverity($0.kind) }.max() ?? 0
         let sev: UnderlineKind = items.first(where: { CategoryPrefsSeverity($0.kind) == worst })?.kind ?? .grammar
-        FloatBall.shared.update(.init(count: specs.count, severity: sev, pid: pid, anchor: box))
+        let phase = FloatBall.phase(textLen: (lastText as NSString).length, itemCount: items.count)
+        FloatBall.shared.update(.init(phase: phase, count: items.count, severity: sev, pid: pid, anchor: box))
+    }
+
+    /// 读不到文本 / 中文跳过 / 该 App 关掉时：灰球（「我不知道」），绝不装成绿点
+    private func floatUnknown(pid: pid_t, element el: AXUIElement?) {
+        guard !UnderlineOverlay.globallySilent else { return }
+        guard let el else { return }
+        let box = elementRectQuartz(el)
+        guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
+        FloatBall.shared.update(.init(phase: .unknown, count: 0, severity: .grammar, pid: pid, anchor: box))
     }
 
     private func CategoryPrefsSeverity(_ k: UnderlineKind) -> Int {

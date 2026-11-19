@@ -43,13 +43,14 @@ enum SelfTest {
         if wantAll || argv.contains("--faults") { faultTests() }
         if wantAll || argv.contains("--diff") { diffTests() }
         if argv.contains("--m3") { m3Tests(); mergeTests(); webReplaceTests() }
-        if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests(); routerTests(); RewriteTests.run(); CategoryPrefsTests.run() }
+        if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); grammarTests(); docScanTests(); spellCheckTests(); routerTests(); RewriteTests.run(); CategoryPrefsTests.run() }
+        if argv.contains("--grammar") && !argv.contains("--style") && !argv.contains("--docscan") { grammarTests() }
         if wantAll || argv.contains("--lang") { languageGateTests() }
         if wantAll || argv.contains("--score") { scoreTests() }
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
         if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -560,6 +561,53 @@ enum SelfTest {
         if !items.isEmpty, sorted, noOverlap {
             ok("规则·多命中不重叠", "\(items.count) 条，升序且不重叠")
         } else { bad("规则·多命中不重叠", "count=\(items.count) sorted=\(sorted) noOverlap=\(noOverlap)") }
+    }
+
+    // MARK: 本地语法兜底（无 LT / 无模型时也不许漏底线用例）
+    static func grammarTests() {
+        print("\n--- 本地语法兜底（无 LT / 无模型）---")
+        // 正例：必须报，且替换值正确（these are the bottom-line cases）
+        let positives: [(String, String, String)] = [
+            ("There is many reasons why we should sent the documents.", "is", "are"),
+            ("There is many reasons why we should sent the documents.", "sent", "should send"),
+            ("We was hoping to receive them before Friday.", "was", "were"),
+            ("They was late again.", "was", "were"),
+            ("He were right about the vessel.", "were", "was"),
+            ("We has sent the BL draft.", "has", "have"),
+            ("The supplier dont confirm the ETD.", "dont", "don't"),
+            ("Please check the the BL draft.", "the the", "the"),
+            ("We could of finished it yesterday.", "of", "have"),
+        ]
+        for (text, needle, want) in positives {
+            let items = StyleRules.apply(to: text).filter { $0.type == "grammar" }
+            let hit = items.first { $0.original.lowercased().contains(needle.lowercased()) }
+            if let h = hit, h.replacement.lowercased().hasSuffix(want.lowercased()) {
+                ok("语法·\(needle) → \(want)", "\(h.type)：\(h.original) → \(h.replacement)")
+            } else {
+                let got = items.map { $0.original + "→" + $0.replacement }.joined(separator: ", ")
+                bad("语法·\(needle) → \(want)", "未命中或替换值错：\(got)")
+            }
+        }
+        // 反例：合法句式一条都不许报（精度优先于召回；只看 grammar，clarity/style 归 StyleRules 自己的用例管）
+        let negatives = [
+            "There is a lot of cargo on board.",
+            "There is a number of issues to check.",
+            "If he were here, we would start tomorrow.",
+            "Does he have the booking number?",
+            "We have sent the BL draft already.",
+            "The team has confirmed the schedule.",
+            "You were right about the ETD.",
+            "Please confirm the ETD and the vessel name.",
+        ]
+        for text in negatives {
+            let items = StyleRules.apply(to: text).filter { $0.type == "grammar" }
+            if items.isEmpty {
+                ok("语法·不误报", text)
+            } else {
+                let got = items.map { $0.original + "→" + $0.replacement }.joined(separator: ", ")
+                bad("语法·不误报", "\(text) → \(got)")
+            }
+        }
     }
 
     // MARK: 引擎路由（四类由三条通道拼出来）
@@ -1233,6 +1281,31 @@ extension SelfTest {
 
 // MARK: UI 文案（看不见就是没做 → 用断言锁住格式与档位阈值）
 extension SelfTest {
+    // MARK: 浮动球三态（知澜 11-18：灰=不知道 / 绿=查过没问题 / 环+数字=N 条）
+    static func floatBallStateTests() {
+        print("\n--- 浮动球三态（不许两态）---")
+        let cases: [(Int?, Int, String)] = [
+            (nil, 0, "unknown"),      // 没焦点元素
+            (0,   0, "unknown"),      // 读到了元素但 0 字（Mail 阅读视图踩过）
+            (120, 0, "clear"),        // 真查过、没问题
+            (120, 3, "issues"),       // 有 N 条
+            (5,   1, "issues"),
+        ]
+        for (len, n, want) in cases {
+            let got: String
+            switch FloatBall.phase(textLen: len, itemCount: n) {
+            case .unknown: got = "unknown"
+            case .clear:   got = "clear"
+            case .issues:  got = "issues"
+            }
+            if got == want {
+                ok("球态·textLen=\(len.map(String.init) ?? "nil") items=\(n)", want)
+            } else {
+                bad("球态·textLen=\(len.map(String.init) ?? "nil") items=\(n)", "得到 \(got)，期望 \(want)")
+            }
+        }
+    }
+
     static func uiTextTests() {
         if Sidebar.bandText(overall: 85).contains("良好") { SelfTest.ok("ui: ≥80 判良好", Sidebar.bandText(overall: 85)) }
         else { SelfTest.bad("ui: ≥80 判良好", Sidebar.bandText(overall: 85)) }

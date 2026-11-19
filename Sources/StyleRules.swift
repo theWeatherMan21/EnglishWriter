@@ -97,6 +97,8 @@ enum StyleRules {
                                     type: rule.type, reason: rule.reason))
             }
         }
+        // 本地语法兜底（无 LT / 无模型时也不能漏底线用例）：与 clarity/style 同一出口收口
+        out += LocalGrammar.apply(to: text, includeGuarded: includeGuarded)
         // 规则之间也可能重叠（in order to 与 to）：按严重度收口，输出恒升序不重叠
         return DiffSanitize.consolidate(out, in: text)
     }

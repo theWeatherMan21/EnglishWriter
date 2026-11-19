@@ -73,6 +73,7 @@ struct DiagView: View {
                 row("焦点兜底", "\(d.fallbackTextArea)")
                 row("最近耗时", d.lastElapsed)
                 row("最近矩形", "\(d.lastRectCount)")
+                row("上次取文本", "\(d.lastTextLen) 字 / 通道 \(d.lastPath)")
                 row("最近错误", d.lastError)
                 row("写回方式", Diag.shared.applyMethod)
                 row("撤销次数", "\(Diag.shared.undoCount)")
