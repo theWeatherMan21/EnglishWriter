@@ -3,13 +3,18 @@
 </head><body>
 <div class="card" id="card">
   <div class="cat"><em id="dot"></em><span id="cat"></span></div>
-  <div class="sent" id="sent" onclick="EWCard.post({action:'accept'})"></div>
+  <div class="row"><span class="lbl">原句</span><div class="sent" id="sent"></div></div>
+  <div class="row"><span class="lbl">建议</span><div class="sugg" id="sugg"></div></div>
+  <div class="reason" id="reason"></div>
   <div class="hr"></div>
   <div class="acts">
-    <button class="btn" id="dict" onclick="EWCard.post({action:'dict'})">加入词典</button>
-    <button class="btn" onclick="EWCard.post({action:'ignoreSession'})">本次忽略</button>
-    <button class="btn" onclick="EWCard.post({action:'ignore'})">不再提示</button>
-    <button class="btn" id="more" onclick="EWCard.more()">···</button>
+    <button class="btn" id="dict">加入词典</button>
+    <button class="btn" id="ignoreSession">本次忽略</button>
+    <button class="btn" id="more">···</button>
+  </div>
+  <div class="acts main">
+    <button class="btn" id="ignore">忽略</button>
+    <button class="btn primary" id="accept">接受</button>
   </div>
 </div>
 <script src="card.js"></script>

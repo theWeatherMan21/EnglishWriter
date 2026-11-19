@@ -51,7 +51,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -412,31 +412,56 @@ enum SelfTest {
         _ = NSApplication.shared          // 卡片渲染要建 NSWindow，先确保 NSApp 存在
         print("\n--- M3：逐条接受 / 撤销 / 忽略 / 词典 / 卡片 ---")
 
-        // 1) 只接受一条：其它错不能被顺带改掉
+        // 1) 只接受一条：走产品同一条路径（M3Flow.accept → applyEdits(only:)），其它错不能被顺带改掉
         let text = "There is many reasons why we should sent it immediatly."
         let items = MockDiff.items(for: text)
         guard items.count >= 3 else { bad("M3·夹具", "MockDiff 只出 \(items.count) 条"); return }
-        let one = applyEdits(items, to: text, only: 2)
-        if one.contains(items[2].replacement), one.contains("There is many"), one.contains("should sent") {
+        let stack = M3UndoStack()
+        let doc = BufferDoc(text, pid: getpid())
+        let acc = M3Flow.accept(items: items, only: 2, in: doc, stack: stack)
+        let one = doc.fullText
+        if acc.ok, one.contains(items[2].replacement), one.contains("There is many"), one.contains("should sent") {
             ok("M3·只接受一条", "改第 3 条（\(items[2].original)→\(items[2].replacement)），另两条原样")
         } else {
-            bad("M3·只接受一条", one)
+            bad("M3·只接受一条", "\(one)（\(acc.detail)）")
         }
-        // 2) 撤销：接受后再换回原文，逐字节一致
-        let back = (one as NSString).replacingOccurrences(of: items[2].replacement, with: items[2].original)
-        if back == text { ok("M3·撤销还原", "接受→撤销后与原文一致") } else { bad("M3·撤销还原", back) }
+        if stack.count == 1, let e = stack.top, e.pid == getpid(),
+           e.range.length == (items[2].original as NSString).length, e.snapshot == text {
+            ok("M3·撤销帧", "pid + range \(e.range.location)+\(e.range.length) + 原文快照都已入栈")
+        } else {
+            bad("M3·撤销帧", "栈=\(stack.count) top=\(stack.top?.describe ?? "nil")")
+        }
+        // 2) 撤销：用真正的撤销栈回写快照，逐字节回到原文
+        let undone = M3Flow.undo(stack: stack)
+        if undone.ok, doc.fullText == text, stack.count == 0 {
+            ok("M3·撤销还原", "接受→撤销后与原文逐字节一致（\(undone.detail)）")
+        } else {
+            bad("M3·撤销还原", "\(doc.fullText)（\(undone.detail)）")
+        }
 
         // 3) 忽略规则：加进去要生效，且不污染用户数据（跑完清掉）
         let ioSaved = SettingsStore.store.array(forKey: "ignore.rules") as? [[String]]
         let ig = IgnoreStore.shared
+        let hashSaved = SettingsStore.store.array(forKey: "ignore.hashes") as? [String]
         let probe = ("immediatly", "immediately")
         _ = ig.ignore(original: probe.0, replacement: probe.1)
         if ig.isIgnored(original: probe.0, replacement: probe.1) { ok("M3·忽略规则", "同「原词→建议」再次命中即跳过") }
         else { bad("M3·忽略规则", "加完仍不生效") }
         if ig.isIgnored(original: "sent", replacement: "send") == false { ok("M3·忽略不误伤", "别的条目不受影响") }
         else { bad("M3·忽略不误伤", "误伤了别的条目") }
+        // 文本 hash 路径：后续检查结果按 hash 过滤，这条不再返回
+        let h = M3Ignore.hash(original: probe.0, replacement: probe.1)
+        let kept = M3Ignore.filter(items) { ig.isIgnored(original: $0.original, replacement: $0.replacement) }
+        if ig.isIgnored(hash: h), kept.count == items.count - 1,
+           !kept.contains(where: { $0.original == probe.0 }) {
+            ok("M3·忽略按 hash 过滤", "\(items.count) 条 → \(kept.count) 条，此条不再返回")
+        } else {
+            bad("M3·忽略按 hash 过滤", "isIgnored(hash:)=\(ig.isIgnored(hash: h)) kept=\(kept.count)")
+        }
         if let saved = ioSaved { SettingsStore.store.set(saved, forKey: "ignore.rules") }
         else { SettingsStore.store.removeObject(forKey: "ignore.rules") }
+        if let saved = hashSaved { SettingsStore.store.set(saved, forKey: "ignore.hashes") }
+        else { SettingsStore.store.removeObject(forKey: "ignore.hashes") }
         ig.reloadForTesting()
 
         // 4) 个人词典：命中即丢建议；零预设
@@ -506,6 +531,41 @@ enum SelfTest {
             print("SKIP  M3·卡片离线渲染  — CI 环境拿不到离屏位图后端（本机 --selftest --m3 仍是硬断言）")
         } else {
             bad("M3·卡片离线渲染", "渲染 PNG 失败")
+        }
+
+        // 6) 全链路离线驱动：命中坐标 → 卡片 → 接受 → 撤销 → 忽略（行级日志落 out/m3-chain.log）
+        let drive = M3Drive.run(out: outDir + "/m3-chain.log", verbose: true)
+        if drive.fail == 0, drive.pass >= 8 {
+            ok("M3·链路驱动", "断言 \(drive.pass)/0 全绿，行级日志 \(outDir)/m3-chain.log")
+        } else {
+            bad("M3·链路驱动", "PASS \(drive.pass) / FAIL \(drive.fail)")
+        }
+
+        // 7) 卡片 DOM：类别色标 / 原句 / 建议 / 一句中文理由 / 接受·忽略
+        let cardHTML = (try? String(contentsOfFile: "web/card/index.html", encoding: .utf8)) ?? ""
+        let needNodes = ["id=\"dot\"", "id=\"sent\"", "id=\"sugg\"", "id=\"reason\"", "id=\"accept\"", "id=\"ignore\""]
+        let missingNodes = needNodes.filter { !cardHTML.contains($0) }
+        if missingNodes.isEmpty {
+            ok("M3·卡片结构", "色标/原句/建议/理由/接受/忽略 六个节点齐全")
+        } else {
+            bad("M3·卡片结构", "缺 \(missingNodes)")
+        }
+        let cardJS = (try? String(contentsOfFile: "web/card/card.js", encoding: .utf8)) ?? ""
+        if cardJS.contains("'accept'") && cardJS.contains("reason") {
+            ok("M3·卡片脚本", "accept 动作 + reason 渲染都在")
+        } else {
+            bad("M3·卡片脚本", "card.js 缺 accept / reason")
+        }
+
+        // 8) 悬停监听：全局 mouseMoved 真的挂上（覆盖窗口 ignoresMouseEvents，命中只能走监听）
+        MainActor.assumeIsolated {
+            HoverCoordinator.shared.start()
+            if HoverCoordinator.shared.hoverMonitorActive {
+                ok("M3·悬停监听", "mouseMoved 全局监听已挂（dwell \(Int(HoverCoordinator.shared.dwellDelay * 1000))ms），另保留单击即时出卡")
+            } else {
+                bad("M3·悬停监听", "NSEvent.addGlobalMonitorForEvents(.mouseMoved) 返回 nil")
+            }
+            HoverCoordinator.shared.stop()
         }
     }
 
@@ -1623,4 +1683,37 @@ final class CountingProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+// MARK: 卡片边界规避（纯函数四条断言）
+extension SelfTest {
+    static func cardPlacementTests() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let card = CGSize(width: 192, height: 140)
+
+        // 1) 正常：贴在词下方
+        let a = CGRect(x: 200, y: 200, width: 60, height: 14)
+        let p1 = CardPlacement.resolve(anchor: a, cardSize: card, screenVisible: screen)
+        if p1.x == 200 && p1.y == 220 { SelfTest.ok("place: 默认贴词下方", "\(Int(p1.x)),\(Int(p1.y))") }
+        else { SelfTest.bad("place: 默认位置", "\(p1)") }
+
+        // 2) 底部放不下 → 翻到上方
+        let b = CGRect(x: 200, y: 860, width: 60, height: 14)
+        let p2 = CardPlacement.resolve(anchor: b, cardSize: card, screenVisible: screen)
+        if p2.y < b.minY { SelfTest.ok("place: 底部翻到词上方", "\(Int(p2.y))") }
+        else { SelfTest.bad("place: 底部翻转", "\(p2)") }
+
+        // 3) 右侧放不下 → 左移不越界
+        let c = CGRect(x: 1380, y: 200, width: 60, height: 14)
+        let p3 = CardPlacement.resolve(anchor: c, cardSize: card, screenVisible: screen)
+        if p3.x + card.width <= screen.maxX + 0.5 { SelfTest.ok("place: 右侧左移不越界", "\(Int(p3.x))") }
+        else { SelfTest.bad("place: 右侧左移", "\(p3)") }
+
+        // 4) 副屏（非原点）也按那块屏算
+        let second = CGRect(x: 1512, y: 0, width: 1440, height: 900)
+        let d = CGRect(x: 1520, y: 200, width: 60, height: 14)
+        let p4 = CardPlacement.resolve(anchor: d, cardSize: card, screenVisible: second)
+        if p4.x >= second.minX && p4.x + card.width <= second.maxX { SelfTest.ok("place: 副屏取对应屏幕", "\(Int(p4.x))") }
+        else { SelfTest.bad("place: 副屏", "\(p4)") }
+    }
 }

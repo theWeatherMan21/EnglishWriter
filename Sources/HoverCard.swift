@@ -356,34 +356,51 @@ final class HoverCoordinator {
     private let panel = HoverCardPanel()          // 旧 AppKit 卡片：保留给离线自测，不再上屏
     private var usingWebCard: Bool { true }
     private var monitor: Any?
+    private var hoverMonitor: Any?
     private var localMonitor: Any?
     private var dwell: DispatchWorkItem?
     private var pending: (itemID: Int, rect: CGRect)?
     private var currentOpenIndex = -1
+    private var hoveringItemID = -1
+    private var lastMoveAt = Date.distantPast
 
     var dwellDelay: TimeInterval = 0.20   // 知澜 11-19 规格：200ms 就弹
+    /// 自检用：全局监听是否真的挂上了（挂不上 = 悬停永远不会响，必须能断言）
+    var hoverMonitorActive: Bool { hoverMonitor != nil }
+    var clickMonitorActive: Bool { monitor != nil }
 
-    /// 爹地 11-19：交互砍到一条路 —— 单击划线处直接出卡片，不用悬停、不用等。
+    /// 两条路都保留：
+    ///   · 鼠标停在划线上 200ms → 出卡片（规格要求的悬停命中，走全局 mouseMoved 监听）
+    ///   · 单击划线处 → 立刻出卡片（爹地 11-19：交互要「不用等」）
+    /// 覆盖窗口 ignoresMouseEvents=true，两条路都不靠窗口事件。
     func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
             Task { @MainActor in self?.onClick() }
         }
+        // 悬停命中：全局 mouseMoved；命中判定用 M1 的 HighlightRects（Quartz 左上原点）
+        hoverMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            Task { @MainActor in self?.onMouseMoved() }
+        }
         // 点卡片内部不关（卡片自己的按钮会处理）
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] e in
             Task { @MainActor in
                 guard let self else { return }
+                _ = self
                 if !CardWeb.shared.frame.contains(NSEvent.mouseLocation) { CardWeb.shared.dismiss() }
             }
             return e
         }
+        AppLog.info("m3", "hover monitors start click=\(monitor != nil) hover=\(hoverMonitor != nil) dwell=\(Int(dwellDelay * 1000))ms")
     }
 
     func stop() {
         if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        if let m = hoverMonitor { NSEvent.removeMonitor(m); hoverMonitor = nil }
         if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
         dwell?.cancel()
         panel.dismiss()
+        CardWeb.shared.dismiss()
     }
 
     /// 自检专用：走一次真实命中流程（全局静默时应当在第一行就返回，不建卡不上屏）
@@ -393,13 +410,19 @@ final class HoverCoordinator {
     /// 纯函数：给定一批下划线矩形和一个点，返回命中的那条（±3/±6 的容错）
     /// 抽出来是为了能断言——点划线这条不能只靠真人试才知道对不对
     nonisolated static func hitTest(_ specs: [UnderlineSpec], at p: CGPoint) -> UnderlineSpec? {
-        specs.first { $0.rect.insetBy(dx: -3, dy: -6).contains(p) }
+        M3Flow.hit(specs, at: p, dx: 3, dy: 6)
     }
 
     private func onClick() {
         if UnderlineOverlay.globallySilent { return }
-        let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: NSEvent.mouseLocation, size: .zero)).origin
-        if CardWeb.shared.frame.contains(NSEvent.mouseLocation) { return }   // 点在卡片上
+        let mouseAppKit = NSEvent.mouseLocation
+        // ① 我们自己的窗口让路：试用窗口 / 卡片 / 侧栏 / 浮动球 —— 点到一律不判定、不 dismiss
+        //    （否则爹地点自己窗口会被记成 Safari/Mail 的 click-miss，看起来像「没反应」）
+        let ownWindows: [NSWindow] = [CardWeb.shared, Sidebar.shared, FloatBall.shared,
+                                      DemoLive.shared.windowRef].compactMap { $0 }
+        for w in ownWindows where w.isVisible && w.frame.contains(mouseAppKit) { return }
+
+        let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: mouseAppKit, size: .zero)).origin
         let specs = InlineController.shared.overlay.currentRects()
         let hit = HoverCoordinator.hitTest(specs, at: mouseQuartz)
         CheckLog.append(.init(kind: hit == nil ? "click-miss" : "click-hit",
@@ -414,27 +437,45 @@ final class HoverCoordinator {
 
     private func onMouseMoved() {
         if UnderlineOverlay.globallySilent { return }   // 只读模式：悬停卡片一律不许出现
+        // 鼠标移动频率极高：40ms 节流，命中判定本身是纯几何（几十条 rect 的 contains）
+        let now = Date()
+        if now.timeIntervalSince(lastMoveAt) < 0.04 { return }
+        lastMoveAt = now
+
         let mouseAppKit = NSEvent.mouseLocation
         let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: mouseAppKit, size: .zero)).origin
-        let specs = InlineController.shared.overlay.currentRects()
 
-        // 落在卡片上 → 保持
+        // 落在卡片上（含旧 AppKit 卡片）→ 保持，不关也不切
+        if CardWeb.shared.isVisible, CardWeb.shared.frame.contains(mouseAppKit) { return }
         if panel.containsMouse() { return }
 
-        // 落在某条下划线上（往上下各放宽 3pt，好点）
-        let hit = specs.first { $0.rect.insetBy(dx: -2, dy: -4).contains(mouseQuartz) }
-        guard let h = hit else {
-            if panel.shownItemID >= 0 { panel.dismiss() }
+        let specs = InlineController.shared.overlay.currentRects()
+        guard let h = M3Flow.hit(specs, at: mouseQuartz, dx: 2, dy: 4) else {
+            if hoveringItemID >= 0 {
+                hoveringItemID = -1
+                AppLog.info("m3", "hover leave → dismiss")
+                CardWeb.shared.dismiss()
+            }
             dwell?.cancel()
             pending = nil
             return
         }
-        if panel.shownItemID == h.itemID { return }
+        if hoveringItemID == h.itemID, CardWeb.shared.isVisible { return }
         if let p = pending, p.itemID == h.itemID { return }   // 已在计时
         pending = (h.itemID, h.rect)
         dwell?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor in self?.open(itemID: h.itemID, rect: h.rect) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.hoveringItemID = h.itemID
+                AppLog.info("m3", "hover open item=\(h.itemID) cursor=(\(Int(mouseQuartz.x)),\(Int(mouseQuartz.y))) rect=(\(Int(h.rect.minX)),\(Int(h.rect.minY)),\(Int(h.rect.width)),\(Int(h.rect.height))) dwell=\(Int(self.dwellDelay * 1000))ms")
+                CheckLog.append(.init(kind: "hover-hit", pid: InlineController.shared.currentPid,
+                                      app: appName(InlineController.shared.currentPid),
+                                      role: "-", textLen: 0, sentenceLen: 0,
+                                      itemCount: h.itemID, rectCount: specs.count,
+                                      elapsed: "\(Int(self.dwellDelay * 1000))ms", err: "-", at: Date()))
+                self.open(itemID: h.itemID, rect: h.rect)
+            }
         }
         dwell = work
         DispatchQueue.main.asyncAfter(deadline: .now() + dwellDelay, execute: work)
@@ -526,6 +567,8 @@ final class HoverCoordinator {
                          Int(kind.color.greenComponent * 255), Int(kind.color.blueComponent * 255))
         CardWeb.shared.show(category: kind.categoryLine, color: hex,
                             before: before, original: item.original, replacement: item.replacement, after: after,
+                            reason: ReasonText.zh(type: item.type, reason: item.reason,
+                                                  original: item.original, replacement: item.replacement),
                             anchor: rect, allowDict: true,
                             onAccept: { _ = ctrl.accept(itemID: itemID) },
                             onIgnore: { ctrl.ignorePermanent(itemID: itemID) },

@@ -102,7 +102,8 @@ enum UnderlinePainter {
         // 线画在文字基线下方 1.0pt，厚度 1.6pt
         let y = r.maxY - 1.0
         let path = NSBezierPath()
-        path.lineWidth = (kind.shape == .straightThin) ? 1.0 : 1.6
+        // 2px 起步：1px 在 Retina 上肉眼几乎看不见（爹地「点了没反应」的观感来源之一）
+        path.lineWidth = 2.0
         path.lineJoinStyle = .round
         path.lineCapStyle = .round
         switch kind.shape {

@@ -21,8 +21,10 @@ final class CardWeb: NSPanel {
     private var onRewrite: (() -> Void)?
     private var onTone: (() -> Void)?
     private var anchor: CGRect = .zero
-    /// 卡片宽度：四个动作（加入词典 / 本次忽略 / 不再提示 / ···）一行放得下
-    static let cardWidth: CGFloat = 240
+    /// 卡片宽度：四个动作（加入词典 / 本次忽略 / 不再提示 / ···）必须一行放得下。
+    /// 实测（Chrome 量 DOM）：240 会把「···」挤到第二行；256 刚好贴边；取 264 留 20px 余量。
+    /// 真机上万一还是换行也不会溢出——HTML 会报回真实高度，卡片只是变高两行。
+    static let cardWidth: CGFloat = 264
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: CardWeb.cardWidth, height: 140),
@@ -50,7 +52,7 @@ final class CardWeb: NSPanel {
     override var canBecomeMain: Bool { false }
 
     func show(category: String, color: String, before: String, original: String,
-              replacement: String, after: String, anchor: CGRect,
+              replacement: String, after: String, reason: String = "", anchor: CGRect,
               allowDict: Bool,
               onAccept: @escaping () -> Void, onIgnore: @escaping () -> Void,
               onIgnoreSession: (() -> Void)? = nil,
@@ -63,20 +65,33 @@ final class CardWeb: NSPanel {
         self.onRewrite = onRewrite
         self.onTone = onTone
         self.anchor = anchor
-        let payload: [String: Any] = [
-            "category": category, "color": color,
-            "before": before, "original": original, "replacement": replacement, "after": after,
-            "allowDict": allowDict,
-            "canRewrite": onRewrite != nil,
-        ]
+        let payload = Self.payload(category: category, color: color, before: before,
+                                   original: original, replacement: replacement, after: after,
+                                   reason: reason, allowDict: allowDict,
+                                   canRewrite: onRewrite != nil)
         if let d = try? JSONSerialization.data(withJSONObject: payload),
            let s = String(data: d, encoding: .utf8) {
             web.evaluateJavaScript("EWCard.card(\(s))", completionHandler: nil)
         }
-        // 尺寸由内容决定，先按宽 210 放，HTML 回传实际高度后再定位置
+        // 尺寸由内容决定，先按固定宽放，HTML 回传实际高度后再定位置
         setContentSize(NSSize(width: Self.cardWidth, height: frame.height))
         place()
         orderFrontRegardless()
+        AppLog.info("m3", "card show category=\(category) anchor=(\(Int(anchor.minX)),\(Int(anchor.minY)),\(Int(anchor.width)),\(Int(anchor.height))) reason=\"\(reason)\"")
+    }
+
+    /// 卡片内容（唯一构造点）：类别色标 / 原句 / 建议 / 一句中文理由 / 接受·忽略
+    /// 抽成静态函数是为了让 --selftest 与 --m3-drive 断言的就是真机走的那份 payload。
+    static func payload(category: String, color: String, before: String, original: String,
+                        replacement: String, after: String, reason: String,
+                        allowDict: Bool, canRewrite: Bool) -> [String: Any] {
+        [
+            "category": category, "color": color,
+            "before": before, "original": original, "replacement": replacement, "after": after,
+            "reason": reason,
+            "allowDict": allowDict,
+            "canRewrite": canRewrite,
+        ]
     }
 
     /// HTML 回传内容高度 → 重新定位（贴词下方，允许盖住下一行）
@@ -86,11 +101,15 @@ final class CardWeb: NSPanel {
         place()
     }
 
+    /// 就近弹出：贴矩形下方 4pt；下方放不下翻到上方；左右夹进该屏可见区（多屏按矩形所在屏算）
     private func place() {
-        let h = NSScreen.screens.first?.frame.height ?? 900
-        let x = anchor.minX
-        let yTop = anchor.maxY + 6
-        setFrame(NSRect(x: x, y: h - yTop - frame.height, width: Self.cardWidth, height: frame.height), display: false)
+        let screen = ScreenGeom.screen(containingQuartz: anchor)
+        let visible = screen.map { ScreenGeom.toQuartz($0.visibleFrame) }
+            ?? ScreenGeom.toQuartz(NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1512, height: 982))
+        let box = M3Flow.placement(anchor: anchor,
+                                  size: CGSize(width: Self.cardWidth, height: frame.height),
+                                  visible: visible, gap: 4)
+        setFrame(ScreenGeom.toAppKit(box), display: false)
     }
 
     func dismiss() { orderOut(nil) }

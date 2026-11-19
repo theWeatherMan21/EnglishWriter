@@ -6,11 +6,18 @@ body { margin:0; background:transparent; font: var(--f-secondary)/1.45 -apple-sy
         padding: var(--s3); display:flex; flex-direction:column; gap: var(--s2); }
 .cat { font-size: var(--f-caption); color: var(--text-muted); display:flex; align-items:center; gap:6px; }
 .cat em { width:6px; height:6px; border-radius:999px; font-style:normal; }
-.sent { font-size: var(--f-body); line-height:1.5; cursor:pointer; }
+.row { display:flex; gap: var(--s2); align-items:flex-start; }
+.lbl { flex:0 0 26px; font-size: var(--f-caption); color: var(--text-muted); line-height:1.7; }
+.sent { flex:1 1 auto; font-size: var(--f-body); line-height:1.5; min-width:0; }
+.sugg { flex:1 1 auto; font-size: var(--f-body); line-height:1.5; min-width:0; }
+.reason { font-size: var(--f-caption); color: var(--text-muted); line-height:1.5; }
 .old { color:#fff; background:var(--correctness); text-decoration:line-through; border-radius:3px; padding:0 3px; }
 .new { color:#fff; background:var(--engagement); font-weight:600; border-radius:3px; padding:0 3px; }
 .hr { height:1px; background:var(--border); margin: 2px 0; }
 .acts { display:flex; gap: var(--s1); justify-content:flex-end; flex-wrap:wrap; }
+.acts.main { gap: var(--s2); }
 .btn { font-size: var(--f-caption); border:1px solid var(--border); background:var(--bg);
        border-radius: var(--r-control); padding:3px 8px; cursor:pointer; color:var(--text); }
 .btn:hover { background: var(--hover, rgba(0,0,0,.04)); }
+.btn.primary { background:#027E6F; border-color:#027E6F; color:#fff; font-weight:600; padding:3px 12px; }
+.btn.primary:hover { background:#016a5d; }

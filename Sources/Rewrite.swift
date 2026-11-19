@@ -262,6 +262,7 @@ enum Rewrite {
             ctrl.setUndoSnapshot(DiffItem(start: segStart, length: newSegLen,
                                           original: segment, replacement: nowSegment,
                                           type: "style", reason: "改写建议回滚"),
+                                 snapshot: before,
                                  element: el)
         }
         return applied

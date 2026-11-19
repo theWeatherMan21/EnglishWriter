@@ -14,6 +14,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     static let shared = DemoLive()
 
     private var window: NSWindow?
+    var windowRef: NSWindow? { window }
     private var textView: NSTextView!
     private var listBox: NSStackView!
     private var status: NSTextField!

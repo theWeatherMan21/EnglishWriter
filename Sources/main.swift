@@ -269,6 +269,15 @@ if argv.contains("--selftest") {
     exit(SelfTest.run(argv))
 }
 
+// M3 链路驱动（离线、不建窗口）：命中 → 弹出 → 接受 → 撤销 → 忽略，行级日志
+if argv.contains("--m3-drive") {
+    let i = argv.firstIndex(of: "--m3-drive")!
+    let out = (i + 1 < argv.count && !argv[i + 1].hasPrefix("--")) ? argv[i + 1] : "out/m3-drive.log"
+    let r = M3Drive.run(out: out)
+    print("=== M3 链路驱动：PASS \(r.pass) / FAIL \(r.fail) ===")
+    exit(r.fail == 0 ? 0 : 1)
+}
+
 // 真模型改写 / 语气（--live-rewrite / --live-tone）：key 只走环境变量
 if argv.contains("--docscan-file") {
     var ok = false

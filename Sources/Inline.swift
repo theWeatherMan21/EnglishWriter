@@ -366,9 +366,30 @@ final class InlineController {
         itemBlock = newItems.map { _ in -1 }
     }
 
-    /// 改写建议：留一个「整段」撤销快照，回滚仍走 undoLastAccept()
-    func setUndoSnapshot(_ item: DiffItem, element: AXUIElement?) {
-        lastAccept = (item, -1, element)
+    /// 改写建议：整段撤销快照（回滚仍走 undoLastAccept，不另造一套）
+    func setUndoSnapshot(_ item: DiffItem, snapshot: String, element: AXUIElement?) {
+        let pid = currentPid
+        let doc: M3Doc
+        if let el = element {
+            let readable = !(AXInline.fullText(of: el) ?? "").isEmpty
+            doc = ClosureDoc(pid: pid, canReadBack: readable,
+                             read: { AXInline.fullText(of: el) ?? snapshot },
+                             writeRange: { [weak self] r, t in
+                                 self?.layeredWrite(range: r, text: t, to: el, pid: pid) ?? false
+                             },
+                             writeFull: { [weak self] t in
+                                 self?.writeWhole(t, to: el, pid: pid) ?? false
+                             })
+        } else {
+            doc = BufferDoc(snapshot, pid: pid)
+        }
+        M3UndoStack.shared.push(M3UndoEntry(itemID: -1, pid: pid,
+                                            range: NSRange(location: item.start,
+                                                           length: (item.replacement as NSString).length),
+                                            original: item.original, replacement: item.replacement,
+                                            snapshot: snapshot, newText: doc.fullText,
+                                            doc: doc, at: Date()))
+        AppLog.info("m3", "undo-snapshot pid=\(pid) range=\(item.start)+\((item.replacement as NSString).length) snapshotLen=\((snapshot as NSString).length)")
     }
 
     /// 轮询兜底：布局/焦点通知会丢（知洲 11-18 指出的 Grammarly 行为：每秒轮一次）。
@@ -902,73 +923,104 @@ final class InlineController {
         return SentenceSlice(text: (source as NSString).substring(with: r), errorRange: local)
     }
 
-    private var lastAccept: (item: DiffItem, blockIndex: Int, element: AXUIElement?)?
+    private var lastAccept: (item: DiffItem, blockIndex: Int, element: AXUIElement?)?   // 已由 M3UndoStack 取代，保留字段供老断言编译
 
-    /// 接受一条：只替换这一处，保留撤销栈（AXSelectedText 写入选区）
+    /// 卡片「接受」：按条走 applyEdits(only:)，只替换这一条的 range，不动同段其它建议；
+    /// 接受前把「原文快照 + pid + range」压进内存撤销栈（菜单「撤销上次替换」出栈回写）。
     @discardableResult
     func accept(itemID id: Int) -> Bool {
         guard id >= 0, id < items.count else { return false }
         let it = items[id]
-        let bi = itemBlock.indices.contains(id) ? itemBlock[id] : -1
-        var ok = false
-        if bi >= 0, bi < blocks.count {
-            ok = WebText.replace(range: it.utf16Range, with: it.replacement, in: blocks[bi])
-            if ok { lastAccept = (it, bi, nil) }
-        } else if let el = currentElement, let v = axRangeValue(it.start, it.length) {
-            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
-            Audit.write("Inline.accept")
-            ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, it.replacement as CFTypeRef) == .success
-            if ok { lastAccept = (it, -1, el) }
-            // Chromium 网页字段：AXValue 与 AXSelectedText 实测都写不进（2026-11-16 探测），
-            // 剪贴板 ⌘V 兜底 —— 只在 AX 写失败时走，原生 AppKit 路径行为不变。
-            if !ok {
-                _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
-                if pasteViaClipboard(it.replacement, to: currentPid) {
-                    usleep(450_000)
-                    if (attrString(el, kAXValueAttribute as String) ?? "").contains(it.replacement) {
-                        ok = true
-                        lastAccept = (it, -1, el)
-                        Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
-                    }
-                }
-            }
-        }
-        diag.lastError = ok ? "已接受：\(it.original) → \(it.replacement)" : "写回失败：这个输入框不接受 AX 写入"
-        if ok, Diag.shared.applyMethod != "剪贴板 ⌘V 兜底" { Diag.shared.applyMethod = "AX 写回" }
+        let doc = docFor(itemID: id)
+        let out = M3Flow.accept(items: items, only: id, in: doc, stack: M3UndoStack.shared)
+        diag.lastError = out.ok ? "已接受：\(it.original) → \(it.replacement)" : "写回失败：\(out.detail)"
+        AppLog.info("m3", "accept id=\(id) pid=\(currentPid) range=\(it.start)+\(it.length) ok=\(out.ok) stack=\(M3UndoStack.shared.count) detail=\"\(out.detail)\"")
         refresh()
-        return ok
+        return out.ok
     }
 
-    /// 撤销上一条接受：把 replacement 换回 original
-    @discardableResult
-    func undoLastAccept() -> Bool {
-        guard let last = lastAccept else { return false }
-        let replLen = (last.item.replacement as NSString).length
-        var ok = false
-        if last.blockIndex >= 0, last.blockIndex < blocks.count {
-            ok = WebText.replace(range: NSRange(location: last.item.start, length: replLen),
-                                 with: last.item.original, in: blocks[last.blockIndex])
-        } else if let el = last.element, let v = axRangeValue(last.item.start, replLen) {
-            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
-            Audit.write("Inline.undo")
-            ok = AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, last.item.original as CFTypeRef) == .success
-            if !ok {     // Chromium 兜底：剪贴板 ⌘V
-                _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
-                if pasteViaClipboard(last.item.original, to: currentPid) {
-                    usleep(450_000)
-                    ok = (attrString(el, kAXValueAttribute as String) ?? "").contains(last.item.original)
-                }
+    /// 卡片动作的文档视图：Web 正文按块、原生输入框按 AX 元素；两边的写回都在这里收口。
+    /// 撤销栈里存的就是这个句柄——撤销时写回同一处，不猜当前焦点在哪。
+    private func docFor(itemID id: Int) -> M3Doc {
+        let bi = itemBlock.indices.contains(id) ? itemBlock[id] : -1
+        if bi >= 0, bi < blocks.count {
+            let block = blocks[bi]
+            return ClosureDoc(pid: currentPid,
+                              read: { block.text },
+                              writeRange: { r, t in WebText.replace(range: r, with: t, in: block) },
+                              writeFull: { t in
+                                  WebText.replace(range: NSRange(location: 0, length: (block.text as NSString).length),
+                                                   with: t, in: block)
+                              })
+        }
+        if let el = currentElement {
+            let pid = currentPid
+            let readable = !(AXInline.fullText(of: el) ?? "").isEmpty
+            return ClosureDoc(pid: pid, canReadBack: readable,
+                              read: { AXInline.fullText(of: el) ?? self.lastText },
+                              writeRange: { [weak self] r, t in
+                                  self?.layeredWrite(range: r, text: t, to: el, pid: pid) ?? false
+                              },
+                              writeFull: { [weak self] t in
+                                  self?.writeWhole(t, to: el, pid: pid) ?? false
+                              })
+        }
+        return BufferDoc(lastText, pid: currentPid)
+    }
+
+    /// 写回四层降级（原位替换）：AX text operation → 选区 + AXSelectedText → 剪贴板 ⌘V（用完恢复剪贴板）
+    private func layeredWrite(range: NSRange, text: String, to el: AXUIElement, pid: pid_t) -> Bool {
+        guard let v = axRangeValue(range.location, range.length) else { return false }
+        _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+        Audit.write("Inline.accept")
+        if AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success {
+            Diag.shared.applyMethod = "AX 写回"
+            return true
+        }
+        // Chromium 网页字段：AXValue / AXSelectedText 实测都写不进（2026-11-16 探测）→ 剪贴板兜底
+        _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+        if pasteViaClipboard(text, to: pid) {
+            usleep(450_000)
+            if (attrString(el, kAXValueAttribute as String) ?? "").contains(text) {
+                Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
+                return true
             }
         }
-        if ok {
-            lastAccept = nil
-            Diag.shared.undoCount += 1
-            diag.lastError = "已撤销：\(last.item.replacement) → \(last.item.original)"
-        } else {
-            diag.lastError = "撤销失败"
+        return false
+    }
+
+    /// 整段回写（撤销兜底）：kAXValue 直写 → 剪贴板 ⌘V
+    private func writeWhole(_ text: String, to el: AXUIElement, pid: pid_t) -> Bool {
+        Audit.write("Inline.writeWhole")
+        if AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, text as CFTypeRef) == .success {
+            let now = AXInline.fullText(of: el) ?? ""
+            return now.isEmpty || now == text
         }
+        if pasteViaClipboard(text, to: pid) {
+            usleep(450_000)
+            let now = AXInline.fullText(of: el) ?? ""
+            return now.isEmpty || now == text
+        }
+        return false
+    }
+
+    /// 撤销上一条接受：出栈，用接受前的原文快照回写（pid / range / 快照都取自那一帧）
+    @discardableResult
+    func undoLastAccept() -> Bool {
+        guard let top = M3UndoStack.shared.top else {
+            diag.lastError = "没有可撤销的替换（本次运行还没接受过建议）"
+            return false
+        }
+        let r = M3Flow.undo(stack: M3UndoStack.shared)
+        if r.ok {
+            Diag.shared.undoCount += 1
+            diag.lastError = r.detail
+        } else {
+            diag.lastError = r.detail
+        }
+        AppLog.info("m3", "undo pid=\(top.pid) range=\(top.range.location)+\(top.range.length) ok=\(r.ok) detail=\"\(r.detail)\"")
         refresh()
-        return ok
+        return r.ok
     }
 
     /// 忽略（本次）：本次运行内不再提示，不落盘 —— 用户「这一版稿子不想看」用它
@@ -1039,6 +1091,7 @@ final class InlineController {
                             elapsed: diag.lastElapsed, err: diag.lastError, at: Date()))
         }
         let cleaned = DiffSanitize.clean(newItems, in: lastText)
+            .filter { !IgnoreStore.shared.isIgnored(original: $0.original, replacement: $0.replacement) }
         guard !cleaned.isEmpty else {
             overlay.clear(); items = []
             diag.lastRectCount = 0
