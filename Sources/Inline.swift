@@ -434,7 +434,7 @@ final class InlineController {
             }
         }
         if let spec = overlay.specs.first(where: { $0.itemID == id }) {
-            overlay.flash(spec.rect)
+            overlay.highlight(spec.rect)
         }
     }
 

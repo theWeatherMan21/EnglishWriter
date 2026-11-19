@@ -22,6 +22,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var lastScoreText = ""
     private var didAutoOpenSidebar = false
     private var toneText = ""
+    private var highlightedRange: NSRange?
     private var checkTask: Task<Void, Never>?
     private var debounce: Timer?
 
@@ -158,15 +159,23 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         storage.beginEditing()
         storage.addAttribute(.backgroundColor, value: NSColor.systemYellow.withAlphaComponent(0.35), range: r)
         storage.endEditing()
-        let flashSec = ProcessInfo.processInfo.environment["EW_FLASH_SEC"].flatMap { Double($0) } ?? 2
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(flashSec * 1_000_000_000))
-            guard NSMaxRange(r) <= storage.length else { return }
-            storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: r)
-            storage.endEditing()
-            self.paint(self.items)
+        // 高亮挂到「用户处理为止」：切到别的建议 / 接受 / 忽略 / 关侧栏才消失
+        // （2 秒闪示实测来不及看，知澜打回：Grammarly 的高亮是挂着的）
+        clearHighlight()
+        highlightedRange = r
+    }
+
+    @MainActor
+    private func clearHighlight() {
+        guard let r = highlightedRange, let storage = textView.textStorage, NSMaxRange(r) <= storage.length else {
+            highlightedRange = nil
+            return
         }
+        storage.beginEditing()
+        storage.removeAttribute(.backgroundColor, range: r)
+        storage.endEditing()
+        highlightedRange = nil
+        paint(items)
     }
 
     @MainActor
@@ -183,6 +192,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// 忽略一条：只去掉这条的下划线，不改文本
     @MainActor
     private func removePaint(for it: DiffItem) {
+        clearHighlight()
         guard let storage = textView.textStorage else { return }
         let r = NSRange(location: it.start, length: it.length)
         guard NSMaxRange(r) <= storage.length else { return }
@@ -351,6 +361,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     func windowWillClose(_ n: Notification) {
+        Sidebar.shared.orderOut(nil)
         window = nil
     }
 }

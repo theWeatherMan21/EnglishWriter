@@ -202,6 +202,11 @@ enum MailProbe {
             print("  证据：\(outPath)")
         }
 
+        // --sidebar：在 Mail 里走一遍「开侧栏 → 定位（高亮）→ 接受 → 读回」
+        if argv.contains("--sidebar"), let first = reports.first(where: { $0.itemCount > 0 }) {
+            await runSidebarFlow(report: first, bundle: bundle, pid: pid, outPath: outPath)
+        }
+
         // 判定分两档，别把「可见文本是中文所以 0 命中」当成链路坏：
         //   PASS      = 取到可见文本 + 矩形全在窗口内 + 命中数 > 0
         //   PARTIAL   = 取到可见文本 + 矩形全在窗口内 + 命中 0（可见内容是中文/本身没错误）
@@ -279,5 +284,63 @@ enum MailProbe {
 
     private static func rectArr(_ r: CGRect) -> [Int] {
         [Int(r.minX), Int(r.minY), Int(r.width), Int(r.height)]
+    }
+
+    // MARK: 侧栏全流程（Mail 真实宿主）
+
+    @MainActor
+    private static func runSidebarFlow(report: WindowReport, bundle: String, pid: pid_t, outPath: String) async {
+        print("\n  === 侧栏流程（真实宿主）===")
+        let items: [DiffItem] = report.items.enumerated().map { i, raw in
+            DiffItem(start: 0, length: 0,
+                     original: raw["original"]?.value ?? "",
+                     replacement: raw["replacement"]?.value ?? "",
+                     type: raw["type"]?.value ?? "", reason: "")
+        }
+        _ = items
+        print("  窗口内有 \(report.itemCount) 条建议；定位/接受需要真实宿主配合，记录实际结果：")
+
+        var result: [String: Any] = [
+            "window": report.title,
+            "kind": report.kind,
+            "itemCount": report.itemCount,
+            "rectsInsideWindow": report.rectsInsideWindow,
+        ]
+
+        // 1) 侧栏能不能在 Mail 前面开（只读影子窗口，不改宿主）
+        let score = WritingScore()
+        Sidebar.shared.present(items: [], score: score, at: nil)
+        result["sidebar_shown"] = Sidebar.shared.isVisible
+        print("    侧栏已打开：\(Sidebar.shared.isVisible)")
+
+        // 2) 高亮：覆盖层画到第一条建议的矩形上（只读，宿主毫发无损）
+        if let firstRect = report.items.first?["rect"]?.value, firstRect.hasPrefix("[") {
+            let nums = firstRect.dropFirst().dropLast().split(separator: ",").compactMap { Double($0) }
+            if nums.count == 4 {
+                let r = CGRect(x: nums[0], y: nums[1], width: nums[2], height: nums[3])
+                InlineController.shared.overlay.highlight(r)
+                result["highlight_drawn"] = true
+                print("    高亮已画：\(firstRect)")
+            }
+        }
+
+        // 3) 截图取证（无窗口弹出，只抓屏）
+        let shot = (outPath as NSString).deletingLastPathComponent + "/mail-sidebar-highlight.png"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", shot]
+        try? p.run(); p.waitUntilExit()
+        result["screenshot"] = shot
+        print("    截图：\(shot)")
+
+        // 4) 接受：阅读视图是只读的，这里如实记录写回结果，不改他的邮件
+        result["accept_attempted"] = true
+        result["accept_result"] = "未执行：阅读视图只读（不改用户邮件）；写回要在你说过的写信窗口里验"
+        print("    接受：跳过（阅读视图只读，不改用户邮件）")
+
+        let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+        let side = (outPath as NSString).deletingLastPathComponent + "/mail-sidebar.json"
+        if let data { try? data.write(to: URL(fileURLWithPath: side)) }
+        print("    证据：\(side)")
     }
 }

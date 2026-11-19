@@ -182,15 +182,16 @@ final class UnderlineOverlay: NSPanel {
     }
 
     /// 闪示一个位置：黄底 2 秒后自动消失（不改宿主文本、不抢焦点）
-    func flash(_ rect: CGRect) {
+    /// 高亮一个位置：挂着直到 clearHighlight()/重新 render（用户处理完才消失）
+    func highlight(_ rect: CGRect) {
         guard !silent, !Self.globallySilent else { return }
         flash = rect.insetBy(dx: -2, dy: -2)
         render(specs)
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            self.flash = nil
-            self.render(self.specs)
-        }
+    }
+
+    func clearHighlight() {
+        flash = nil
+        render(specs)
     }
 
     func clear() {
