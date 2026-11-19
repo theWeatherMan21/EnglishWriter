@@ -1,16 +1,19 @@
 {
   "apps" : {
-    "Mail" : {
-      "count" : 1,
+    "Chrome" : {
+      "count" : 0,
       "elements" : [
-        {
-          "description" : "",
-          "identifier" : "_SC_SEARCH_FIELD",
-          "role" : "AXTextField",
-          "title" : ""
-        }
+
       ],
-      "pid" : 1343,
+      "pid" : 28519,
+      "status" : "probed"
+    },
+    "Mail" : {
+      "count" : 0,
+      "elements" : [
+
+      ],
+      "pid" : 85845,
       "status" : "probed"
     },
     "Notes" : {
@@ -19,21 +22,107 @@
     "Outlook" : {
       "status" : "not-running"
     },
+    "Pages" : {
+      "status" : "not-running"
+    },
     "Safari" : {
+      "status" : "not-running"
+    },
+    "Slack" : {
+      "status" : "not-running"
+    },
+    "Telegram" : {
+      "count" : 5,
+      "elements" : [
+        {
+          "chars" : 0,
+          "description" : "",
+          "frame" : [
+            389,
+            945,
+            1162,
+            33
+          ],
+          "identifier" : "N4Core7SandboxE.10MainWindow.N2Ui8RpWidgetE.N2Ui8RpWidgetE.10MainWidget.13HistoryWidget.N2Ui10InputFieldE",
+          "role" : "AXTextField",
+          "title" : "输入消息…"
+        },
+        {
+          "chars" : 0,
+          "description" : "",
+          "frame" : [
+            390,
+            946,
+            1160,
+            31
+          ],
+          "identifier" : "N4Core7SandboxE.10MainWindow.N2Ui8RpWidgetE.N2Ui8RpWidgetE.10MainWidget.13HistoryWidget.N2Ui10InputFieldE.N2Ui10InputField5InnerE",
+          "role" : "AXTextArea",
+          "title" : "输入消息…"
+        },
+        {
+          "chars" : 0,
+          "description" : "",
+          "frame" : [
+            334,
+            83,
+            156,
+            42
+          ],
+          "identifier" : "N4Core7SandboxE.10MainWindow.N2Ui8RpWidgetE.N2Ui8RpWidgetE.10MainWidget.N7Dialogs6WidgetE.N2Ui8RpWidgetE.N2Ui10InputFieldE",
+          "role" : "AXTextField",
+          "title" : "搜索"
+        },
+        {
+          "chars" : 0,
+          "description" : "",
+          "frame" : [
+            348,
+            93,
+            106,
+            26
+          ],
+          "identifier" : "N4Core7SandboxE.10MainWindow.N2Ui8RpWidgetE.N2Ui8RpWidgetE.10MainWidget.N7Dialogs6WidgetE.N2Ui8RpWidgetE.N2Ui10InputFieldE.N2Ui10InputField5InnerE",
+          "role" : "AXTextArea",
+          "title" : "搜索"
+        },
+        {
+          "chars" : 0,
+          "description" : "",
+          "frame" : [
+            310,
+            49,
+            14,
+            14
+          ],
+          "identifier" : "",
+          "role" : "AXGroup",
+          "title" : ""
+        }
+      ],
+      "pid" : 1340,
+      "status" : "probed"
+    },
+    "TextEdit" : {
       "count" : 0,
       "elements" : [
 
       ],
-      "pid" : 32192,
+      "pid" : 5737,
       "status" : "probed"
-    },
-    "TextEdit" : {
-      "status" : "not-running"
     },
     "Word" : {
       "status" : "not-running"
+    },
+    "WPS" : {
+      "count" : 0,
+      "elements" : [
+
+      ],
+      "pid" : 79093,
+      "status" : "probed"
     }
   },
-  "at" : "2026-11-19T05:49:20Z",
+  "at" : "2026-11-19T09:56:05Z",
   "note" : "只读探测：不激活、不建窗、不写宿主；空 identifier 表示该元素没有暴露标识"
 }

@@ -91,6 +91,37 @@ enum Integrations {
                         defaultPosition: .bottomRight, positionOffset: [-24, -60],
                         forbiddenCorners: [.topLeft, .topRight], checkAncestors: true, isEnabled: false,
                         note: "未探明：Outlook 正文元素未探测，先关"),
+
+            // Telegram Desktop：11-19 现探（qa/evidence/ax-elements.json）
+            //   AXTextArea identifier=…HistoryWidget…InputField5InnerE title=「输入消息…」
+            //   frame=(390,946,1160,31) = 窗口底部整条输入框，就是它。
+            //   注意：identifier 带 Rosetta 名字修饰，跨版本可能变；匹配不靠它，靠 role=AXTextArea。
+            Integration(id: "Telegram", bundleId: "org.telegram.desktop",
+                        elementName: nil, isMailBody: false, allowInTextFields: true,
+                        defaultPosition: .bottomRight, positionOffset: [-24, -24],
+                        forbiddenCorners: [], checkAncestors: false, isEnabled: true,
+                        note: "已探明输入框（AXTextArea「输入消息…」，1160×31，窗口底部）；写回未做真机验证"),
+
+            // WPS：11-19 现探只看到无标识 AXTextField/AXTextArea 且 chars=0，第二次探测窗口已关
+            // → 没确认「那是正文」之前不开，按规矩保持 false
+            Integration(id: "WPS", bundleId: "com.kingsoft.wpsoffice.mac",
+                        elementName: nil, isMailBody: false, allowInTextFields: false,
+                        defaultPosition: .bottomRight, positionOffset: [-24, -60],
+                        forbiddenCorners: [.topLeft, .topRight], checkAncestors: true, isEnabled: false,
+                        note: "未探明：只看到无标识 AXTextArea 且字数 0，未确认是文档正文"),
+
+            // Pages / Slack：本次未运行，探不到就不许猜
+            Integration(id: "Pages", bundleId: "com.apple.iWork.Pages",
+                        elementName: nil, isMailBody: false, allowInTextFields: false,
+                        defaultPosition: .bottomRight, positionOffset: [-24, -60],
+                        forbiddenCorners: [], checkAncestors: true, isEnabled: false,
+                        note: "未探明：11-19 探测时 Pages 未运行"),
+
+            Integration(id: "Slack", bundleId: "com.tinyspeck.slackmacgap",
+                        elementName: nil, isMailBody: false, allowInTextFields: true,
+                        defaultPosition: .bottomRight, positionOffset: [-24, -24],
+                        forbiddenCorners: [], checkAncestors: false, isEnabled: false,
+                        note: "未探明：11-19 探测时 Slack 未运行"),
         ]
     }
 }

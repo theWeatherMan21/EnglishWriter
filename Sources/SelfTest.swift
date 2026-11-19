@@ -1663,7 +1663,18 @@ extension SelfTest {
         }
         // 适配表：未探明的必须是关闭状态，探明的必须是开启
         let all = Integrations.all
-        if all.count == 5 { SelfTest.ok("integration: 五条配置齐全") } else { SelfTest.bad("integration: 数量", "\(all.count)") }
+        // 11-19：补 Telegram / WPS / Pages / Slack 四条 → 9 条。
+        // 数字变化时这里必须跟着改，否则「配置表被悄悄删条」不会被发现。
+        if all.count == 9 { SelfTest.ok("integration: 九条配置齐全") } else { SelfTest.bad("integration: 数量", "\(all.count)") }
+        for id in ["Telegram", "WPS", "Pages", "Slack"] {
+            guard let it = all.first(where: { $0.id == id }) else {
+                SelfTest.bad("integration: \(id) 无条目", ""); continue
+            }
+            // 探到就给证据、没探到就写未探明：两种都可以，但注释不许空
+            if it.isEnabled, it.note.contains("探明") { SelfTest.ok("integration: \(id) 已探明启用") }
+            else if !it.isEnabled, it.note.contains("未探明") { SelfTest.ok("integration: \(id) 未探明已关闭") }
+            else { SelfTest.bad("integration: \(id) 状态与注释不一致", "\(it.isEnabled) / \(it.note)") }
+        }
         for i in all where !i.isEnabled {
             if i.note.contains("未探明") { SelfTest.ok("integration: \(i.id) 未探明已关闭") }
             else { SelfTest.bad("integration: \(i.id) 关闭但没写原因", i.note) }

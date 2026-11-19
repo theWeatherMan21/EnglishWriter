@@ -396,6 +396,10 @@ enum AXCheck {
     private static func value(_ argv: [String], _ flag: String) -> String? {
         guard let i = argv.firstIndex(of: flag), i + 1 < argv.count else { return nil }
         let v = argv[i + 1]
+        // 下一个参数如果本身是开关（--spawn / --notify…），说明这个 flag 没带值。
+        // 11-19 踩过：`--axcheck --spawn` 把 "--spawn" 当成 outDir，在仓根造出一个
+        // 名叫 `--spawn/` 的目录，里面还真的写了状态文件。
+        if v.hasPrefix("--") { return nil }
         return v.isEmpty ? nil : v
     }
 

@@ -6,24 +6,37 @@
 
 ---
 
-## 1. 现状（2026-11-16）
+## 1. 现状（2026-11-19 18:00 实测，逐项都是命令输出）
+
+| 项 | 实测值 |
+|---|---|
+| HEAD | 见 `git log -1`（本节随每次交付更新） |
+| 自检 | `--selftest` → **PASS 191 / FAIL 0**（含侧栏摆位 6 条 / 适配表 9 条 / 隐私 / 命中 / 坐标） |
+| 装机 | `/Applications/Selfmade/英文写作助手.app`，二进制 18:00:39，sha256 `aada87ac23509dd3`，`SOALedger Dev` 签名，install-check SYNC |
+| 侧栏 | `--sidebar-snapshot` → `qa/evidence/sidebar-panel.png`（360×620）与 `sidebar-panel-full.png`（360×955 整栏） |
+| 适配表 | 9 条：TextEdit / Mail / Telegram 启用；Word / Notes / Outlook / WPS / Pages / Slack 关闭并写明「未探明」 |
+
+### 里程碑
 
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
-| M1 行内下划线渲染器 | **已交付（待真机复核）** | `--demo-selfcheck` → PASS，5 处错误 5 个矩形；快照 `out/m1-snapshot.png` |
-| M2 输入即检查 | **真机已验（TextEdit）** | `--axcheck --spawn --notify` 3/3：AXObserver 自发触发 → 800ms 去抖 → rects=3（62/49/147ms）；`--selftest --lt` 56/0 |
-| M3 悬停卡片 + 接受/忽略/撤销 + 词典 | **已交付（链路已自证，待你手点一次）** | `--selftest --m3` → **PASS 173/0**；`--m3-drive` 16/0 行级日志 `out/m3-drive.log`；`--m3-monitors` 全局监听真收到系统鼠标事件；装机 15:03:53 二进制实读含 `hover monitors start` |
-| M3.3 三类命中合并去重 | **已交付** | `--selftest --m3` 合并不变量 PASS（重复/重叠/相接/越界/升序/端到端） |
-| M4 #8 设置面板 | **已交付（2026-11-19 完成本轮硬化）** | `bash scripts/settings-selftest.sh` → **PASS 140 / FAIL 0** + 3 条静态不变量：零预设、独立进程 `defaults read` 冷读六项、**空配置远端三条通道 0 次网络请求（URLProtocol 打桩计数）+ 正控 1 次**、方言换档请求参数真的变、词典两条通道都过滤、本次/永久忽略分家、App 排除闸门 3 个入口。证据 `qa/evidence/settings-selftest.json` + 面板截图 `qa/evidence/settings-panel.png` |
-| M4 Chromium contenteditable 矩形 | **已打通（扩展侧）** | `bash scripts/ext-real-probe.sh` → PASS：`#ce` 真焦点、3 命中 / 3 矩形（rect_source=`range`）、强制兜底 `child-union` 也出矩形、接受/撤销读回一致；证据 `qa/evidence/ext-real-probe.json` |
-| `--passive` 仪器自证 | **R1** | `bash scripts/passive-selfcheck.sh` → 9/9 PASS（正控活 + 只读写回 0 + 上屏 0 + 日志七字段）；证据 `qa/evidence/passive-selfcheck.json` |
-| M4 开源发布 | 等爹地点头 | README 补完安装/三件套/LanguageTool 三段；CI 远端已真跑绿（run 见 `out/parity.md` #15）；public 化不动 |
+| M1 行内下划线渲染器 | 已交付 | `--demo-selfcheck` PASS；`out/m1-snapshot.png` |
+| M2 输入即检查 | 已交付（TextEdit 真机） | `--axcheck` 3/3；`--selftest --lt` |
+| M3 悬停卡片 + 接受/忽略/撤销 | 已交付 | `--selftest --m3`、`--m3-drive` 16/0、`--m3-monitors` |
+| M4 设置面板 + 词典/忽略 | 已交付 | `bash scripts/settings-selftest.sh` |
+| M4 开源发布 | 仓库 public + MIT + Release v0.3.1 | `https://github.com/theWeatherMan21/EnglishWriter` |
+| **P1 侧栏（产品层）** | **已交付** | 点球开栏 / 跟球同侧 / 高度自适应 / 实时刷新；`qa/evidence/sidebar-panel*.png` |
+| **P2 评分四维** | **已交付** | `--selftest --score`；侧栏顶部大分数 + 四维条 |
 
-唯一阻塞：A 层真机验收需要一个真实靶子窗口（爹地红线禁止我们弹窗），要他开一个 TextEdit 空白文档放那儿。
-工具已就绪：`--axcheck`（AXValue 直写正文 → checkNow → 读 overlay.specs，不激活/不敲键/不截屏，下划线只算不上屏，合成图走离屏位图）。
-纪律：`--realshot`（B 层，CGEvent 敲键）在 `textSet=false` 时一律以退出码 9 收尾，标注「无效验收」——不得拿它当 M2 结论。
+### P1 侧栏口径（2026-11-19 落地，替代「只有线+球+单条卡片」）
 
----
+- 入口：**点浮动球**开/收侧栏（不再是「跳到下一条」）；0 条也开，显示「没有更多建议」+ 评分。
+- 摆位：`SidebarPlacement.resolve` 纯函数 —— 球在右半屏 → 栏在球左侧；球在左半屏 → 栏在球右侧；永不越屏。6 条断言在 `--selftest --ui`。
+- 尺寸：宽 360pt；高度按内容自适应，上限 70% 屏高（`EW.naturalHeight()` 回报真实内容高度）。
+- 内容：Overall 圆环（弧长按 SVG 真实 r 计算）+ 四维分数各带一句说明 + 分组列表（类别图标：圆/方/菱形 × 红/蓝/紫双编码）+ 每条「原文删除线 → 绿色建议 + 一句中文理由 + 忽略/接受」+ 底部语气。
+- 筛选：「重要建议（无 style）/ 全部建议」两段式；「全部接受」放列表头，不与筛选混排。
+- 实时：侧栏开着时每次新检查结果都推进去（`syncSidebarIfOpen`），不是打开那一刻的定格。
+
 
 ## 2. 代码结构（1490 → 2100+ 行）
 
@@ -115,6 +128,10 @@ TCC 无法程序代勾；勾完我自行重启并出真机截图（Mail + TextEd
 离线自证（命令都在仓根跑，输出见 `out/`）：
 
 ```bash
+./build/英文写作助手 --selftest                    # PASS 191 / FAIL 0（含侧栏摆位 6 条 / 适配表 9 条）
+./build/英文写作助手 --sidebar-snapshot out/sidebar.png        # 侧栏离屏快照（与上屏共用一份 payload）
+EW_SIDEBAR_FULL=1 ./build/英文写作助手 --sidebar-snapshot out/sidebar-full.png  # 整栏高度
+./build/英文写作助手 --ax-elements                 # 只读探测各宿主输入元素 → qa/evidence/ax-elements.json
 ./build/英文写作助手 --selftest --m3               # PASS 173 / FAIL 0（含 M3·链路驱动 / 卡片结构 / 悬停监听）
 ./build/英文写作助手 --m3-drive out/m3-drive.log  # 16/0，行级：命中坐标 → 卡片 frame → 接受 → 撤销 → 忽略
 ./build/英文写作助手 --m3-monitors                 # 全局 mouseMoved 真收到系统合成事件（不建窗口）

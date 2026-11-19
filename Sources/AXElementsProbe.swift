@@ -37,7 +37,10 @@ enum AXElementsProbe {
     @MainActor
     static func run(_ argv: [String]) -> Int32 {
         var out: [String: Any] = [:]
-        let candidates: Set<String> = ["AXTextArea", "AXTextField", "AXWebArea", "AXStaticText", "AXGroup"]
+        // AXStaticText 不算候选：它永远不是「可输入的正文元素」，
+        // 而聊天类 App（Telegram）的聊天记录全是一屏 AXStaticText，
+        // 会把 40 条预算吃光，导致真的输入框根本探不到（11-19 实测）。
+        let candidates: Set<String> = ["AXTextArea", "AXTextField", "AXWebArea", "AXGroup"]
 
         for t in targets {
             guard let app = t.bundleIds.lazy.compactMap({ NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }).first else {
@@ -50,7 +53,7 @@ enum AXElementsProbe {
 
             var els: [[String: Any]] = []
             var seen = Set<String>()
-            for el in descendants(appEl, depth: 10) {
+            for el in descendants(appEl, depth: 14) {
                 let role = str(el, kAXRoleAttribute) ?? ""
                 guard candidates.contains(role) else { continue }
                 let id = str(el, kAXIdentifierAttribute) ?? ""
@@ -59,9 +62,16 @@ enum AXElementsProbe {
                 let key = "\(role)|\(id)|\(title)"
                 guard !seen.contains(key) else { continue }
                 seen.insert(key)
-                if role == "AXStaticText" && id.isEmpty && title.isEmpty { continue }
-                els.append(["role": role, "identifier": id, "title": title, "description": desc])
-                if els.count >= 40 { break }
+                // 带上「这个元素里到底有多少字 + 位置尺寸」：
+                // 只有字数 > 0 且尺寸正常的元素才可能是正文，光看 role 会猜错
+                var chars = 0
+                if let v = value(el) as? String { chars = (v as NSString).length }
+                if chars == 0, let n = value(el) as? NSNumber { chars = n.intValue }
+                let fr = frame(el)
+                els.append(["role": role, "identifier": id, "title": title, "description": desc,
+                            "chars": chars, "frame": [Int(fr.origin.x), Int(fr.origin.y),
+                                                      Int(fr.size.width), Int(fr.size.height)]])
+                if els.count >= 60 { break }
             }
             out[t.name] = ["status": "probed", "pid": Int(pid), "elements": els,
                            "count": els.count]
@@ -86,6 +96,27 @@ enum AXElementsProbe {
             print("  \(k): \(status)\(status == "probed" ? "（\(count) 个候选元素）" : "")")
         }
         return 0
+    }
+
+    private static func value(_ el: AXUIElement) -> CFTypeRef? {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &v) == .success else { return nil }
+        return v
+    }
+
+    /// AX 的 position/size 是 AXValue，要解出 CGPoint/CGSize；解不出就返回零矩形
+    private static func frame(_ el: AXUIElement) -> CGRect {
+        var pv: CFTypeRef?, sv: CFTypeRef?
+        var p = CGPoint.zero, s = CGSize.zero
+        if AXUIElementCopyAttributeValue(el, kAXPositionAttribute as CFString, &pv) == .success,
+           let v = pv, CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgPoint, &p)
+        }
+        if AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &sv) == .success,
+           let v = sv, CFGetTypeID(v) == AXValueGetTypeID() {
+            AXValueGetValue(v as! AXValue, .cgSize, &s)
+        }
+        return CGRect(origin: p, size: s)
     }
 
     private static func descendants(_ el: AXUIElement, depth: Int) -> [AXUIElement] {
