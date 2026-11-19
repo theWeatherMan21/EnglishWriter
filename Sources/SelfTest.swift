@@ -1304,22 +1304,31 @@ extension SelfTest {
 }
 
 // MARK: 开发痕迹（release 不许出现自解释/调试文案）
+// 禁词表放在 qa/forbidden-strings.json —— 断言自己不含这些词，
+// 否则「检查器检查不到自己」就是最容易被骗过的形态（知澜 11-19 指出）。
 extension SelfTest {
     static func noDevTracesTests() {
         let fm = FileManager.default
-        let dir = URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("Sources")
-        let forbidden = ["随便改", "改完看线", "这段是中文", "TODO", "FIXME"]
+        let root = URL(fileURLWithPath: fm.currentDirectoryPath)
+        let dir = root.appendingPathComponent("Sources")
+
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("qa/forbidden-strings.json")),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let forbidden = obj["strings"] as? [String], !forbidden.isEmpty else {
+            SelfTest.bad("ui: 禁词表读取失败", "qa/forbidden-strings.json"); return
+        }
         guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             SelfTest.bad("ui: 扫描 Sources 失败", dir.path); return
         }
+        let swiftFiles = files.filter { $0.pathExtension == "swift" }
         var hits: [String] = []
-        for f in files where f.pathExtension == "swift" {
+        for f in swiftFiles {
             guard let text = try? String(contentsOf: f, encoding: .utf8) else { continue }
-            // 断言本身要含这些词，跳过本文件
-            if f.lastPathComponent == "SelfTest.swift" { continue }
             for w in forbidden where text.contains(w) { hits.append("\(f.lastPathComponent):\(w)") }
         }
-        if hits.isEmpty { SelfTest.ok("ui: Sources 无开发痕迹（随便改/改完看线/这段是中文/TODO/FIXME）") }
-        else { SelfTest.bad("ui: 仍有开发痕迹", hits.joined(separator: ", ")) }
+        let scope = "扫了 \(swiftFiles.count) 个 .swift，禁词 \(forbidden.count) 个，未跳过任何文件"
+        if hits.isEmpty { SelfTest.ok("ui: Sources 无开发痕迹", scope) }
+        else { SelfTest.bad("ui: 仍有开发痕迹", scope + " → " + hits.joined(separator: ", ")) }
     }
 }
+

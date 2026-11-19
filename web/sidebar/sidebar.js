@@ -20,10 +20,10 @@ const EW = {
     document.getElementById('dims').innerHTML = d.dims.map(x => {
       const sev = x.value >= 80 ? '#2E7D32' : (x.value >= 50 ? '#F59E0B' : '#EE1437');
       const cat = { '正确性': '#EE1437', '清晰度': '#4A6EDE', '吸引力': '#2E7D32', '表达': '#7E57C2' }[x.name] || '#027E6F';
-      return `<div class="dim"><span class="n">${esc(x.name)}</span>
+      // 每行只放「维度名 / 分数 / 进度条」，计数与百分比一律不进评分行（避免口径混在一起）
+      return `<div class="dim" title="${esc(x.note || '')}"><span class="n">${esc(x.name)}</span>
         <span class="v" style="color:${sev}">${x.value}</span>
-        <span class="bar"><i style="width:${x.value}%;background:${cat}"></i></span>
-        <span class="note">${esc(x.note || '')}</span></div>`;
+        <span class="bar"><i style="width:${x.value}%;background:${cat}"></i></span></div>`;
     }).join('');
 
     const colors = ['#1F2328', '#EE1437', '#4A6EDE', '#7E57C2'];
@@ -31,7 +31,7 @@ const EW = {
       `<div class="tab ${(this.filter === null && i === 0) || this.filter === ['grammar', 'clarity', 'style'][i - 1] ? 'on' : ''}"
             onclick="EW.pick(${i})"><i style="background:${colors[i]}"></i>
        <span>${esc(t.name)}<b>${t.n}</b></span></div>`).join('')
-      + `<button class="allbtn" onclick="EW.post({action:'acceptAll'})">全部接受</button>`;
+      + `<button class="allbtn" title="一次改完所有建议，可用 ⌘Z 撤销" onclick="EW.post({action:'acceptAll'})">全部接受</button>`;
 
     const groups = (d.groups || []).filter(g => !this.filter || g.type === this.filter);
     document.getElementById('list').innerHTML = groups.map(g => `<div class="group">

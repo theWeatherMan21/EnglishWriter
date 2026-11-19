@@ -114,7 +114,7 @@ final class Sidebar: NSPanel {
         let groups: [[String: Any]] = ["grammar", "clarity", "style"].compactMap { t in
             let g = live.filter { t == "grammar" ? ($0.type == "spelling" || $0.type == "grammar") : ($0.type == t) }
             guard !g.isEmpty else { return nil }
-            let title = t == "grammar" ? "正确性 · 拼写与语法" : (t == "clarity" ? "清晰度 · 精简表达" : "表达 · 风格")
+            let title = t == "grammar" ? "正确性" : (t == "clarity" ? "清晰度" : "表达")
             return ["title": title, "type": t, "items": g.enumerated().map { i, it in
                 ["id": items.firstIndex { $0.start == it.start && $0.length == it.length } ?? i,
                  "original": it.original, "replacement": it.replacement,
@@ -131,7 +131,7 @@ final class Sidebar: NSPanel {
                 ["name": "吸引力", "value": score.engagement, "note": score.engagementNote],
                 ["name": "表达", "value": score.delivery, "note": score.deliveryNote],
             ],
-            "tabs": [["name": "全部", "n": count(nil)], ["name": "语法", "n": count("grammar")],
+            "tabs": [["name": "全部", "n": count(nil)], ["name": "正确性", "n": count("grammar")],
                      ["name": "清晰度", "n": count("clarity")], ["name": "表达", "n": count("style")]],
             "groups": groups,
         ]

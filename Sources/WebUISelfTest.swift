@@ -116,6 +116,30 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
         let injected = await js("document.querySelectorAll('.row img').length") as? Int ?? -1
         expect("HTML 被转义（无注入节点）", injected == 0, "img nodes=\(injected)")
 
+        // 离屏快照：不弹窗、不抓屏，只把 WKWebView 自己的位图写盘（知澜要看 tokens 有没有治好毛坯感）
+        if let w = web {
+            // 快照要拍「真实数据」，不能拍刚才那组 XSS 转义测试数据（踩过：拍出来是 t/x/r 噪声）
+            _ = await js("EW.filter = null")
+            _ = await js("EW.render(\(payload))")
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            let cfg = WKSnapshotConfiguration()
+            cfg.rect = CGRect(x: 0, y: 0, width: 360, height: 640)
+            let img: NSImage? = await withCheckedContinuation { cont in
+                w.takeSnapshot(with: cfg) { image, _ in cont.resume(returning: image) }
+            }
+            if let img, let tiff = img.tiffRepresentation,
+               let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                let out = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                    .appendingPathComponent("qa/evidence/web-sidebar.png")
+                try? FileManager.default.createDirectory(at: out.deletingLastPathComponent(),
+                                                         withIntermediateDirectories: true)
+                try? png.write(to: out)
+                print("  离屏快照：\(out.path)（\(png.count) 字节，未弹窗未抓屏）")
+            }
+        }
+
         var pass = 0
         for (n, ok, d) in results {
             print(ok ? "PASS  \(n)  — \(d)" : "FAIL  \(n)  — \(d)")
