@@ -154,13 +154,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 真机验收器（Mail 下划线截图）：必须由 App 自己跑，才有辅助功能授权
         if let args = realShotArgs {
             if args.contains("--axcheck") || args.contains("--axwatch") || args.contains("--axaccept")
-                || args.contains("--axprobe-chrome") || args.contains("--passive") || args.contains("--probe-mail") {
+                || args.contains("--axprobe-chrome") || args.contains("--passive") || args.contains("--probe-mail")
+                || args.contains("--mail-selftest") {
                 // A 层：AXValue 直写 → checkNow；B 层：只监听真人键入。两都不建窗口/不激活/不敲键/不截屏
                 Task { @MainActor in
                     if args.contains("--axwatch") { await AXCheck.watch(args) }
                     else if args.contains("--axaccept") { await AXCheck.acceptRun(args) }
                     else if args.contains("--axprobe-chrome") { await ChromeProbe.run(args) }
                     else if args.contains("--passive") { await Passive.run(args) }
+                    else if args.contains("--mail-selftest") { exit(MailSelfTest.run(args)) }
                     else if args.contains("--probe-mail"), args.contains("--wait-english") {
                         let ok = await MailProbe.waitForEnglish(args); exit(ok ? 0 : 1)
                     }
@@ -269,6 +271,11 @@ if argv.contains("--selftest") {
     exit(SelfTest.run(argv))
 }
 
+// Mail 块路径的离屏验收（不碰真实 Mail）：mail-selftest
+if argv.contains("--mail-selftest") {
+    exit(MailSelfTest.run(argv))
+}
+
 // M3 链路驱动（离线、不建窗口）：命中 → 弹出 → 接受 → 撤销 → 忽略，行级日志
 if argv.contains("--m3-drive") {
     let i = argv.firstIndex(of: "--m3-drive")!
@@ -372,6 +379,7 @@ application.setActivationPolicy(.accessory)
 if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--axprobe")
     || argv.contains("--axcheck") || argv.contains("--axwatch") || argv.contains("--axaccept") || argv.contains("--passive")
     || argv.contains("--probe-mail")
+    || argv.contains("--mail-selftest")
     || argv.contains("--axprobe-chrome") {
     appDelegate.realShotArgs = argv
 }

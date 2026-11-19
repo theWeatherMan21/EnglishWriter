@@ -77,6 +77,31 @@ enum WebText {
     }
 
     /// 块内 range → 屏幕矩形（块自己的 AXBoundsForRange）
+    /// 同词去重 + 单篇上限（生产与离屏验收共用同一套规则）
+    enum ItemFilter {
+        static func dedupeAndCap<T>(_ xs: [T], item: (T) -> DiffItem, max: Int) -> [T] {
+            var seen = Set<String>()
+            var out: [T] = []
+            for x in xs {
+                let w = item(x).original.lowercased()
+                guard !seen.contains(w) else { continue }
+                seen.insert(w)
+                if out.count >= max { break }
+                out.append(x)
+            }
+            return out
+        }
+    }
+
+    /// 纯函数版：把块内范围落到矩形（不碰 AX）。
+    /// 生产里 AXBoundsForRange 给不出矩形时走的就是这条（块自身 frame，再夹进窗口）。
+    static func rects(forLocal ns: NSRange, blockFrame: CGRect, inWindow window: CGRect) -> [CGRect] {
+        guard ns.length > 0, blockFrame.width > 0, blockFrame.height > 0 else { return [] }
+        guard window.intersects(blockFrame) else { return [] }
+        let clipped = blockFrame.intersection(window)
+        return clipped.isEmpty ? [] : [clipped]
+    }
+
     static func lineRects(for ns: NSRange, in block: Block) -> [CGRect] {
         let rects = AXInline.lineRects(for: ns, in: block.element).filter { !$0.isEmpty }
         if !rects.isEmpty { return rects }

@@ -1089,21 +1089,19 @@ final class InlineController {
         var kept: [DiffItem] = []
         var keptMap: [Int] = []
         var specs: [UnderlineSpec] = []
-        var seenWords = Set<String>()
         let maxItems = 20
+        // 先按「偏移必须对得上原文」筛，再做同词去重 + 上限（规则与离屏验收共用）
+        var cands: [(DiffItem, Int)] = []
         for (i, it) in newItems.enumerated() where i < blockMap.count {
             let bi = blockMap[i]
             guard bi < blks.count else { continue }
-            let b = blks[bi]
-            let ns = b.text as NSString
+            let ns = blks[bi].text as NSString
             guard it.length > 0, it.start >= 0, it.start + it.length <= ns.length else { continue }
             guard ns.substring(with: it.utf16Range) == it.original else { continue }   // 偏移对不上一律不画
-            // 同一个词在一篇里只报第一次（513 条里大部分是重复的列表/签名词）
-            let wordKey = it.original.lowercased()
-            guard !seenWords.contains(wordKey) else { continue }
-            seenWords.insert(wordKey)
-            // 单篇上限 20 条，超了按已有顺序截断（日志里记 truncated）
-            if kept.count >= maxItems { break }
+            cands.append((it, bi))
+        }
+        for (it, bi) in WebText.ItemFilter.dedupeAndCap(cands, item: { $0.0 }, max: maxItems) {
+            let b = blks[bi]
             if IgnoreStore.shared.isIgnored(original: it.original, replacement: it.replacement) { continue }
             let rects = WebText.lineRects(for: it.utf16Range, in: b)
             guard !rects.isEmpty else { continue }
