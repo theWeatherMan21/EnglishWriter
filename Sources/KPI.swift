@@ -16,6 +16,21 @@ enum KPI {
         var drawRate: Double { withItems == 0 ? 0 : Double(withRects) / Double(withItems) }
     }
 
+    /// 日志完整性：坏行 > 0 说明多进程并发写打断了某一行（CheckLog 已改 O_APPEND+flock）
+    static func badLineCount(_ path: String) -> (bad: Int, total: Int) {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return (0, 0) }
+        var bad = 0, total = 0
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            total += 1
+            let s = String(line).trimmingCharacters(in: .whitespaces)
+            if s.isEmpty { continue }
+            if s.hasPrefix("{"), s.hasSuffix("}"),
+               (try? JSONSerialization.jsonObject(with: Data(s.utf8))) != nil { continue }
+            bad += 1
+        }
+        return (bad, total)
+    }
+
     static func run(_ argv: [String]) -> Int32 {
         setvbuf(stdout, nil, _IONBF, 0)
         let logPath = (NSHomeDirectory() as NSString)
@@ -97,6 +112,12 @@ enum KPI {
         var below: [String] = []
         for r in sorted where r.withItems >= 5 && r.drawRate < 0.9 {
             below.append("\(r.app) \(Int(r.drawRate * 100))%")
+        }
+        let bl = badLineCount(logPath)
+        if bl.bad > 0 {
+            print("--- 日志完整性：坏行 \(bl.bad)/\(bl.total)（多进程并发写被打断；CheckLog 已改 O_APPEND+flock，新行不该再坏）---")
+        } else {
+            print("--- 日志完整性：\(bl.total) 行全部可解析 ---")
         }
         if below.isEmpty {
             print("=== KPI：PASS（所有 ≥5 次样本的 App 画线率 ≥90%）===")

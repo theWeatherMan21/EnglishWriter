@@ -20,6 +20,23 @@ struct CheckLog {
         return base.appendingPathComponent("EnglishWriter/check-log.jsonl")
     }
 
+    /// O_APPEND + flock：常驻实例和 CLI 探针会同时往同一个文件写，
+    /// 之前 seekToEndOfFile + write 不是原子的，实测出过 2 行被截断的残句（坏行）。
+    private static func appendLineAtomically(_ line: String, to u: URL) {
+        let fd = open(u.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        guard fd >= 0 else {
+            try? line.write(to: u, atomically: true, encoding: .utf8)
+            return
+        }
+        defer { close(fd) }
+        _ = flock(fd, LOCK_EX)
+        let data = Data(line.utf8)
+        data.withUnsafeBytes { buf in
+            if let base = buf.baseAddress { _ = write(fd, base, buf.count) }
+        }
+        _ = flock(fd, LOCK_UN)
+    }
+
     static func append(_ e: InlineController.CheckEvent) {
         let row: [String: Any] = [
             "at": ISO8601DateFormatter().string(from: e.at),
@@ -44,13 +61,7 @@ struct CheckLog {
                 try? fm.removeItem(at: old)
                 try? fm.moveItem(at: u, to: old)
             }
-            if let h = try? FileHandle(forWritingTo: u) {
-                h.seekToEndOfFile()
-                h.write(Data(line.utf8))
-                try? h.close()
-            } else {
-                try? line.write(to: u, atomically: true, encoding: .utf8)
-            }
+            appendLineAtomically(line, to: u)
         }
     }
 }
