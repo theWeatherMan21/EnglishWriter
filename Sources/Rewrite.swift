@@ -188,41 +188,74 @@ enum Rewrite {
                         timeout: TimeInterval = 20,
                         session: URLSession = .shared) async throws -> [RewriteCandidate] {
         guard config.isComplete, let url = config.endpoint else { throw ReviewFailure.notConfigured }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.timeoutInterval = timeout
-        req.setValue("Bearer \(config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
-                     forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
-            req.setValue(v, forHTTPHeaderField: k)
-        }
-        req.httpBody = try JSONSerialization.data(withJSONObject: requestBody(segment: segment, config: config, labels: labels))
 
-        let data: Data, resp: URLResponse
-        do {
-            (data, resp) = try await session.data(for: req)
-        } catch let e as URLError where e.code == .timedOut {
-            throw ReviewFailure.timeout
-        } catch {
-            throw ReviewFailure.network((error as NSError).localizedDescription)
+        // 一次请求 + 解析 + 硬过滤。过滤后为空时再试一次（模型偶发写坏整批）
+        func attempt(_ extraRule: String) async throws -> [RewriteCandidate] {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = timeout
+            req.setValue("Bearer \(config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+                         forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
+                req.setValue(v, forHTTPHeaderField: k)
+            }
+            var body = requestBody(segment: segment, config: config, labels: labels)
+            if !extraRule.isEmpty,
+               var msgs = body["messages"] as? [[String: String]], !msgs.isEmpty {
+                msgs[0]["content"] = (msgs[0]["content"] ?? "") + "\n" + extraRule
+                body["messages"] = msgs
+            }
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let data: Data, resp: URLResponse
+            do {
+                (data, resp) = try await session.data(for: req)
+            } catch let e as URLError where e.code == .timedOut {
+                throw ReviewFailure.timeout
+            } catch {
+                throw ReviewFailure.network((error as NSError).localizedDescription)
+            }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200 else {
+                throw ReviewFailure.http(code, String(data: data, encoding: .utf8) ?? "")
+            }
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let content = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String ?? ""
+            let raw = parse(content, segment: segment)
+            var seen = Set<String>()
+            let kept = raw.filter { c in
+                guard acceptCandidate(c, segment: segment) else { return false }
+                return seen.insert(c.appliedText(to: segment)).inserted
+            }
+            if kept.isEmpty, ProcessInfo.processInfo.environment["EW_REWRITE_DEBUG"] == "1" {
+                for c in raw {
+                    let out = c.appliedText(to: segment)
+                    var why = "ok?"
+                    if out.isEmpty { why = "空" }
+                    else if out == segment { why = "与原文相同" }
+                    else if out.contains("  ") { why = "双空格" }
+                    else if out.range(of: #"\b(\w+) \1\b"#, options: .regularExpression) != nil { why = "重复词" }
+                    else {
+                        let r = Double(out.count) / Double(max(1, segment.count))
+                        if r < 0.6 || r > 1.8 { why = String(format: "长度比 %.2f", r) }
+                    }
+                    FileHandle.standardError.write("[rewrite-reject \(c.label)] \(why)：\(out)\n".data(using: .utf8)!)
+                }
+            }
+            return kept
         }
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard code == 200 else {
-            throw ReviewFailure.http(code, String(data: data, encoding: .utf8) ?? "")
-        }
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let content = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String ?? ""
-        let raw = parse(content, segment: segment)
-        // 硬过滤 + 去重：坏候选（删词/重复词/双空格）与重复句一律不进卡片
-        var seen = Set<String>()
-        let kept = raw.filter { c in
-            guard acceptCandidate(c, segment: segment) else { return false }
-            return seen.insert(c.appliedText(to: segment)).inserted
-        }
-        // 过滤后如果一条不剩，返回原始结果里第一条合格候选（不要空手而归）
-        if kept.isEmpty, let first = raw.first, acceptCandidate(first, segment: segment) { return [first] }
-        return kept
+
+        let first = try await attempt("")
+        if !first.isEmpty { return first }
+        // 整批都被过滤掉了：带着更严的追加规则重试一次
+        let retry = try await attempt("""
+        IMPORTANT: the previous attempt produced candidates that deleted words or introduced new errors.
+        Rewrite again: keep every piece of information, produce a complete grammatical sentence,
+        and make sure each label gives a DIFFERENT wording from the others.
+        """)
+        if !retry.isEmpty { return retry }
+        return first
     }
 
     /// 从残缺 JSON 里逐个抽出形如 {"label":...,"edits":[...]} 的对象（大括号配平，容忍被截断的尾巴）
