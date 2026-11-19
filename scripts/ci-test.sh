@@ -15,6 +15,13 @@ swiftc -O -swift-version 5 Sources/*.swift -o "$BIN" \
 echo "== 自测（门控 / 护栏 / diff 契约 / M3 / M3.3 合并去重 / 设置面板）=="
 EW_OUT="$PWD/out" "$BIN" --selftest --m3 --settings
 
+echo "== 本地规则：清晰度/风格 + 语法兜底（含反例，防误报回潮）=="
+EW_OUT="$PWD/out" "$BIN" --selftest --style || { echo "本地规则断言失败"; exit 1; }
+
+echo "== 浮动球三态（灰=不知道 / 绿=没问题 / 数字=N 条）=="
+EW_OUT="$PWD/out" "$BIN" --ball-snapshot "$PWD/qa/evidence/ball-states.png" \
+    && [ -s "$PWD/qa/evidence/ball-states.png" ] || { echo "球态快照失败"; exit 1; }
+
 echo "== 行内几何断言（真 NSTextView + AX 交叉校验）=="
 "$BIN" --demo-selfcheck
 
