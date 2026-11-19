@@ -12,7 +12,7 @@
 |---|---|---|
 | M1 行内下划线渲染器 | **已交付（待真机复核）** | `--demo-selfcheck` → PASS，5 处错误 5 个矩形；快照 `out/m1-snapshot.png` |
 | M2 输入即检查 | **真机已验（TextEdit）** | `--axcheck --spawn --notify` 3/3：AXObserver 自发触发 → 800ms 去抖 → rects=3（62/49/147ms）；`--selftest --lt` 56/0 |
-| M3 悬停卡片 + 接受/忽略/撤销 + 词典 | **已交付（待真机复核）** | `--selftest --m3` → **PASS 53/0**；卡片离线渲染 `out/m3-card.png`（320×147）；commit `2a30293` |
+| M3 悬停卡片 + 接受/忽略/撤销 + 词典 | **已交付（链路已自证，待你手点一次）** | `--selftest --m3` → **PASS 173/0**；`--m3-drive` 16/0 行级日志 `out/m3-drive.log`；`--m3-monitors` 全局监听真收到系统鼠标事件；装机 15:03:53 二进制实读含 `hover monitors start` |
 | M3.3 三类命中合并去重 | **已交付** | `--selftest --m3` 合并不变量 PASS（重复/重叠/相接/越界/升序/端到端） |
 | M4 #8 设置面板 | **已交付（2026-11-19 完成本轮硬化）** | `bash scripts/settings-selftest.sh` → **PASS 140 / FAIL 0** + 3 条静态不变量：零预设、独立进程 `defaults read` 冷读六项、**空配置远端三条通道 0 次网络请求（URLProtocol 打桩计数）+ 正控 1 次**、方言换档请求参数真的变、词典两条通道都过滤、本次/永久忽略分家、App 排除闸门 3 个入口。证据 `qa/evidence/settings-selftest.json` + 面板截图 `qa/evidence/settings-panel.png` |
 | M4 Chromium contenteditable 矩形 | **已打通（扩展侧）** | `bash scripts/ext-real-probe.sh` → PASS：`#ce` 真焦点、3 命中 / 3 矩形（rect_source=`range`）、强制兜底 `child-union` 也出矩形、接受/撤销读回一致；证据 `qa/evidence/ext-real-probe.json` |
@@ -96,11 +96,31 @@ TCC 无法程序代勾；勾完我自行重启并出真机截图（Mail + TextEd
 
 ---
 
-## 6. 下一批（M3）
+## 6. M3 链路 · 交付说明（2026-11-19 收口）
 
-1. 悬停命中：全局 `mouseMoved` 监听 + `UnderlineOverlay.currentRects()` 命中测试（覆盖窗口不收事件）。
-2. 卡片改逐条：类别 / 原句 / 建议 / 一句中文理由 / 接受 · 忽略。
-3. 接受 → `applyEdits(items, to:, only:)` 逐条写回；撤销 → 原文快照还原；忽略 → 本会话黑名单。
+**一句话**：鼠标停在划线上 200ms（或单击划线）→ 出卡片（类别色标 / 原句 / 建议 / 一句中文理由 / 接受·忽略）→ 接受只改这一条 → 菜单「撤销上次替换」用快照还原 → 忽略按文本 hash 过滤，后续检查不再返回。
+
+实现口径（唯一入口，别处不许复制逻辑）：
+
+| 环节 | 落点 | 关键约束 |
+|---|---|---|
+| 命中 | `HoverCoordinator.start()` 挂 `.mouseMoved` + `.leftMouseDown` 两个全局监听；`M3Flow.hit()`（±3/±6 容错） | 覆盖窗口 `ignoresMouseEvents=true`，命中判定只能走监听，不靠窗口事件 |
+| 停留 | 200ms `dwellDelay`；鼠标进卡片区域算「还在悬停」 | 移开 → 关卡片，取消未到期的弹卡 |
+| 卡片 | `CardWeb`（`.nonactivatingPanel` + `canBecomeKey=false`）；内容由 `CardWeb.payload()` 唯一构造 | 跟矩形下方 4pt，下方放不下翻上方、左右夹进该屏可见区（`CardPlacement.resolve`） |
+| 接受 | `InlineController.accept(itemID:)` → `M3Flow.accept(items:only:in:stack:)` → `applyEdits(only:)` | 只替换该条 range；`range` 处原文对不上就拒写 |
+| 写回 | `docFor(itemID:)` 选文档视图：Web 块 `WebText.replace` / AX 元素 `layeredWrite`（AXSelectedText → 剪贴板 ⌘V 兜底，用完恢复剪贴板） | 读不回正文的输入框（Chromium）不比文本，只信写回返回值 |
+| 撤销 | `M3UndoStack`（快照 + pid + range + 文档句柄），菜单「撤销上次替换」→ `undoLastAccept()` → `M3Flow.undo(stack:)` | range 回写失败或文本被再改过 → 用接受前快照整段回写 |
+| 忽略 | `IgnoreStore`（`ignore.rules` + `ignore.hashes`），忽略指纹 `IgnoreStore.hash()` | AX 与 Web 两条检查通道都在出条目时过滤 |
+
+离线自证（命令都在仓根跑，输出见 `out/`）：
+
+```bash
+./build/英文写作助手 --selftest --m3               # PASS 173 / FAIL 0（含 M3·链路驱动 / 卡片结构 / 悬停监听）
+./build/英文写作助手 --m3-drive out/m3-drive.log  # 16/0，行级：命中坐标 → 卡片 frame → 接受 → 撤销 → 忽略
+./build/英文写作助手 --m3-monitors                 # 全局 mouseMoved 真收到系统合成事件（不建窗口）
+./build/英文写作助手 --demo-selfcheck              # M1 不退化
+./build/英文写作助手 --selftest --lt               # M2 不退化（需 8081 在线）
+```
 
 ---
 
