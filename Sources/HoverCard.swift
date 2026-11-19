@@ -353,7 +353,8 @@ final class HoverCardPanel: NSPanel {
 final class HoverCoordinator {
     static let shared = HoverCoordinator()
 
-    private let panel = HoverCardPanel()
+    private let panel = HoverCardPanel()          // 旧 AppKit 卡片：保留给离线自测，不再上屏
+    private var usingWebCard: Bool { true }
     private var monitor: Any?
     private var dwell: DispatchWorkItem?
     private var pending: (itemID: Int, rect: CGRect)?
@@ -406,6 +407,7 @@ final class HoverCoordinator {
     }
 
     private func open(itemID: Int, rect: CGRect) {
+        if usingWebCard { openWeb(itemID: itemID, rect: rect); return }
         let ctrl = InlineController.shared
         guard itemID >= 0, itemID < ctrl.items.count else { return }
         let item = ctrl.items[itemID]
@@ -467,6 +469,36 @@ final class HoverCoordinator {
         if let d = try? JSONSerialization.data(withJSONObject: info) {
             try? d.write(to: URL(fileURLWithPath: "/tmp/card-frame.json"))
         }
+    }
+
+    /// WebView 卡片：上下文取错词前后各 5 词
+    @MainActor
+    private func openWeb(itemID: Int, rect: CGRect) {
+        let ctrl = InlineController.shared
+        guard itemID >= 0, itemID < ctrl.items.count else { return }
+        let item = ctrl.items[itemID]
+        let sentence = ctrl.sentenceText(forItem: itemID)
+        let ns = sentence.text as NSString
+        var before = "", after = ""
+        if sentence.errorRange.location != NSNotFound, NSMaxRange(sentence.errorRange) <= ns.length {
+            before = ns.substring(to: sentence.errorRange.location).split(separator: " ").suffix(5).joined(separator: " ")
+            after = ns.substring(from: NSMaxRange(sentence.errorRange)).split(separator: " ").prefix(5).joined(separator: " ")
+            if !before.isEmpty { before = "…" + before + " " }
+            if !after.isEmpty { after = " " + after + "…" }
+        }
+        let kind: UnderlineKind = item.type == "spelling" ? .spelling
+            : (item.type == "grammar" ? .grammar : (item.type == "clarity" ? .clarity : .style))
+        let hex = String(format: "#%02X%02X%02X", Int(kind.color.redComponent * 255),
+                         Int(kind.color.greenComponent * 255), Int(kind.color.blueComponent * 255))
+        CardWeb.shared.show(category: kind.categoryLine, color: hex,
+                            before: before, original: item.original, replacement: item.replacement, after: after,
+                            anchor: rect, allowDict: true,
+                            onAccept: { _ = ctrl.accept(itemID: itemID) },
+                            onIgnore: { ctrl.dropItem(start: item.start, length: item.length) },
+                            onDict: { ctrl.addToDictionary(itemID: itemID) },
+                            onRewrite: { RewriteFlow.start(tone: false) },
+                            onTone: { RewriteFlow.start(tone: true) })
+        currentOpenIndex = itemID
     }
 
     @MainActor

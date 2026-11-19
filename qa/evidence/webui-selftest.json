@@ -1,0 +1,59 @@
+{
+  "checks" : [
+    {
+      "detail" : "score=72",
+      "name" : "分数写入",
+      "pass" : true
+    },
+    {
+      "detail" : "band=需注意 · 72",
+      "name" : "档位文案",
+      "pass" : true
+    },
+    {
+      "detail" : "dims=4",
+      "name" : "四维数量",
+      "pass" : true
+    },
+    {
+      "detail" : "tabs=4",
+      "name" : "四个分类 tab",
+      "pass" : true
+    },
+    {
+      "detail" : "rows=3",
+      "name" : "建议行数量",
+      "pass" : true
+    },
+    {
+      "detail" : "groups=3",
+      "name" : "分组数量",
+      "pass" : true
+    },
+    {
+      "detail" : "old=3",
+      "name" : "旧词红底块",
+      "pass" : true
+    },
+    {
+      "detail" : "new=3",
+      "name" : "新词绿底块",
+      "pass" : true
+    },
+    {
+      "detail" : "tone=语气：正式（次要 友好，本地）",
+      "name" : "语气行",
+      "pass" : true
+    },
+    {
+      "detail" : "groups after pick=1",
+      "name" : "分类过滤生效",
+      "pass" : true
+    },
+    {
+      "detail" : "img nodes=0",
+      "name" : "HTML 被转义（无注入节点）",
+      "pass" : true
+    }
+  ]
+}

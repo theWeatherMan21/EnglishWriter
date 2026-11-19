@@ -19,6 +19,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "build/$NAME" "$APP/Contents/MacOS/$NAME"
 cp fixtures/glossary.json "$APP/Contents/Resources/glossary.json"
 cp scripts/languagetool-up.sh "$APP/Contents/Resources/languagetool-up.sh"
+# 侧栏 / 悬停卡片 / （将来）扩展共用同一套 web 资源：整目录拷进包，Swift 用 loadFileURL 读
+rm -rf "$APP/Contents/Resources/web"
+cp -R web "$APP/Contents/Resources/web"
 chmod +x "$APP/Contents/Resources/languagetool-up.sh"
 
 cat > "$APP/Contents/Info.plist" <<PLIST

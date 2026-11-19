@@ -18,6 +18,9 @@ EW_OUT="$PWD/out" "$BIN" --selftest --m3 --settings
 echo "== 行内几何断言（真 NSTextView + AX 交叉校验）=="
 "$BIN" --demo-selfcheck
 
+echo "== WebView UI（离屏断言，无窗口）=="
+"$BIN" --webui || { echo "WebView UI 断言失败"; exit 1; }
+
 echo "== 装机版 vs 仓库 build（旧则拦，别让爹地点到旧二进制）=="
 if [ -x "/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" ]; then
     bash scripts/install-check.sh || { echo "装机版落后仓库 build：先 bash scripts/install.sh"; exit 1; }

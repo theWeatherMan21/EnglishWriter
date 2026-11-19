@@ -45,7 +45,12 @@ final class Sidebar: NSPanel {
         cfg.userContentController.add(self, name: "bridge")
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 620), configuration: cfg)
         web.setValue(false, forKey: "drawsBackground")
-        web.loadHTMLString(Self.html, baseURL: nil)
+        // 真文件加载（web/sidebar/*），与浏览器扩展共用同一套 CSS/JS
+        if let dir = Self.webDir() {
+            web.loadFileURL(dir.appendingPathComponent("index.html"), allowingReadAccessTo: dir)
+        } else {
+            web.loadHTMLString("<body style='font:13px -apple-system;color:#6B7280;padding:16px'>web/sidebar 资源缺失</body>", baseURL: nil)
+        }
         contentView = web
     }
 
@@ -89,6 +94,15 @@ final class Sidebar: NSPanel {
     }
 
     // MARK: 数据 → JSON
+
+    /// web 资源目录：优先包内 Resources/web/sidebar，开发态回落仓库 web/sidebar
+    static func webDir() -> URL? {
+        if let r = Bundle.main.resourceURL?.appendingPathComponent("web/sidebar"),
+           FileManager.default.fileExists(atPath: r.appendingPathComponent("index.html").path) { return r }
+        let repo = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("web/sidebar")
+        if FileManager.default.fileExists(atPath: repo.appendingPathComponent("index.html").path) { return repo }
+        return nil
+    }
 
     private func payload() -> String {
         let live = items.filter { !dismissed.contains(key($0)) }

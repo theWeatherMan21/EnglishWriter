@@ -3,16 +3,30 @@
   "name": "EnglishWriter（本地英文写作助手）",
   "version": "0.1.0",
   "description": "Grammarly 同款开源写作助手：本地引擎、错误处画线、悬停卡片、一键接受/撤销。文本不出本机。",
-  "permissions": ["storage"],
-  "host_permissions": ["http://127.0.0.1:17817/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:17817/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
-      "all_frames": true
+      "all_frames": true,
+      "css": [
+        "ui/sidebar.css"
+      ]
     }
   ],
   "options_page": "options.html",
-  "action": { "default_title": "EnglishWriter" }
+  "action": {
+    "default_title": "EnglishWriter"
+  }
 }

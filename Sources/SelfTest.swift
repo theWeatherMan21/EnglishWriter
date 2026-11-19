@@ -49,7 +49,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1247,5 +1247,42 @@ extension SelfTest {
             if kind.categoryLine != want { allOK = false }
         }
         if allOK { SelfTest.ok("ui: 卡片类别行四类文案固定") } else { SelfTest.bad("ui: 类别行文案", "有一类不符") }
+    }
+}
+
+// MARK: 一套 UI 两处跑（web 资源唯一来源）
+extension SelfTest {
+    static func webReuseTests() {
+        let fm = FileManager.default
+        let repo = URL(fileURLWithPath: fm.currentDirectoryPath)
+        let need = ["web/sidebar/index.html", "web/sidebar/sidebar.css", "web/sidebar/tokens.css",
+                    "web/sidebar/sidebar.js", "web/card/index.html", "web/card/card.css", "web/card/card.js"]
+        var missing: [String] = []
+        for f in need where !fm.fileExists(atPath: repo.appendingPathComponent(f).path) { missing.append(f) }
+        if missing.isEmpty { SelfTest.ok("web: 资源文件齐全（7 个）") }
+        else { SelfTest.bad("web: 资源文件缺失", missing.joined(separator: ", ")) }
+
+        // manifest 必须引用同一份 CSS
+        if let d = try? Data(contentsOf: repo.appendingPathComponent("extension/manifest.json")),
+           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let cs = obj["content_scripts"] as? [[String: Any]],
+           let css = cs.first?["css"] as? [String], css.contains("ui/sidebar.css") {
+            SelfTest.ok("web: manifest 引用了 ui/sidebar.css")
+        } else {
+            SelfTest.bad("web: manifest 未引用 ui/sidebar.css", "")
+        }
+
+        // 逐字节相同：只改一边测试立刻红
+        func sha(_ p: String) -> String {
+            let u = repo.appendingPathComponent(p)
+            guard let d = try? Data(contentsOf: u) else { return "" }
+            return d.map { String(format: "%02x", $0) }.joined()
+        }
+        for pair in [("web/sidebar/sidebar.css", "extension/ui/sidebar.css"),
+                     ("web/sidebar/tokens.css", "extension/ui/tokens.css")] {
+            let a = sha(pair.0), b = sha(pair.1)
+            if !a.isEmpty, a == b { SelfTest.ok("web: 两边一致 \(pair.0)") }
+            else { SelfTest.bad("web: 两边不一致（先跑 scripts/sync-web.sh）", "\(pair.0)") }
+        }
     }
 }

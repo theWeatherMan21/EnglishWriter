@@ -278,6 +278,10 @@ if argv.contains("--docscan-file") {
     exit(ok ? 0 : 1)
 }
 
+if argv.contains("--webui") {
+    exit(WebUISelfTest.run(argv))
+}
+
 if argv.contains("--live-ab") {
     var ok = false
     let sem = DispatchSemaphore(value: 0)

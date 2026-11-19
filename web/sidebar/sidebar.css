@@ -1,0 +1,50 @@
+/* 侧栏样式 —— 桌面 App（WKWebView）与浏览器扩展共用同一份，改这里两边同时变 */
+@import url("tokens.css");
+* { box-sizing: border-box; -webkit-user-select: none; }
+body { margin:0; font: var(--f-body)/1.45 -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+       color: var(--text); background: var(--bg); }
+.wrap { padding: var(--s4); display:flex; flex-direction:column; gap: var(--s4); height:100vh; }
+.head { display:flex; gap: var(--s4); align-items:flex-start; }
+.ring { position:relative; width:104px; height:104px; flex:0 0 104px; }
+.ring svg { transform: rotate(-90deg); }
+.ring .num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.ring .num b { font-size: var(--f-score); font-weight:600; letter-spacing:-0.5px; }
+.ring .num span { font-size: var(--f-caption); color: var(--text-muted); margin-top:2px; white-space:nowrap; }
+.dims { flex:1; display:flex; flex-direction:column; gap: var(--s2); }
+.dim { display:grid; grid-template-columns: 52px 28px 1fr; gap: var(--s2); align-items:center; font-size: var(--f-secondary); }
+.dim .n { color: var(--text-muted); }
+.dim .v { font-weight:600; font-variant-numeric: tabular-nums; text-align:right; }
+.dim .bar { height:4px; border-radius:999px; background: var(--border); overflow:hidden; }
+.dim .bar i { display:block; height:100%; border-radius:999px; }
+.dim .note { grid-column: 1 / -1; font-size: var(--f-caption); color: var(--text-muted); margin-top:-2px; }
+.tabs { display:flex; gap: var(--s2); align-items:center; }
+.tab { flex:1; text-align:center; cursor:pointer; padding-top: var(--s1); }
+.tab i { display:block; height:3px; border-radius:999px; margin-bottom: var(--s1); opacity:.35; }
+.tab.on i { opacity:1; }
+.tab span { font-size: var(--f-secondary); color: var(--text-muted); }
+.tab.on span { color: var(--text); font-weight:600; }
+.tab b { font-variant-numeric: tabular-nums; font-weight:600; margin-left:2px; }
+.allbtn { font-size: var(--f-secondary); border:1px solid var(--border); background:var(--bg);
+          border-radius: var(--r-control); padding:4px 8px; cursor:pointer; color: var(--text); }
+.list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap: var(--s2); }
+.group { display:flex; flex-direction:column; gap: var(--s1); }
+.ghead { display:flex; align-items:center; gap:6px; font-size: var(--f-secondary); font-weight:600; margin-top: var(--s2); }
+.ghead em { width:6px; height:6px; border-radius:999px; font-style:normal; }
+.ghead span { color: var(--text-muted); font-weight:500; }
+.row { border:1px solid var(--border); border-radius: var(--r-card); background: var(--bg);
+       box-shadow: var(--shadow-card); padding: var(--s2) var(--s3); display:flex;
+       flex-direction:column; gap:4px; cursor:pointer; transition: background .12s; }
+.row:hover { background: var(--bg-subtle); }
+.row.flash { background:#FFE3EC; }
+.line { font-size: var(--f-body); }
+.old { color:#fff; background: var(--correctness); text-decoration: line-through; border-radius:3px; padding:0 2px; }
+.new { color:#fff; background: var(--engagement); font-weight:600; border-radius:3px; padding:0 2px; }
+.reason { font-size: var(--f-caption); color: var(--text-muted); }
+.acts { display:flex; gap:var(--s1); justify-content:flex-end; }
+.btn { font-size: var(--f-caption); border-radius: var(--r-control); border:1px solid var(--border);
+       background: var(--bg); padding:3px 8px; cursor:pointer; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color:#fff; font-weight:600; }
+.foot { font-size: var(--f-caption); color: var(--text-muted); }
+.saved { position:absolute; top:10px; right:14px; font-size: var(--f-caption); color: var(--engagement);
+         font-weight:600; opacity:0; transition: opacity .2s; }
+.saved.on { opacity:1; }

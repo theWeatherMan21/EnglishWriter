@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<link rel="stylesheet" href="card.css">
+</head><body>
+<div class="card" id="card">
+  <div class="cat"><em id="dot"></em><span id="cat"></span></div>
+  <div class="sent" id="sent" onclick="EWCard.post({action:'accept'})"></div>
+  <div class="hr"></div>
+  <div class="acts">
+    <button class="btn" id="dict" onclick="EWCard.post({action:'dict'})">加入词典</button>
+    <button class="btn" onclick="EWCard.post({action:'ignore'})">忽略</button>
+    <button class="btn" id="more" onclick="EWCard.more()">···</button>
+  </div>
+</div>
+<script src="card.js"></script>
+</body></html>

@@ -1,0 +1,13 @@
+:root {
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px;
+  --f-caption: 11px; --f-secondary: 12px; --f-body: 13px; --f-title: 15px;
+  --f-big: 20px; --f-score: 28px;
+  --r-control: 6px; --r-card: 10px; --r-panel: 14px;
+  --brand: #027E6F; --correctness: #EE1437; --clarity: #4A6EDE;
+  --style: #7E57C2; --engagement: #2E7D32;
+  --bg: #FFFFFF; --bg-subtle: #FAFAFA; --border: #E5E7EB;
+  --text: #1F2328; --text-muted: #6B7280;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.06);
+  --shadow-popover: 0 4px 16px rgba(0,0,0,.12);
+  --shadow-panel: 0 8px 32px rgba(0,0,0,.16);
+}
