@@ -2306,6 +2306,59 @@ extension SelfTest {
             SelfTest.ok("acceptflow: 读不回时按写回结果判定", writeOnly)
         } else { SelfTest.bad("acceptflow: 读不回", "ok=\(out4.ok) detail=\(out4.detail) doc=\(writeOnly)") }
 
+        // 5) 连续接受两条 → 撤销一次只回滚最后一条，再撤销回原文
+        var doc2 = "I have send the report immediatly."
+        let h2 = ClosureDoc(pid: 4244, canReadBack: true,
+                            read: { doc2 },
+                            writeRange: { r, t in
+                                let ns = doc2 as NSString
+                                guard r.location + r.length <= ns.length else { return false }
+                                doc2 = ns.replacingCharacters(in: r, with: t); return true
+                            },
+                            writeFull: { t in doc2 = t; return true })
+        let st2 = M3UndoStack()
+        let orig2 = doc2
+        _ = M3Flow.accept(items: items, only: 0, in: h2, stack: st2)   // have send → have sent
+        let afterFirst = doc2
+        // 第二条的偏移是相对「已接受第一条」的文本算的：重新算一次
+        let items2 = [DiffItem(start: 23, length: 10, original: "immediatly", replacement: "immediately",
+                               type: "spelling", reason: "拼写")]
+        _ = M3Flow.accept(items: items2, only: 0, in: h2, stack: st2)
+        let afterSecond = doc2
+        let u1 = M3Flow.undo(stack: st2)
+        let backToFirst = doc2
+        let u2 = M3Flow.undo(stack: st2)
+        let backToOrig = doc2
+        if afterSecond == "I have sent the report immediately.", u1.ok, backToFirst == afterFirst, u2.ok, backToOrig == orig2 {
+            SelfTest.ok("acceptflow: 连续接受→依次撤销", "回滚顺序正确")
+        } else {
+            SelfTest.bad("acceptflow: 连续撤销", "after2=\(afterSecond) u1→\(backToFirst) u2→\(backToOrig)")
+        }
+
+        // 6) 撤销栈上限 20：压 25 条后只剩 20，且丢的是最旧的
+        let st3 = M3UndoStack()
+        for i in 0..<25 {
+            st3.push(M3UndoEntry(itemID: i, pid: 1, range: NSRange(location: i, length: 1), original: "a\(i)",
+                                 replacement: "b\(i)", snapshot: "", newText: "", doc: nil, at: Date()))
+        }
+        if st3.count == 20, st3.top?.original == "a24" {
+            SelfTest.ok("acceptflow: 撤销栈上限 20", "count=20 top=\(st3.top?.original ?? "-")")
+        } else {
+            SelfTest.bad("acceptflow: 撤销栈上限", "count=\(st3.count) top=\(st3.top?.original ?? "-")")
+        }
+
+        // 7) 原生宿主（canReadBack=true）写回「说成功了但正文没变」→ 必须判 FAIL，
+        //    不许因为 replace 返回 true 就放行（真机上会出现「以为改了其实没改」）
+        let lying = "I have send the report immediatly."
+        let liar = ClosureDoc(pid: 4245, canReadBack: true,
+                              read: { lying },
+                              writeRange: { _, _ in true },              // 假成功：什么都不改
+                              writeFull: { _ in true })
+        let out7 = M3Flow.accept(items: items, only: 0, in: liar, stack: M3UndoStack())
+        if !out7.ok {
+            SelfTest.ok("acceptflow: 原生宿主读回不符判失败", out7.detail.prefix(40).description)
+        } else { SelfTest.bad("acceptflow: 原生宿主读回不符", "被放过（ok=true）") }
+
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
     }
