@@ -81,9 +81,15 @@ struct UnderlineSpec: Equatable {
         a.rect == b.rect && a.kind == b.kind && a.itemID == b.itemID
     }
 
-    /// 纯函数：挑出「还有效」的线（now - stamp <= ttl）。滚走/切窗/挪窗的残影靠它自灭。
-    static func alive(_ specs: [UnderlineSpec], now: Date, ttl: TimeInterval) -> [UnderlineSpec] {
-        specs.filter { now.timeIntervalSince($0.stamp) <= ttl }
+    /// 纯函数：挑出「还有效」的线。
+    /// 判据两条：① 超过 ttl 没被复验确认 → 灭；② 宿主不再是当前前台 App → 灭（切走后残影）。
+    static func alive(_ specs: [UnderlineSpec], now: Date, ttl: TimeInterval,
+                      frontPid: pid_t? = nil) -> [UnderlineSpec] {
+        specs.filter { sp in
+            if now.timeIntervalSince(sp.stamp) > ttl { return false }
+            if let f = frontPid, sp.ownerPid != 0, sp.ownerPid != f { return false }
+            return true
+        }
     }
 }
 
@@ -229,15 +235,18 @@ final class UnderlineOverlay: NSPanel {
     /// 屏幕上当前有没有线（给定期复验用）
     var hasUnderlines: Bool { !specs.isEmpty }
 
-    /// 每条线的最大存活时间：2s 内没被新一轮检查确认就撤掉
-    private let specTTL: TimeInterval = 2.0
+    /// 兜底存活时间。注意：2s 太短——人只是「看着不动」而没有敲字时，没有任何事件来刷新 stamp，
+    /// 线会在 2 秒后自己消失（11-19 实测：render rect=3，19 秒后点击时 rectCount=0）。
+    /// 现在改成 60s 兜底 + 宿主切换立刻灭（见 alive 的 frontPid 判据）。
+    private let specTTL: TimeInterval = 60.0
     private var ttlTimer: Timer?
 
     /// 清掉所有超过 TTL 没被确认的线（滚走 / 窗口移走 / 切 App 的残影兜底）
     func pruneStale(maxAge: TimeInterval? = nil) {
         let ttl = maxAge ?? specTTL
         let now = Date()
-        let keep = UnderlineSpec.alive(specs, now: now, ttl: ttl)
+        let front = ScreenGeom.frontmostWindowPID()
+        let keep = UnderlineSpec.alive(specs, now: now, ttl: ttl, frontPid: front)
         guard keep.count != specs.count else { return }
         specs = keep
         canvas.specs = keep

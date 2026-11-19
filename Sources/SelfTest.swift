@@ -1845,6 +1845,18 @@ extension SelfTest {
         let none = UnderlineSpec.alive([stale], now: now, ttl: 2.0)
         if none.isEmpty { SelfTest.ok("stale: 全过期则清空", "0") }
         else { SelfTest.bad("stale: 清空", "\(none.count)") }
+
+        // 60s 兜底：只「看着不动」的线不能被灭（2s 时代这里会掉）
+        let idle = UnderlineSpec(rect: CGRect(x: 10, y: 10, width: 40, height: 4), kind: .grammar,
+                                 itemID: 3, ownerPid: 4242, stamp: now.addingTimeInterval(-20))
+        let idleKept = UnderlineSpec.alive([idle], now: now, ttl: 60, frontPid: 4242)
+        if idleKept.count == 1 { SelfTest.ok("stale: 静止 20s 的线仍在", "保留 1") }
+        else { SelfTest.bad("stale: 静止线被误杀", "\(idleKept.count)") }
+
+        // 宿主切走 → 立刻灭（不用等 TTL）
+        let switched = UnderlineSpec.alive([idle], now: now, ttl: 60, frontPid: 9999)
+        if switched.isEmpty { SelfTest.ok("stale: 宿主切走立刻灭", "0") }
+        else { SelfTest.bad("stale: 切走未灭", "\(switched.count)") }
     }
 }
 
