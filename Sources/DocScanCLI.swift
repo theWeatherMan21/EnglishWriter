@@ -36,9 +36,32 @@ enum DocScanCLI {
             return DiffSanitize.consolidate(items, in: sentence)
         }
 
+        // --deep：顺带跑一次模型（四类齐的口径），把语法错也抓出来
+        var modelItems: [DiffItem] = []
+        if argv.contains("--deep") {
+            let cfg = SettingsStore.load()
+            if cfg.isComplete {
+                print("  模型：\(cfg.model)（深度检查，约 5–8 秒）")
+                let t0 = Date()
+                if let out = try? await InlineEngine.review(text: text, config: cfg, timeout: 90) {
+                    modelItems = out.items
+                    print("  模型返回 \(out.items.count) 条，耗时 \(Int(Date().timeIntervalSince(t0) * 1000))ms")
+                    for it in out.items.prefix(10) {
+                        print("    [\(it.type)] \(it.original) → \(it.replacement)")
+                    }
+                } else {
+                    print("  模型检查失败")
+                }
+            } else {
+                print("  模型三项没填，跳过深度检查")
+            }
+        }
+
         let ns = text as NSString
         print("  句子 \(res.sentenceCount) 句，跳过非英文 \(res.skippedCJK) 句，命中 \(res.items.count) 条，耗时 \(Int(res.elapsed * 1000))ms")
-        for it in res.items.prefix(20) {
+        let mergedAll = DiffSanitize.consolidate(res.items + modelItems, in: text)
+        print("  合并后（本地+模型）：\(mergedAll.count) 条")
+        for it in mergedAll.prefix(20) {
             let line = ns.substring(with: NSRange(location: it.start, length: it.length))
             print("    [\(it.type)] \(it.original) → \(it.replacement)（原句片段：\(line)）")
         }
@@ -48,10 +71,11 @@ enum DocScanCLI {
             "chars": ns.length,
             "sentences": res.sentenceCount,
             "skippedCJK": res.skippedCJK,
-            "edits": res.items.count,
+            "edits": mergedAll.count,
+            "modelItems": modelItems.count,
             "elapsedMs": Int(res.elapsed * 1000),
             "engine": ltOK ? "spell+rules+languagetool" : "spell+rules",
-            "items": res.items.map {
+            "items": mergedAll.map {
                 ["start": $0.start, "length": $0.length, "original": $0.original,
                  "replacement": $0.replacement, "type": $0.type, "reason": $0.reason]
             },
@@ -65,8 +89,8 @@ enum DocScanCLI {
             print("  证据：\(outPath)")
         }
         // 判定：必须扫出条目、且所有偏移都能在原文上取出（不许越界）
-        let inBounds = res.items.allSatisfy { $0.start >= 0 && $0.start + $0.length <= ns.length }
+        let inBounds = mergedAll.allSatisfy { $0.start >= 0 && $0.start + $0.length <= ns.length }
         print(inBounds ? "RESULT: PASS" : "RESULT: FAIL（有偏移越界）")
-        return inBounds && !res.items.isEmpty
+        return inBounds && !mergedAll.isEmpty
     }
 }

@@ -45,6 +45,7 @@ enum SelfTest {
         if argv.contains("--m3") { m3Tests(); mergeTests(); webReplaceTests() }
         if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests(); routerTests(); RewriteTests.run(); CategoryPrefsTests.run() }
         if wantAll || argv.contains("--lang") { languageGateTests() }
+        if wantAll || argv.contains("--score") { scoreTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -1024,5 +1025,60 @@ extension SelfTest {
         if leak1 { SelfTest.ok("lang: 非 ASCII 错词判为泄漏") } else { SelfTest.bad("lang: 非 ASCII 错词判为泄漏", "应为 true") }
         let (leak2, _) = LanguageGate.looksLikeForeignLeak(["immediatly", "recieve", "teh"])
         if !leak2 { SelfTest.ok("lang: 纯 ASCII 错词不判泄漏") } else { SelfTest.bad("lang: 纯 ASCII 错词不判泄漏", "应为 false") }
+    }
+}
+
+// MARK: 评分（P2）
+extension SelfTest {
+    static func scoreTests() {
+        func items(_ n: [String]) -> [DiffItem] {
+            n.enumerated().map { i, t in
+                DiffItem(start: i, length: 1, original: "x", replacement: "y", type: t, reason: "")
+            }
+        }
+        let good = "Please confirm the booking. The vessel sails tomorrow. Kindly advise the ETD."
+        let bad = "There is many reasons why we should sent the booking confirmation to the customer immediatly. " +
+                  "In order to save time, we must make a decision today. Due to the fact that the vessel was delayed, the customer asked for an update."
+
+        let sGood = Scorer.score(text: good, items: [])
+        let sBad = Scorer.score(text: bad, items: items(["spelling", "clarity", "clarity", "clarity", "grammar"]))
+
+        if sGood.correctness == 100 { SelfTest.ok("score: 无错文本 Correctness=100") }
+        else { SelfTest.bad("score: 无错文本 Correctness=100", "实际 \(sGood.correctness)") }
+
+        if sBad.correctness < sGood.correctness { SelfTest.ok("score: 错误越多 Correctness 越低", "\(sGood.correctness) → \(sBad.correctness)") }
+        else { SelfTest.bad("score: 单调性", "\(sGood.correctness) vs \(sBad.correctness)") }
+
+        // 单调性：同一段文本，逐步加错误，分数必须单调不增
+        var prev = 101
+        var mono = true
+        for k in 0...6 {
+            let types = Array(repeating: "spelling", count: k)
+            let sc = Scorer.score(text: bad, items: items(types)).correctness
+            if sc > prev { mono = false }
+            prev = sc
+        }
+        if mono { SelfTest.ok("score: 加权错误递增→Correctness 单调不增") }
+        else { SelfTest.bad("score: 单调性", "出现递增") }
+
+        let range = (0...100).contains(sBad.overall)
+        if range { SelfTest.ok("score: Overall 落在 0-100", "overall=\(sBad.overall)") }
+        else { SelfTest.bad("score: Overall 越界", "\(sBad.overall)") }
+
+        let clarityOK = sBad.clarity < sGood.clarity
+        if clarityOK { SelfTest.ok("score: 冗长句多 → Clarity 更低", "\(sGood.clarity) → \(sBad.clarity)") }
+        else { SelfTest.bad("score: Clarity 判据", "\(sGood.clarity) vs \(sBad.clarity)") }
+
+        if (0...100).contains(sGood.engagement) { SelfTest.ok("score: Engagement 落在 0-100", "eng=\(sGood.engagement)") }
+        else { SelfTest.bad("score: Engagement 越界", "\(sGood.engagement)") }
+
+        // 正式度目标：越接近目标分越高
+        let near = Scorer.score(text: "Please kindly advise regards therefore", items: [], formality: 4)
+        let far = Scorer.score(text: "hey gonna stuff cool", items: [], formality: 4)
+        if near.delivery > far.delivery { SelfTest.ok("score: 偏离目标正式度 → Delivery 更低", "\(near.delivery) vs \(far.delivery)") }
+        else { SelfTest.bad("score: Delivery 判据", "\(near.delivery) vs \(far.delivery)") }
+
+        if let d = sGood.deliveryNote.isEmpty ? nil : sGood.deliveryNote, !d.isEmpty { SelfTest.ok("score: 每维都有说明文字") }
+        else { SelfTest.bad("score: 说明文字", "deliveryNote 为空") }
     }
 }

@@ -18,6 +18,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var listBox: NSStackView!
     private var status: NSTextField!
     private var items: [DiffItem] = []
+    private var lastScore = WritingScore()
+    private var lastScoreText = ""
+    private var didAutoOpenSidebar = false
     private var checkTask: Task<Void, Never>?
     private var debounce: Timer?
 
@@ -94,6 +97,17 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         clearBtn.bezelStyle = .rounded
         clearBtn.frame = NSRect(x: bar.bounds.width - 96, y: 2, width: 96, height: 26)
         bar.addSubview(clearBtn)
+
+        let deepBtn = NSButton(title: "深度检查（模型）", target: self, action: #selector(deepCheck))
+        deepBtn.bezelStyle = .rounded
+        deepBtn.frame = NSRect(x: bar.bounds.width - 348, y: 2, width: 122, height: 26)
+        deepBtn.isHidden = !Rewrite.isAvailable() || !SettingsStore.load().isComplete
+        if !deepBtn.isHidden { bar.addSubview(deepBtn) }
+
+        let sideBtn = NSButton(title: "看侧栏（评分）", target: self, action: #selector(openSidebar))
+        sideBtn.bezelStyle = .rounded
+        sideBtn.frame = NSRect(x: bar.bounds.width - 220, y: 2, width: 118, height: 26)
+        bar.addSubview(sideBtn)
         root.addSubview(bar)
 
         // 建议列表
@@ -113,6 +127,75 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
         scheduleCheck()
+    }
+
+    @objc private func openSidebar() {
+        let sb = Sidebar.shared
+        sb.onAccept = { [weak self] it in
+            Task { @MainActor in self?.applyItem(it) }
+        }
+        sb.onDismiss = { [weak self] it in
+            Task { @MainActor in self?.removePaint(for: it) }
+        }
+        sb.onJump = { [weak self] it in
+            Task { @MainActor in
+                guard let self else { return }
+                let r = NSRange(location: it.start, length: it.length)
+                self.textView.setSelectedRange(r)
+                self.textView.scrollRangeToVisible(r)
+                self.window?.makeKeyAndOrderFront(nil)
+            }
+        }
+        sb.present(items: items, score: lastScore, at: nil)
+    }
+
+    @MainActor
+    private func applyItem(_ it: DiffItem) {
+        let r = NSRange(location: it.start, length: it.length)
+        guard let storage = textView.textStorage, NSMaxRange(r) <= storage.length else { return }
+        if textView.shouldChangeText(in: r, replacementString: it.replacement) {
+            textView.replaceCharacters(in: r, with: it.replacement)
+            textView.didChangeText()
+        }
+        scheduleCheck()
+    }
+
+    /// 忽略一条：只去掉这条的下划线，不改文本
+    @MainActor
+    private func removePaint(for it: DiffItem) {
+        guard let storage = textView.textStorage else { return }
+        let r = NSRange(location: it.start, length: it.length)
+        guard NSMaxRange(r) <= storage.length else { return }
+        storage.beginEditing()
+        storage.removeAttribute(.underlineStyle, range: r)
+        storage.removeAttribute(.underlineColor, range: r)
+        storage.endEditing()
+    }
+
+    /// 深度检查：把当前全文丢给模型（语法/清晰度/风格四类），5–8 秒回来并合并到现有建议
+    @objc private func deepCheck() {
+        let text = textView.string
+        let cfg = SettingsStore.load()
+        guard cfg.isComplete else { status.stringValue = "模型三项没填，深度检查不可用"; return }
+        status.stringValue = "模型检查中…（约 5–8 秒）"
+        Task { @MainActor in
+            let t0 = Date()
+            do {
+                let out = try await InlineEngine.review(text: text, config: cfg, timeout: 90)
+                let merged = DiffSanitize.consolidate(
+                    SpellCheck.items(in: text) + StyleRules.apply(to: text) + out.items, in: text)
+                self.items = merged
+                self.paint(merged)
+                self.renderList(merged)
+                self.lastScore = Scorer.score(text: text, items: merged, formality: nil)
+                self.lastScoreText = text
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                self.status.stringValue = "\(merged.count) 条建议（含模型）· \(ms)ms · 模型 \(out.items.count) 条"
+                if Sidebar.shared.isVisible { Sidebar.shared.present(items: merged, score: self.lastScore, at: nil) }
+            } catch {
+                self.status.stringValue = "模型检查失败：\(error)"
+            }
+        }
     }
 
     @objc private func refill() {
@@ -154,7 +237,18 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.paint(items)
             self.renderList(items)
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
+            // 评分（P2 纯本地）
+            self.lastScore = Scorer.score(text: text, items: items, formality: nil)
+            self.lastScoreText = text
             let langSkipped = res.skippedCJK + counter.langSkipped
+            if ProcessInfo.processInfo.arguments.contains("--deep"), !self.didAutoOpenSidebar {
+                self.didAutoOpenSidebar = true
+                self.deepCheck()
+            }
+            if ProcessInfo.processInfo.arguments.contains("--sidebar-open"), !self.didAutoOpenSidebar, !items.isEmpty {
+                self.didAutoOpenSidebar = true
+                self.openSidebar()
+            }
             self.status.stringValue = "\(items.count) 条建议 · \(res.sentenceCount) 句 / 跳过非英文 \(langSkipped) 句 · \(ms)ms · 语言门控开"
         }
     }
