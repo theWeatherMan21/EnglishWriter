@@ -4,6 +4,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+
+# 每组超时：卡住就是 FAIL（不是「等等看」）；macOS 27 自带 /usr/bin/timeout
+TMO_BIN=""
+for c in /usr/bin/timeout /usr/local/bin/timeout /opt/homebrew/bin/gtimeout; do
+    [ -x "$c" ] && { TMO_BIN="$c"; break; }
+done
+runT() {   # runT <秒> <命令...>
+    local secs="$1"; shift
+    if [ -n "$TMO_BIN" ]; then "$TMO_BIN" "$secs" "$@"; else "$@"; fi
+    local rc=$?
+    if [ "$rc" = "124" ]; then echo "FAIL  超时 ${secs}s：$*"; exit 1; fi
+    return $rc
+}
+
 mkdir -p build
 BIN="build/ci-selftest"
 
@@ -37,20 +51,20 @@ echo "== WebView UI（离屏断言，无窗口）=="
 "$BIN" --webui || { echo "WebView UI 断言失败"; exit 1; }
 
 echo "== 隐私 / 门控断言（--privacy）=="
-"$BIN" --privacy || { echo "privacy 断言失败"; exit 1; }
+runT 120 "$BIN" --privacy || { echo "privacy 断言失败"; exit 1; }
 
 echo "== 改写纯函数（--rewrite-selftest：边界空格 / 错位 span / 去重 / WordDiff 往返）=="
-"$BIN" --rewrite-selftest || { echo "改写纯函数断言失败"; exit 1; }
+runT 120 "$BIN" --rewrite-selftest || { echo "改写纯函数断言失败"; exit 1; }
 
 echo "== 接受/撤销闭环 + 忽略词典（--acceptflow）=="
-"$BIN" --acceptflow || { echo "写回闭环断言失败"; exit 1; }
+runT 120 "$BIN" --acceptflow || { echo "写回闭环断言失败"; exit 1; }
 
 echo "== 点击几何诊断（--clickdiag）=="
-"$BIN" --clickdiag || { echo "点击几何断言失败"; exit 1; }
+runT 120 "$BIN" --clickdiag || { echo "点击几何断言失败"; exit 1; }
 
 echo "== 业务英文深度回归（--quality --deep：召回 100% + 正确句零误报）=="
 # NO_BUILD / NO_GOLD 不是通过，是没跑：必须见到 RESULT: PASS
-DEEP_OUT=$("$BIN" --quality --deep 2>&1); DEEP_RC=$?
+DEEP_OUT=$(runT 300 "$BIN" --quality --deep 2>&1); DEEP_RC=$?
 echo "$DEEP_OUT" | grep -E "^(PASS|FAIL|RESULT)|平均耗时" | tail -4
 if echo "$DEEP_OUT" | grep -qE "NO_BUILD|NO_GOLD|跳过"; then
     echo "deep 质量回归未覆盖（NO_BUILD / NO_GOLD / 跳过 都算没跑，不是绿）"; exit 1
@@ -106,6 +120,40 @@ else
     fi
     echo "SKIP  扩展端到端：本机没有 Chrome for Testing（不影响原生断言）"
 fi
+
+echo "== 崩溃报告扫描（断言只覆盖写到的路径，崩溃报告才覆盖真实使用）=="
+CRASH_DIRS="$HOME/Library/Logs/DiagnosticReports $HOME/Library/Logs/DiagnosticReports/Retired"
+NEW_IPS=""
+for base in build/英文写作助手.app/Contents/MacOS/英文写作助手 "$BIN"; do
+    [ -f "$base" ] || continue
+    for d in $CRASH_DIRS; do
+        [ -d "$d" ] || continue
+        hit=$(find "$d" -maxdepth 1 \( -name '英文写作助手-*.ips' -o -name 'ci-selftest-*.ips' \) -newer "$base" 2>/dev/null)
+        [ -n "$hit" ] && NEW_IPS="$NEW_IPS$hit\n"
+    done
+done
+if [ -n "$NEW_IPS" ]; then
+    echo -e "$NEW_IPS" | sed '/^$/d' | while read -r f; do
+        echo "  新崩溃报告：$f"
+        python3 - "$f" <<'PYEOF' || true
+import json,sys
+try:
+    txt=open(sys.argv[1],errors="replace").read()
+    head,_,body=txt.partition("\n")
+    b=json.loads(body); imgs=b.get("usedImages",[])
+    for t in b.get("threads",[]):
+        if t.get("triggered"):
+            for fr in t.get("frames",[])[:8]:
+                i=fr.get("imageIndex",0)
+                print("   ", (imgs[i].get("name") if i<len(imgs) else "?"), "|", fr.get("symbol","")[:70])
+            break
+except Exception as e:
+    print("   （解析失败）", e)
+PYEOF
+    done
+    echo "FAIL  上次构建之后有新的崩溃报告（上面是栈顶）"; exit 1
+fi
+echo "PASS  上次构建之后零新崩溃报告"
 
 echo "== 装机版 vs 仓库 build（旧则拦，别让爹地点到旧二进制）=="
 if [ -x "/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" ]; then

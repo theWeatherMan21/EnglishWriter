@@ -1,3 +1,19 @@
+## 第 0 条：断言通过 ≠ 没有崩溃（11-19 血的教训）
+
+本机 11 份崩溃报告里，8 份是 `InlineController.start()` 的 AppKit 通知闭包用了
+`MainActor.assumeIsolated`（切前台 App 时 EXC_BAD_ACCESS 直接退出）。那时**所有断言全绿**——
+因为它不在任何断言覆盖的路径里。
+
+两条规矩：
+1. 运行路径禁止 `MainActor.assumeIsolated`（通知闭包不在 Swift Concurrency 的 main executor 上）；
+   要主线程就用 `Thread.isMainThread` + `DispatchQueue.main.async`。CI 里有 grep 硬拦。
+2. 收工前扫一遍崩溃报告：`~/Library/Logs/DiagnosticReports/` 与 `Retired/` 下
+   属于 `英文写作助手-*.ips` / `ci-selftest-*.ips` 且比当前二进制新的文件。
+   `ci-test.sh` 已内置这一步，出现即 FAIL（并打印栈顶三行）。
+
+注意 `.ips` 里的 `bug_type` 别当结论：309 既可能是 hang 也可能只是异常终止，
+**看栈**最靠得住。
+
 # 维护者笔记（不是给用户看的）
 
 真机验收、探针、踩过的坑。用户文档见 [README](../README.md)。
