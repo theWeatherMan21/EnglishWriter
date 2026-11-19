@@ -117,3 +117,13 @@ CI 的 Release 产物用 ad-hoc 签名（runner 上没有本机证书）。用�
 试过「先本地即时再模型覆盖」两段式：服务端 `mode:"local"` 正常（curl 39ms 返回），
 但扩展里快速段没有生效（首条线仍在 ~2.8s 才出现），已回退成一次完整请求，
 代码里留了注释。要做渐进式渲染，需要先解决「内容脚本里那次 fetch 为什么没画」。
+
+### 未解：为什么扩展里的快速检查段不生效（待查，别重复踩）
+
+试过在 `runCheck` 里先发 `{mode:"local"}`（服务端 39ms 返回本地结果），再发完整请求覆盖。
+实测：**快速段既没有画出线，也没有在 `__EW_DEBUG.notes` 里留下 'fast status=' 记录**，
+说明那次 await 根本没执行到 —— 而 `notes` 里有 'no token' / 'token updated'，
+证明内容脚本本身在跑、token 也拿到了。
+
+所以下一步不是换方案，而是在 `runCheck` 每个 early-return 前打 note（text 长度、scope、
+token 状态），定位它到底从哪一行返回的。查清之前不要把两段式再加回去。

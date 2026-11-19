@@ -520,8 +520,6 @@
       drawUnderlines(el, edits, scopeStart);
     };
     try {
-      // 注：试过「先本地即时、再模型覆盖」两段式，实测快速段没有生效（首条线仍在 ~2.8s 才出现），
-      // 已回退成一次完整请求。服务端 /v1/check 仍支持 mode:"local"，等前端有更稳的做法再接。
       const res = await fetch(API + '/v1/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
