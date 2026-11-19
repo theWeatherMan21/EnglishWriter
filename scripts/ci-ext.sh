@@ -23,6 +23,7 @@ sleep 3
 FAIL=0
 python3 qa/chrome-ext-probe/click_probe.py --port ${PORT} || FAIL=1
 python3 qa/chrome-ext-probe/keyboard_probe.py --port ${PORT} || FAIL=1
+python3 qa/chrome-ext-probe/ce_probe.py --port ${PORT} || FAIL=1
 
 if [ "$FAIL" = "0" ]; then
     echo "=== 扩展验收：全部通过 ==="

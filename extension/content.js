@@ -302,7 +302,8 @@
       </div>
       <div class="ft">
         <button class="pri" data-a="accept">接受</button>
-        <button data-a="ignore">忽略此类</button>
+        <button data-a="ignore">忽略</button>
+        <button data-a="dict">加入词典</button>
         <button data-a="rewrite">改写</button>
         <button data-a="close">关闭</button>
       </div>
@@ -318,7 +319,8 @@
     card.style.top = top + 'px';
     card.addEventListener('mousedown', (ev) => ev.stopPropagation());
     card.querySelector('[data-a=accept]').onclick = () => { accept(edit); hideCard(); };
-    card.querySelector('[data-a=ignore]').onclick = () => { ignore(edit); hideCard(); };
+    card.querySelector('[data-a=ignore]').onclick = () => { ignoreOnce(edit); hideCard(); };
+    card.querySelector('[data-a=dict]').onclick = () => { ignore(edit); hideCard(); };
     card.querySelector('[data-a=close]').onclick = () => hideCard();
     card.querySelector('[data-a=rewrite]').onclick = async () => {
       const box = card.querySelector('.rw');
@@ -420,6 +422,15 @@
     return true;
   }
 
+  // 忽略本次：只在这次会话里不再提示（Grammarly 的 Ignore once）
+  const ignoredOnce = new Set();
+  function ignoreOnce(edit) {
+    ignoredOnce.add(edit.original + '→' + edit.replacement);
+    clearUnderlines();
+    runCheck(true);
+  }
+
+  // 加入词典：永久（跨会话，写 chrome.storage）
   function ignore(edit) {
     const key = edit.original + '→' + edit.replacement;
     ignoreList.add(key);
@@ -494,7 +505,10 @@
       });
       if (res.status === 401) { window.__EW_DEBUG.notes.push('401 bad token'); return; }
       const j = await res.json();
-      let edits = (j.edits || []).filter(e => !ignoreList.has(e.original + '→' + e.replacement));
+      let edits = (j.edits || []).filter(e => {
+        const k = e.original + '→' + e.replacement;
+        return !ignoreList.has(k) && !ignoredOnce.has(k);
+      });
       window.__EW_DEBUG.lastEdits = edits;
       window.__EW_DEBUG.engine = j.engine || '';
       window.__EW_DEBUG.elapsedMs = j.elapsedMs || 0;
