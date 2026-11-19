@@ -136,3 +136,13 @@ token 状态），定位它到底从哪一行返回的。查清之前不要把�
    打字期间连续触发会把模型请求排队，最后一个结果才画，体感像 8–12 秒
 
 实测：`fast` 段在 run 开始后 35ms 就拿到本地结果并画线；模型结果 2.7s 后覆盖。
+
+## 无头测试里的「出线慢」大多是后台定时器节流
+
+`--headless=new` 的页面会被 Chrome 当后台页，`setTimeout` 被钳到 1000ms，
+于是「停笔 150ms 出线」在测试里量出来是 600–1260ms。同一份代码在真前台标签页是 237ms 中位。
+
+`scripts/chrome-testing-up.sh` 已加：
+`--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`
+
+判据：量「停笔→出线」必须带这三个 flag，否则测的是节流不是代码。

@@ -459,6 +459,8 @@
     clearTimeout(fastTimer);
     clearTimeout(modelTimer);
     fastTimer = setTimeout(() => {
+      // 量三段：输入事件→定时器触发（调度延迟）、定时器→画线（规则+绘制）
+      window.__EW_DEBUG.timerDelayMs = Math.round(performance.now() - lastInputAt);
       const seq = ++runSeq;
       runLocalFast(false, seq);
     }, FAST_DEBOUNCE);
@@ -534,11 +536,31 @@
     return { el, scopeText, scopeStart, scope };
   }
 
+  // 本地即时结果留底：模型结果到达时与它取并集，不许把已画的线抹掉（知澜定的不变量）
+  let fastEditsCache = [];
+  const sig = (e) => e.start + ':' + e.length + ':' + e.replacement;
+
+  function unionEdits(fast, model) {
+    const seen = new Set(fast.map(sig));
+    const out = fast.slice();
+    for (const e of model) {
+      if (seen.has(sig(e))) continue;
+      // 与已有线重叠的更短结果丢弃（同一处不画两条）
+      const overlaps = fast.some(f => e.start < f.start + f.length && f.start < e.start + e.length);
+      if (overlaps) continue;
+      seen.add(sig(e));
+      out.push(e);
+    }
+    return out.sort((a, b) => a.start - b.start);
+  }
+
   const drawWith = (ctx, j) => {
     let edits = (j.edits || []).filter(e => {
       const k = e.original + '→' + e.replacement;
       return !ignoreList.has(k) && !ignoredOnce.has(k);
     });
+    if (j.engine === 'page-local') fastEditsCache = edits;
+    else if (fastEditsCache.length) edits = unionEdits(fastEditsCache, edits);
     window.__EW_DEBUG.lastEdits = edits;
     window.__EW_DEBUG.engine = j.engine || '';
     window.__EW_DEBUG.elapsedMs = j.elapsedMs || 0;

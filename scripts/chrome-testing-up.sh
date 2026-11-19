@@ -61,7 +61,9 @@ launch() {
   # 那时窗口也放到屏幕外，绝不 activate。
   local flags=(--user-data-dir="$UA_PROFILE" --remote-debugging-port="$CDP_PORT"
     --load-extension="$PWD/extension" --disable-extensions-except="$PWD/extension"
-    --no-first-run --no-default-browser-check --window-size=1200,900)
+    --no-first-run --no-default-browser-check --window-size=1200,900
+    --disable-background-timer-throttling --disable-renderer-backgrounding
+    --disable-backgrounding-occluded-windows)
   if [ "${EW_CHROME_HEADLESS:-1}" = "1" ]; then
     flags+=(--headless=new --disable-gpu)
   else

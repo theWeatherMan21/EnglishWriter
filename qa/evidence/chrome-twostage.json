@@ -2,28 +2,14 @@
   "snapA": {
     "rects": [
       {
-        "x": 290,
-        "y": 72,
-        "w": 47,
-        "h": 18,
-        "cls": "u gram"
-      },
-      {
         "x": 52,
         "y": 72,
         "w": 64,
         "h": 18,
         "cls": "u gram"
-      },
-      {
-        "x": 186,
-        "y": 72,
-        "w": 73,
-        "h": 18,
-        "cls": "u spell"
       }
     ],
-    "ms": 507
+    "ms": 121
   },
   "snapB": {
     "rects": [
@@ -49,10 +35,10 @@
         "cls": "u spell"
       }
     ],
-    "ms": 4118
+    "ms": 3707
   },
   "dropped": 0,
   "duplicates": 0,
   "sentence": "I have send the report immediatly and there is many reasons.",
-  "at": "2026-11-19T19:54:00"
+  "at": "2026-11-19T19:55:22"
 }

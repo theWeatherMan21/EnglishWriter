@@ -57,6 +57,9 @@ enum Rewrite {
         4. Do not translate. Do not add sentences. Only rewrite what the label asks for.
         5. start/length are UTF-16 offsets in the ORIGINAL passage (counted from 0).
         6. Keep "reason" under 20 Chinese characters — the response gets truncated otherwise.
+        7. NEVER delete words or drop information: replacement must read as a complete, grammatical sentence.
+        8. Do not introduce new errors: no repeated words ("the the"), no double spaces, no dangling prepositions.
+        9. If a candidate would be identical to the original or to another candidate, choose a different wording instead.
         """
     }
 
@@ -167,6 +170,19 @@ enum Rewrite {
         return (raw, parse(raw, segment: segment))
     }
 
+    /// 候选质量硬门槛（11-19 实测抓到的坏例子：删词后「send   vessel schedule ASAP」、
+    /// 加「the the」、四个标签给出同一句）。不合格的直接丢，宁可少给也不给坏句。
+    static func acceptCandidate(_ c: RewriteCandidate, segment: String) -> Bool {
+        let out = c.appliedText(to: segment)
+        guard !out.isEmpty else { return false }
+        if out == segment { return false }
+        if out.contains("  ") { return false }                      // 双空格
+        if out.range(of: #"\b(\w+) \1\b"#, options: .regularExpression) != nil { return false }  // 重复词
+        let ratio = Double(out.count) / Double(max(1, segment.count))
+        if ratio < 0.6 || ratio > 1.8 { return false }              // 删太多 / 加太多
+        return true
+    }
+
     static func suggest(segment: String, config: LLMConfig,
                         labels: [String] = defaultLabels,
                         timeout: TimeInterval = 20,
@@ -197,7 +213,16 @@ enum Rewrite {
         }
         let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         let content = ((obj?["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String ?? ""
-        return parse(content, segment: segment)
+        let raw = parse(content, segment: segment)
+        // 硬过滤 + 去重：坏候选（删词/重复词/双空格）与重复句一律不进卡片
+        var seen = Set<String>()
+        let kept = raw.filter { c in
+            guard acceptCandidate(c, segment: segment) else { return false }
+            return seen.insert(c.appliedText(to: segment)).inserted
+        }
+        // 过滤后如果一条不剩，返回原始结果里第一条合格候选（不要空手而归）
+        if kept.isEmpty, let first = raw.first, acceptCandidate(first, segment: segment) { return [first] }
+        return kept
     }
 
     /// 从残缺 JSON 里逐个抽出形如 {"label":...,"edits":[...]} 的对象（大括号配平，容忍被截断的尾巴）

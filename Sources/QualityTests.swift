@@ -210,7 +210,10 @@ extension QualityTests {
                     print("  FAIL 候选出现非英文内容：\(t)"); fails += 1; break
                 }
             }
-            print(String(format: "  ok  %@ → %d 条（%dms）", String(text.prefix(28)) as NSString, cands.count, ms))
+            print("  原文：\(text)")
+            for c in cands {
+                print("    · [\(c.label)] \(c.appliedText(to: text))")
+            }
         }
 
         let avg = times.isEmpty ? 0 : times.reduce(0, +) / times.count
