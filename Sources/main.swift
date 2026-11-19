@@ -286,6 +286,11 @@ if argv.contains("--selftest") || argv.contains("--privacy") || argv.contains("-
     exit(SelfTest.run(argv))
 }
 
+// 视觉基线逐像素比对（离屏）
+if argv.contains("--pngdiff") {
+    exit(PNGDiff.run(argv))
+}
+
 // Mail 块路径的离屏验收（不碰真实 Mail）：mail-selftest
 if argv.contains("--mail-selftest") {
     exit(MailSelfTest.run(argv))

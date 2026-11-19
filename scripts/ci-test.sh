@@ -49,7 +49,31 @@ echo "== 点击几何诊断（--clickdiag）=="
 "$BIN" --clickdiag || { echo "点击几何断言失败"; exit 1; }
 
 echo "== 业务英文深度回归（--quality --deep：召回 100% + 正确句零误报）=="
-"$BIN" --quality --deep || { echo "deep 质量回归失败"; exit 1; }
+# NO_BUILD / NO_GOLD 不是通过，是没跑：必须见到 RESULT: PASS
+DEEP_OUT=$("$BIN" --quality --deep 2>&1); DEEP_RC=$?
+echo "$DEEP_OUT" | grep -E "^(PASS|FAIL|RESULT)|平均耗时" | tail -4
+if echo "$DEEP_OUT" | grep -qE "NO_BUILD|NO_GOLD|跳过"; then
+    echo "deep 质量回归未覆盖（NO_BUILD / NO_GOLD / 跳过 都算没跑，不是绿）"; exit 1
+fi
+[ "$DEEP_RC" -eq 0 ] || { echo "deep 质量回归失败（exit $DEEP_RC）"; exit 1; }
+
+echo "== 视觉基线 diff（改 CSS 就看得出跑没跑版）=="
+BASELINE="$PWD/qa/baseline"
+if [ -d "$BASELINE" ]; then
+    "$BIN" --settings-snapshot "$PWD/qa/evidence/settings-panel.png" >/dev/null 2>&1 || true
+    "$BIN" --ball-snapshot "$PWD/qa/evidence/ball-states.png" >/dev/null 2>&1 || true
+    for n in settings-panel ball-states; do
+        if [ -s "$BASELINE/$n.png" ]; then
+            "$BIN" --pngdiff "$BASELINE/$n.png" "$PWD/qa/evidence/$n.png" \
+                --threshold 0.001 --out "$PWD/qa/evidence/$n-diff.png" \
+                || { echo "视觉基线变化：$n（差异图 qa/evidence/$n-diff.png；确认是预期改动就 bash scripts/baseline.sh 更新）"; exit 1; }
+        else
+            echo "SKIP  视觉基线 $n 不存在（先跑 bash scripts/baseline.sh 建基线）"
+        fi
+    done
+else
+    echo "SKIP  视觉基线目录不存在（先跑 bash scripts/baseline.sh）"
+fi
 
 echo "== KPI（画线率 / 点击命中 / 日志完整性；只报不拦）=="
 "$BIN" --kpi | tail -3 || true
