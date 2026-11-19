@@ -278,6 +278,11 @@ if argv.contains("--m3-drive") {
     exit(r.fail == 0 ? 0 : 1)
 }
 
+// M3 悬停监听的**真实事件**取证：挂全局 mouseMoved 并真收到一次合成事件（不建窗口）
+if argv.contains("--m3-monitors") {
+    exit(M3MonitorProbe.run())
+}
+
 // 真模型改写 / 语气（--live-rewrite / --live-tone）：key 只走环境变量
 if argv.contains("--docscan-file") {
     var ok = false
