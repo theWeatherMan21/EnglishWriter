@@ -133,11 +133,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LocalEngine.startIdleWatchdog()
 
         // 常驻输入感知（M2）：AXObserver + 800ms 去抖；无授权时静默降级
-        if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1" {
+        // CLI 验收/探针模式只做它自己的事：绝不装全局点击监听，否则会和常驻实例抢点击
+        let cliFlagsInApp = ["--realshot", "--axdump", "--axprobe", "--axcheck", "--axwatch",
+                             "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome"]
+        let isProbeMode = ProcessInfo.processInfo.arguments.contains { cliFlagsInApp.contains($0) }
+        if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1", !isProbeMode {
             if EnginePrefs.ltEnabled() {
                 LocalEngineBootstrap.ensureRunning()   // 只在开关打开时才拉 JVM（默认关，省 368MB）
             }
             InlineController.shared.start()
+            // 谁在写这份日志：常驻实例带 pid 落一条，排查「两个实例抢点击」时一眼可见
+            CheckLog.append(.init(kind: "instance", pid: getpid(), app: "英文写作助手",
+                                  role: "resident", textLen: 0, sentenceLen: 0,
+                                  itemCount: 0, rectCount: 0, elapsed: "-",
+                                  err: "resident start", at: Date()))
         }
 
         // 首次运行且未配置：直接把设置窗口摆出来（用户点一下就完成配置）
@@ -388,4 +397,22 @@ if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--
     || argv.contains("--axprobe-chrome") {
     appDelegate.realShotArgs = argv
 }
+// MARK: 单实例 & 模式判定
+// 两个实例同时跑 = 两个全局点击监听抢同一批点击（11-19 实测：第一次被空 specs 的实例接住，
+// 第二次谁都没接到）。所以：常驻模式用一个文件锁，抢不到锁就退出。
+let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--realshot", "--axdump", "--axprobe",
+                "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome"]
+let isCLIMode = argv.contains { cliFlags.contains($0) }
+if !isCLIMode {
+    let lockPath = (NSHomeDirectory() as NSString)
+        .appendingPathComponent("Library/Application Support/EnglishWriter/resident.lock")
+    try? FileManager.default.createDirectory(atPath: (lockPath as NSString).deletingLastPathComponent,
+                                             withIntermediateDirectories: true)
+    let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
+    if fd >= 0, flock(fd, LOCK_EX | LOCK_NB) != 0 {
+        FileHandle.standardError.write("[single-instance] 已有常驻实例在跑，本实例退出\n".data(using: .utf8)!)
+        exit(0)
+    }
+}
+
 application.run()
