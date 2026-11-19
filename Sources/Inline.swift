@@ -799,6 +799,10 @@ final class InlineController {
             }
             await MainActor.run { self?.diag.requests += 1 }
             do {
+                // 短碎片不发模型：单词（无空格）或 <15 字符的片段，模型没有上下文只能猜
+                // 实测：「maked」单独发出去，模型硬凑了一条 my→my 的占位修改
+                let noSpace = !sentence.contains(" ")
+                if noSpace || (sentence as NSString).length < 15 { return }
                 let out = try await InlineEngine.review(text: sentence, config: cfg)
                 let mergedModel = DiffSanitize.consolidate(out.items + instant, in: sentence)
                 await MainActor.run {

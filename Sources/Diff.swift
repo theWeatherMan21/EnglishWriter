@@ -48,6 +48,20 @@ struct DiffPayload: Codable {
 
 enum DiffParse {
     static func parse(_ content: String) -> [DiffItem]? {
+        // 解析后统一过滤：空修改（original == replacement）无条件丢弃
+        // 实测过模型返回 {"original":"my","replacement":"my"}，理由还写「占位示例不适用」，
+        // 这种一条都不许显示给用户。
+        if let raw = parseRaw(content) {
+            return raw.filter { it in
+                // 空修改丢；两三个字母的碎片也丢（「go → going」这种模型噪声，
+                // 一个词脱离上下文只会瞎猜，本地词典负责这层）
+                it.original != it.replacement && it.original.count >= 3
+            }
+        }
+        return nil
+    }
+
+    private static func parseRaw(_ content: String) -> [DiffItem]? {
         var s = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix("```") {
             if let nl = s.firstIndex(of: "\n") { s = String(s[s.index(after: nl)...]) }
@@ -144,6 +158,15 @@ enum DiffSanitize {
         var accepted: [DiffItem] = []
         for it in pool {
             let lo = it.start, hi = it.start + it.length
+            if let sameRange = accepted.firstIndex(where: { $0.start == it.start && $0.length == it.length && $0.original == it.original }) {
+                // 同一段、同一个原词、两条不同改法：**模型那条更可信**（它看过上下文），
+                // 本地 NSSpellChecker 对 maked 只能猜成 make，模型给的是 made。
+                // 模型条目类型为 grammar/clarity/style 时覆盖本地 spelling 的猜测。
+                if it.kind != .spelling && accepted[sameRange].kind == .spelling {
+                    accepted[sameRange] = it
+                }
+                continue
+            }
             let clash = accepted.contains { $0.start < hi && lo < $0.start + $0.length }
             if clash { continue }
             accepted.append(it)
@@ -174,6 +197,8 @@ func systemPromptV2() -> String {
     4. Industry terms must stay byte-for-byte unchanged: \(terms)
     5. If a sentence has no error, output no edit for it.
     6. No error at all -> {"edits":[]}.
+    7. Never output an edit whose replacement equals original. Never output placeholder examples
+       (e.g. "my" -> "my"). Every element of edits MUST be a real change.
     """
 }
 
@@ -220,11 +245,6 @@ enum InlineEngine {
         var body = buildBody(text: text, config: config, fast: CategoryPrefs.fastMode())
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let fast = CategoryPrefs.fastMode()
-        RequestLog.append(model: config.model.trimmed,
-                          reasoning: fast ? "none" : "(默认·带推理)",
-                          maxTokens: (body["max_tokens"] as? Int) ?? 0,
-                          sentences: Scorer.splitSentences(text).count,
-                          chars: (text as NSString).length)
 
         let t0 = Date()
         let data: Data, response: URLResponse
@@ -238,6 +258,13 @@ enum InlineEngine {
         let elapsed = Date().timeIntervalSince(t0)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let raw = String(data: data, encoding: .utf8) ?? ""
+        // 请求 + 响应一起落盘：荒谬建议（my→my 那种）下次能直接在日志里看到
+        RequestLog.append(model: config.model.trimmed,
+                          reasoning: fast ? "none" : "(默认·带推理)",
+                          maxTokens: (body["max_tokens"] as? Int) ?? 0,
+                          sentences: Scorer.splitSentences(text).count,
+                          chars: (text as NSString).length,
+                          resp: raw)
         guard code == 200 else { throw ReviewFailure.http(code, raw) }
 
         var content = ""

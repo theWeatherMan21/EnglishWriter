@@ -10,11 +10,14 @@ enum RequestLog {
     private static let q = DispatchQueue(label: "ew.reqlog")
     // 同步写：CLI 模式跑完立刻 exit，异步队列会被直接丢掉（踩过：日志一条都没有）
 
-    static func append(model: String, reasoning: String, maxTokens: Int, sentences: Int, chars: Int) {
+    static func append(model: String, reasoning: String, maxTokens: Int, sentences: Int, chars: Int,
+                       resp: String = "") {
         let row: [String: Any] = [
             "at": ISO8601DateFormatter().string(from: Date()),
             "model": model, "reasoning_effort": reasoning,
             "max_tokens": maxTokens, "sentences": sentences, "chars": chars,
+            // 模型返回内容（截 500）：荒谬建议（如 my→my）应当在日志里一眼看到，不用手动复现
+            "resp": String(resp.prefix(500)),
         ]
         guard let d = try? JSONSerialization.data(withJSONObject: row),
               var line = String(data: d, encoding: .utf8) else { return }

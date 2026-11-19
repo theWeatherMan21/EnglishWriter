@@ -51,7 +51,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1715,5 +1715,21 @@ extension SelfTest {
         let p4 = CardPlacement.resolve(anchor: d, cardSize: card, screenVisible: second)
         if p4.x >= second.minX && p4.x + card.width <= second.maxX { SelfTest.ok("place: 副屏取对应屏幕", "\(Int(p4.x))") }
         else { SelfTest.bad("place: 副屏", "\(p4)") }
+    }
+}
+
+// MARK: 空修改过滤（模型返回 my→my 这种占位修改必须无条件丢弃）
+extension SelfTest {
+    static func emptyEditTests() {
+        let json = "{\"edits\":[{\"start\":0,\"length\":5,\"original\":\"maked\",\"replacement\":\"made\",\"type\":\"spelling\",\"reason\":\"拼写\"},{\"start\":6,\"length\":2,\"original\":\"my\",\"replacement\":\"my\",\"type\":\"grammar\",\"reason\":\"占位示例不适用。\"}]}"
+        let items = DiffParse.parse(json) ?? []
+        if items.count == 1, items.first?.original == "maked", items.first?.replacement == "made" {
+            SelfTest.ok("diff: my→my 空修改被丢弃，只剩 maked→made", "items=\(items.count)")
+        } else {
+            SelfTest.bad("diff: 空修改过滤", "items=\(items.map { "\($0.original)→\($0.replacement)" })")
+        }
+        let onlyEmpty = DiffParse.parse("{\"edits\":[{\"start\":0,\"length\":2,\"original\":\"my\",\"replacement\":\"my\",\"type\":\"grammar\",\"reason\":\"x\"}]}") ?? []
+        if onlyEmpty.isEmpty { SelfTest.ok("diff: 全是空修改时返回空集") }
+        else { SelfTest.bad("diff: 全空修改", "\(onlyEmpty.count) 条") }
     }
 }
