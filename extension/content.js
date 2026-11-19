@@ -73,9 +73,14 @@
       .card button{font:12px -apple-system;padding:5px 10px;border-radius:6px;border:1px solid #e3e6ea;background:#fff;cursor:pointer}
       .card button.pri{background:#2f6df6;border-color:#2f6df6;color:#fff}
       .card button:hover{filter:brightness(.97)}
+      .card .rw{padding:0 12px 10px;color:#56606e;font-size:12px}
+      .card .rw:empty{display:none}
+      .card .rwi{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid #f1f3f5}
+      .card .rwt{flex:1;line-height:1.45}
     `;
     root.appendChild(style);
     layer = document.createElement('div');
+    layer.className = 'uls';          // 只放划线；卡片直接挂 root，重画时不会被清掉
     root.appendChild(layer);
     document.documentElement.appendChild(host);
   }
@@ -238,14 +243,14 @@
 
   // ---------- 画线 ----------
   function clearUnderlines() {
-    if (layer) layer.innerHTML = '';
+    if (layer) layer.innerHTML = '';   // 只清划线
     hideCard();
     window.__EW_DEBUG.lastRects = [];
   }
 
   function drawUnderlines(el, edits, sentStart) {
     ensureLayer();
-    layer.innerHTML = '';
+    layer.innerHTML = '';              // 只清划线，卡片保留
     window.__EW_DEBUG.lastTarget = {
       tag: el.tagName, id: el.id || '',
       contenteditable: !!el.isContentEditable,
@@ -298,8 +303,10 @@
       <div class="ft">
         <button class="pri" data-a="accept">接受</button>
         <button data-a="ignore">忽略此类</button>
+        <button data-a="rewrite">改写</button>
         <button data-a="close">关闭</button>
-      </div>`;
+      </div>
+      <div class="rw"></div>`;
     card.querySelector('.orig').textContent = edit.original;
     card.querySelector('.rep').textContent = edit.replacement;
     card.querySelector('.rs').textContent = edit.reason || '';
@@ -313,7 +320,57 @@
     card.querySelector('[data-a=accept]').onclick = () => { accept(edit); hideCard(); };
     card.querySelector('[data-a=ignore]').onclick = () => { ignore(edit); hideCard(); };
     card.querySelector('[data-a=close]').onclick = () => hideCard();
-    layer.appendChild(card);
+    card.querySelector('[data-a=rewrite]').onclick = async () => {
+      const box = card.querySelector('.rw');
+      box.textContent = '正在改写…';
+      const sent = sentenceAround(textOf(lastTarget), (window.__EW_DEBUG.sentStart || 0) + edit.start).text || edit.original;
+      try {
+        const r = await fetch(API + '/v1/rewrite', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-ew-token': token },
+          body: JSON.stringify({ text: sent })
+        });
+        const d = await r.json();
+        if (d.error === 'model-not-configured') { box.textContent = '改写需要先在设置里配好模型'; return; }
+        if (!d.candidates || !d.candidates.length) { box.textContent = '没有更好的写法'; return; }
+        box.innerHTML = '';
+        d.candidates.slice(0, 3).forEach((c) => {
+          const it = document.createElement('div');
+          it.className = 'rwi';
+          const t = document.createElement('div');
+          t.className = 'rwt';
+          t.textContent = c.text;
+          const b = document.createElement('button');
+          b.textContent = '用这句';
+          b.onclick = () => { replaceSegment(sent, c.text); hideCard(); };
+          it.appendChild(t); it.appendChild(b);
+          box.appendChild(it);
+        });
+      } catch (e) {
+        box.textContent = '改写失败：' + e.message;
+      }
+    };
+    root.appendChild(card);   // 卡片不放在 .uls 里，重画不冲掉
+  }
+
+  /// 用改写结果替换整个句子（与建议的逐词替换不同层级）
+  function replaceSegment(segment, text) {
+    const el = lastTarget;
+    if (!el) return;
+    const full = textOf(el);
+    const at = full.indexOf(segment);
+    if (at < 0) return;
+    if (el.isContentEditable) {
+      const r = rangeForOffsets(el, at, at + segment.length);
+      if (!r) return;
+      el.focus();
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+      document.execCommand('insertText', false, text);
+    } else {
+      el.value = full.slice(0, at) + text + full.slice(at + segment.length);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
 
   // ---------- 接受 / 忽略 / 撤销：直接改 DOM ----------

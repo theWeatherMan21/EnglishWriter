@@ -1,6 +1,6 @@
 {
   "rects": 2,
-  "mode": "cdp-mouse",
+  "mode": "dom-click",
   "card": {
     "visible": true,
     "orig": "send",
@@ -8,10 +8,12 @@
     "buttons": [
       "接受",
       "忽略此类",
+      "改写",
       "关闭"
-    ]
+    ],
+    "rewrite": "改写需要先在设置里配好模型"
   },
   "before": "I have send the immediatly report.",
   "after": "I have sent the immediatly report.",
-  "at": "2026-11-19T18:21:02"
+  "at": "2026-11-19T18:26:32"
 }

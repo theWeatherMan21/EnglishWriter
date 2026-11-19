@@ -159,12 +159,46 @@ final class LocalAPI {
                 let payload = await LocalAPI.check(text: text, language: language)
                 self?.send(conn, status: 200, json: payload, origin: req.origin)
             }
+        case ("POST", "/v1/rewrite"):
+            guard let tok = req.header("x-ew-token"), tok == token else {
+                send(conn, status: 401, json: ["error": "bad token"], origin: req.origin)
+                return
+            }
+            guard let obj = try? JSONSerialization.jsonObject(with: req.body) as? [String: Any],
+                  let text = obj["text"] as? String, !text.isEmpty else {
+                send(conn, status: 400, json: ["error": "text required"], origin: req.origin)
+                return
+            }
+            Task { [weak self] in
+                let payload = await LocalAPI.rewrite(text: text)
+                self?.send(conn, status: 200, json: payload, origin: req.origin)
+            }
         default:
             send(conn, status: 404, json: ["error": "not found"], origin: req.origin)
         }
     }
 
     // MARK: 检查（复用原生同一条链：中文门控 → LT → 术语护栏）
+
+    /// 改写 / 语气：与桌面端 RewriteFlow 同一条链（同一个提示词、同一个模型）。
+    /// 模型没配就直接说没配，不假装给了候选。
+    static func rewrite(text: String) async -> [String: Any] {
+        let t0 = Date()
+        let cfg = SettingsStore.load()
+        guard Rewrite.isAvailable(cfg) else {
+            return ["candidates": [], "error": "model-not-configured", "elapsedMs": 0]
+        }
+        do {
+            let cands = try await Rewrite.suggest(segment: text, config: cfg)
+            let elapsed = Int(Date().timeIntervalSince(t0) * 1000)
+            let list: [[String: Any]] = cands.map {
+                ["label": $0.label, "text": $0.appliedText(to: text), "note": $0.note]
+            }
+            return ["candidates": list, "elapsedMs": elapsed]
+        } catch {
+            return ["candidates": [], "error": "\(error)", "elapsedMs": Int(Date().timeIntervalSince(t0) * 1000)]
+        }
+    }
 
     static func check(text: String, language: String) async -> [String: Any] {
         // 中文零干扰：CJK 占比 > 0.40 直接不查（和原生完全同一口径）

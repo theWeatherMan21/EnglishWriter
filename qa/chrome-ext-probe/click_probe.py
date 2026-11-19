@@ -137,6 +137,21 @@ def main():
     print(f"OK  卡片出现  {card['orig']} → {card['rep']}  (触发方式 {mode})")
     print(f"OK  卡片按钮  {'/'.join(card['buttons'])}")
 
+    # 6) 改写入口：模型没配时必须给出诚实文案，不能空白也不能假装
+    drive.evaluate(ws, "(() => { const h = document.getElementById('__ew_host__');"
+                       " const c = h.shadowRoot.querySelector('.card');"
+                       " if (!c) return null; c.querySelector('.card');"
+                       " const b = c.querySelector('[data-a=rewrite]');"
+                       " if (!b) return 'NO-BTN'; b.click(); return 'clicked'; })()")
+    time.sleep(1.5)
+    rw = drive.evaluate(ws, "(() => { const h = document.getElementById('__ew_host__');"
+                            " const c = h.shadowRoot.querySelector('.card');"
+                            " if (!c) return 'NO-CARD';"
+                            " const b = c.querySelector('.rw');"
+                            " return b ? (b.textContent || '').slice(0, 40) : 'NO-BOX'; })()")
+    print(f"OK  改写入口  「{rw}」")
+    card = dict(card); card["rewrite"] = rw
+
     # 5) 点卡片里的「接受」，正文必须真的变
     before = drive.evaluate(ws, "document.querySelector('textarea').value")
     drive.evaluate(ws, "(() => { const h = document.getElementById('__ew_host__');"
@@ -147,6 +162,7 @@ def main():
         print(f"FAIL: 点了接受，正文没变（{before!r}）")
         return 7
     print(f"OK  接受生效  {before!r} → {after!r}")
+
     evidence = {"rects": len(rects), "mode": mode, "card": card,
                 "before": before, "after": after, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     out = os.path.join(os.path.dirname(__file__), "..", "..", "qa", "evidence", "chrome-click.json")

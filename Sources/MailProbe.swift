@@ -294,7 +294,14 @@ enum MailProbe {
         var raw: CFTypeRef?
         if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success,
            let wins = raw as? [AXUIElement], !wins.isEmpty {
-            return wins
+            // macOS 27 实测：Mail/TextEdit 在「有文档没窗口」时把 AXApplication 元素塞进 AXWindows。
+            // 它不是窗口（role=AXApplication，children 全是菜单栏），必须滤掉，否则会报
+            // 「窗口=1 但取不到可见文本」这种误导性结论。
+            let real = wins.filter { (str($0, kAXRoleAttribute) ?? "") == "AXWindow" }
+            if real.count != wins.count {
+                print("  ! AXWindows 里 \(wins.count - real.count) 个不是真窗口（AXApplication 占位），已忽略")
+            }
+            if !real.isEmpty { return real }
         }
         // Mail 写信窗口可能不在 kAXWindowsAttribute 里（实测：主窗口关掉只留 compose 时 windows=0）。
         // 兜底：从 app 元素往下找 role=AXWindow 的节点，最多 4 层。

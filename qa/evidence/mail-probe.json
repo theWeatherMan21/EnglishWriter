@@ -1,69 +1,38 @@
 {
   "bundle" : "com.apple.mail",
-  "composePresent" : true,
+  "composePresent" : false,
   "pid" : 85845,
-  "windowCount" : 2,
+  "windowCount" : 1,
   "windows" : [
     {
       "badRects" : [
 
       ],
-      "blocks" : 8,
-      "chars" : 102,
-      "englishBlocks" : 8,
+      "blocks" : 0,
+      "chars" : 0,
+      "englishBlocks" : 0,
       "itemCount" : 0,
       "items" : [
 
       ],
       "kind" : "reading",
       "langSkippedBlocks" : 0,
-      "note" : "可见 8 块 \/ 屏幕外 0 块；其中中文块 0（0 字，按设计跳过）、英文块 8 → 本次命中 0",
+      "note" : "这个窗口里没有 AXWebArea \/ AXTextArea",
       "offscreenBlocks" : 0,
       "rectsInsideWindow" : true,
       "skippedCjkBlocks" : 0,
       "skippedCjkChars" : 0,
-      "staticTexts" : 16000,
-      "textAreas" : 3,
-      "title" : "Marketing – Network Management – 6,833 messages, 2 unread",
-      "totalChars" : 102,
-      "visibleBlocks" : 8,
-      "webAreaFound" : true,
-      "windowRect" : [
-        61,
-        30,
-        1859,
-        1050
-      ]
-    },
-    {
-      "badRects" : [
-
-      ],
-      "blocks" : 8,
-      "chars" : 202,
-      "englishBlocks" : 6,
-      "itemCount" : 0,
-      "items" : [
-
-      ],
-      "kind" : "compose",
-      "langSkippedBlocks" : 1,
-      "note" : "可见 8 块 \/ 屏幕外 0 块；其中中文块 0（0 字，按设计跳过）、英文块 6 → 本次命中 0",
-      "offscreenBlocks" : 0,
-      "rectsInsideWindow" : true,
-      "skippedCjkBlocks" : 0,
-      "skippedCjkChars" : 0,
-      "staticTexts" : 17,
+      "staticTexts" : 0,
       "textAreas" : 0,
-      "title" : "New Message",
-      "totalChars" : 202,
-      "visibleBlocks" : 8,
-      "webAreaFound" : true,
+      "title" : "Mail",
+      "totalChars" : 0,
+      "visibleBlocks" : 0,
+      "webAreaFound" : false,
       "windowRect" : [
-        92,
-        39,
-        417,
-        1005
+        0,
+        0,
+        0,
+        0
       ]
     }
   ]
