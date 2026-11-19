@@ -28,6 +28,10 @@ final class Sidebar: NSPanel {
     private var tone = ""
 
     private let width: CGFloat = 360
+    /// 高度按内容自适应（Grammarly 的栏不会永远一个死高度）；
+    /// 上限 = 屏高 70%，下限 = 240，用户手动拉过之后就不再自动缩。
+    private var userResizedHeight = false
+    private(set) var currentHeight: CGFloat = 620
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 360, height: 620),
@@ -58,21 +62,38 @@ final class Sidebar: NSPanel {
 
     // MARK: 对外（与旧 AppKit 侧栏同签名，调用方不用改）
 
-    func present(items: [DiffItem], score: WritingScore, at point: NSPoint? = nil) {
+    func present(items: [DiffItem], score: WritingScore, at anchor: NSRect? = nil) {
         self.items = items
         self.score = score
         dismissed.removeAll()
-        if !isVisible || point != nil {
-            var origin = NSPoint(x: 0, y: 0)
-            if let p = point {
-                origin = NSPoint(x: p.x - width / 2, y: p.y - 40)
-            } else if let screen = NSScreen.screens.first?.visibleFrame {
-                origin = NSPoint(x: screen.maxX - width - 24, y: screen.midY - frame.height / 2)
-            }
-            setFrameOrigin(origin)
+        if !isVisible || anchor != nil {
+            // 有球就贴着球同一侧展开（球在右→栏在右半屏贴着球左边）；没球就贴右边缘
+            let screen = anchor.flatMap { a in NSScreen.screens.first { $0.frame.intersects(a) } } ?? NSScreen.main
+            let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let h = max(240, min(currentHeight, visible.height * 0.7))
+            let size = NSSize(width: width, height: h)
+            let origin = SidebarPlacement.resolve(ball: anchor, size: size, screenVisible: visible)
+            setFrame(NSRect(origin: origin, size: size), display: true)
         }
         orderFrontRegardless()
         push()
+    }
+
+    /// 内容变高变矮就跟着改窗口高度（Grammarly 的栏不会永远挂着一段空白）
+    private func fitHeight(_ content: CGFloat) {
+        let screen = (self.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let target = max(240, min(content, screen.height * 0.7))
+        guard abs(target - currentHeight) > 6 else { return }
+        currentHeight = target
+        guard isVisible else { return }
+        var f = frame
+        // 顶边不动，往下长（栏贴着球的顶对齐，长高时不该把标题顶出屏幕）
+        f.origin.y = f.maxY - target
+        f.size.height = target
+        if f.minY < screen.minY + 8 {
+            f.origin.y = screen.minY + 8
+        }
+        setFrame(f, display: true)
     }
 
     func setTone(_ s: String) { tone = s; push() }
@@ -89,8 +110,8 @@ final class Sidebar: NSPanel {
     func orderOutAndClear() { orderOut(nil) }
 
     static func bandText(overall: Int) -> String {
-        let band = overall >= 80 ? "良好" : (overall >= 50 ? "需注意" : "需改进")
-        return "\(band) · \(overall)"
+        // 只给档位词：分数已经在大圆环里，圆环下再重复一遍数字是噪音
+        overall >= 80 ? "良好" : (overall >= 50 ? "需注意" : "需改进")
     }
 
     // MARK: 数据 → JSON
@@ -105,7 +126,13 @@ final class Sidebar: NSPanel {
     }
 
     private func payload() -> String {
-        let live = items.filter { !dismissed.contains(key($0)) }
+        Self.payload(items: items, score: score, tone: tone, dismissed: dismissed)
+    }
+
+    /// payload 只此一份：上屏的窗口与离屏快照共用，避免「截图好看、上屏另一套」
+    static func payload(items: [DiffItem], score: WritingScore, tone: String,
+                        dismissed: Set<String>) -> String {
+        let live = items.filter { !dismissed.contains(Self.key($0)) }
         func count(_ t: String?) -> Int {
             guard let t else { return live.count }
             if t == "grammar" { return live.filter { $0.type == "spelling" || $0.type == "grammar" }.count }
@@ -117,8 +144,9 @@ final class Sidebar: NSPanel {
             let title = t == "grammar" ? "正确性" : (t == "clarity" ? "清晰度" : "表达")
             return ["title": title, "type": t, "items": g.enumerated().map { i, it in
                 ["id": items.firstIndex { $0.start == it.start && $0.length == it.length } ?? i,
+                 "type": it.type,           // 前端两档筛选要用：没这个字段，「重要建议」会静默失效
                  "original": it.original, "replacement": it.replacement,
-                 "reason": it.reason.isEmpty ? defaultReason(it.type) : it.reason]
+                 "reason": it.reason.isEmpty ? Self.defaultReason(it.type) : it.reason]
             }]
         }
         let obj: [String: Any] = [
@@ -131,8 +159,10 @@ final class Sidebar: NSPanel {
                 ["name": "吸引力", "value": score.engagement, "note": score.engagementNote],
                 ["name": "表达", "value": score.delivery, "note": score.deliveryNote],
             ],
-            "tabs": [["name": "全部", "n": count(nil)], ["name": "正确性", "n": count("grammar")],
-                     ["name": "清晰度", "n": count("clarity")], ["name": "表达", "n": count("style")]],
+            // 两档，不是四档（知澜 P1 规格：默认「重要建议」/「全部建议」）。
+            // 重要 = 拼写+语法+清晰度；风格（权重 0.2）只在「全部」里出现。
+            "tabs": [["name": "重要建议", "n": live.filter { $0.type != "style" }.count],
+                     ["name": "全部建议", "n": live.count]],
             "groups": groups,
         ]
         guard let d = try? JSONSerialization.data(withJSONObject: obj),
@@ -141,12 +171,18 @@ final class Sidebar: NSPanel {
     }
 
     private func push() {
-        web.evaluateJavaScript("EW.render(\(payload()))", completionHandler: nil)
+        web.evaluateJavaScript("EW.render(\(payload()))") { [weak self] _, _ in
+            // 渲染完问一次内容高度：栏要跟着内容长，不能永远挂着一段空白
+            self?.web.evaluateJavaScript("EW.naturalHeight()") { v, _ in
+                guard let self, let h = (v as? NSNumber)?.doubleValue else { return }
+                self.fitHeight(CGFloat(h))
+            }
+        }
     }
 
-    private func key(_ it: DiffItem) -> String { "\(it.start)-\(it.length)-\(it.replacement)" }
+    static func key(_ it: DiffItem) -> String { "\(it.start)-\(it.length)-\(it.replacement)" }
 
-    private func defaultReason(_ type: String) -> String {
+    static func defaultReason(_ type: String) -> String {
         switch type {
         case "spelling": return "拼写错误"
         case "grammar": return "语法问题"
@@ -163,9 +199,9 @@ extension Sidebar: WKScriptMessageHandler {
         let id = (body["id"] as? Int) ?? -1
         switch action {
         case "accept":
-            if items.indices.contains(id) { onAccept?(items[id]); dismissed.insert(key(items[id])); push(); showSaved() }
+            if items.indices.contains(id) { onAccept?(items[id]); dismissed.insert(Self.key(items[id])); push(); showSaved() }
         case "dismiss":
-            if items.indices.contains(id) { onDismiss?(items[id]); dismissed.insert(key(items[id])); push() }
+            if items.indices.contains(id) { onDismiss?(items[id]); dismissed.insert(Self.key(items[id])); push() }
         case "jump":
             if items.indices.contains(id) { onJump?(items[id]) }
         case "acceptAll":

@@ -4,37 +4,42 @@
 body { margin:0; font: var(--f-body)/1.45 -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
        color: var(--text); background: var(--bg); }
 /* 三分层：面板白 → 卡片 #FAFAFA → 白底正文，靠底色+细边+轻阴影分层，不靠粗边框 */
-.wrap { padding: var(--s4); display:flex; flex-direction:column; gap: var(--s4); height:100vh; }
-.head { display:flex; gap: var(--s4); align-items:flex-start; }
+/* 顶部留一条 30pt 的窗口工具带：齿轮/关闭在那里，四维进度条不被它们压住 */
+.wrap { padding: 30px var(--s4) var(--s4); display:flex; flex-direction:column; gap: var(--s4); height:100vh; }
+.head { display:flex; gap: var(--s4); align-items:center; }
 .ring { position:relative; width:104px; height:104px; flex:0 0 104px; }
 .ring svg { transform: rotate(-90deg); }
 .ring .num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
 .ring .num b { font-size: var(--f-score); font-weight:600; letter-spacing:-0.5px; }
 .ring .num span { font-size: var(--f-caption); color: var(--text-muted); margin-top:2px; white-space:nowrap; }
-.dims { flex:1; display:flex; flex-direction:column; gap: var(--s2); }
+.dims { flex:1; display:flex; flex-direction:column; gap: var(--s3); }
 .dim { display:grid; grid-template-columns: 52px 28px 1fr; gap: var(--s2); align-items:center; font-size: var(--f-secondary); }
 .dim .n { color: var(--text-muted); }
 .dim .v { font-weight:600; font-variant-numeric: tabular-nums; text-align:right; min-width:28px; }
 .dim .bar { height:4px; border-radius:999px; background: var(--border); overflow:hidden; }
 .dim .bar i { display:block; height:100%; border-radius:999px; }
-.dim { min-height: 22px; }
+.dim { min-height: 22px; row-gap: 1px; }
+.dim .note { grid-column: 1 / -1; font-size: var(--f-caption); color: var(--text-muted);
+             line-height: 1.3; margin-top: 1px; }
 .dim .bar i { transition: width .18s ease; }
-.tabs { display:flex; gap: var(--s2); align-items:center; }
-.tab { flex:1; text-align:center; cursor:pointer; padding-top: var(--s1); }
-.tab i { display:block; height:3px; border-radius:999px; margin-bottom: var(--s1); opacity:.35; }
-.tab.on i { opacity:1; }
+.tabs { display:flex; gap:2px; align-items:center; background: var(--bg-subtle);
+        border-radius: var(--r-control); padding:2px; }
+.tab { flex:1; text-align:center; cursor:pointer; padding:5px 8px; border-radius: calc(var(--r-control) - 2px); }
 .tab span { font-size: var(--f-secondary); color: var(--text-muted); }
+.tab.on { background: var(--bg); box-shadow: var(--shadow-card); }
 .tab.on span { color: var(--text); font-weight:600; }
-.tab:not(.on) i { opacity:.18; }
-.tab b { font-variant-numeric: tabular-nums; font-weight:600; margin-left:2px; }
-.allbtn { font-size: var(--f-secondary); border:1px solid var(--brand); background:var(--brand); color:#fff;
-          font-weight:600; border-radius: var(--r-control); padding:5px 10px; cursor:pointer; }
-.allbtn:hover { filter: brightness(1.06); }
+.tab b { font-variant-numeric: tabular-nums; font-weight:600; margin-left:4px; }
+.listhead { display:flex; align-items:center; justify-content:space-between;
+            font-size: var(--f-caption); color: var(--text-muted); margin-top:-4px; }
+.allbtn { font-size: var(--f-caption); border:1px solid transparent; background:transparent;
+          color: var(--brand); font-weight:600; border-radius: var(--r-control); padding:4px 8px;
+          cursor:pointer; white-space:nowrap; }
+.allbtn:hover { background: rgba(2,126,111,.08); border-color: rgba(2,126,111,.28); }
 .list { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;
-        gap: var(--s2); padding-bottom: var(--s6); }
+        gap: var(--s2); padding: 0 2px var(--s6) 0; scroll-padding-top: var(--s2); }
 .group { display:flex; flex-direction:column; gap: var(--s1); }
 .ghead { display:flex; align-items:center; gap:6px; font-size: var(--f-secondary); font-weight:600; margin-top: var(--s2); }
-.ghead em { width:6px; height:6px; border-radius:999px; font-style:normal; }
+.ghead .ico { flex:0 0 14px; width:14px; height:14px; }
 .ghead span { color: var(--text-muted); font-weight:500; }
 .row { border:1px solid var(--hairline); border-radius: var(--r-card); background: var(--card-bg);
        box-shadow: var(--shadow-card); padding: var(--s3); display:flex;
@@ -42,14 +47,15 @@ body { margin:0; font: var(--f-body)/1.45 -apple-system, "SF Pro Text", "PingFan
 .row:hover { background: var(--hover-bg); }
 .row.leaving { opacity:0; }
 .row.flash { background:#FFE3EC; }
-.line { font-size: var(--f-body); }
+.line { font-size: var(--f-body); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.line .ico { flex:0 0 14px; width:14px; height:14px; margin-right:1px; }
 /* 颜色只承担一个含义：类别色只出现在色点/进度条/tab 条；删除=#D32F2F；接受动作=品牌绿 */
 .old { color: var(--danger); background: rgba(211,47,47,.08); text-decoration: line-through; border-radius:3px; padding:0 3px; }
 .new { color: var(--brand); background: rgba(2,126,111,.10); font-weight:600; border-radius:3px; padding:0 3px; }
 .reason { font-size: var(--f-caption); color: var(--text-muted); }
 .acts { display:flex; gap:var(--s1); justify-content:flex-end; }
-.btn { font-size: var(--f-caption); border-radius: var(--r-control); border:1px solid transparent;
-       background: transparent; color: var(--text-muted); padding:4px 8px; cursor:pointer; }
+.btn { font-size: var(--f-caption); border-radius: var(--r-control); border:1px solid var(--border);
+       background: var(--bg); color: var(--text-muted); padding:4px 10px; cursor:pointer; }
 .btn:hover { background: var(--bg-subtle); color: var(--text); }
 /* 单个「接受」= 绿字描边（次级）；「忽略」= 纯文字（三级）；实心只留给「全部接受」 */
 .btn.primary { border-color: var(--brand); color: var(--brand); font-weight:600; background: var(--bg); }

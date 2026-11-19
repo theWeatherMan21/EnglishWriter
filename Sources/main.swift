@@ -335,6 +335,12 @@ if argv.contains("--settings-snapshot") {
     exit(code)
 }
 
+if argv.contains("--sidebar-snapshot") {
+    var code: Int32 = 0
+    MainActor.assumeIsolated { code = SidebarSnapshot.run(argv) }
+    exit(code)
+}
+
 if argv.contains("--ball-snapshot") {
     let out = argv.firstIndex(of: "--ball-snapshot").flatMap { $0 + 1 < argv.count ? argv[$0 + 1] : nil }
         ?? (ProcessInfo.processInfo.environment["EW_OUT"].map { $0 + "/ball-states.png" })
@@ -406,7 +412,8 @@ if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--
 // 两个实例同时跑 = 两个全局点击监听抢同一批点击（11-19 实测：第一次被空 specs 的实例接住，
 // 第二次谁都没接到）。所以：常驻模式用一个文件锁，抢不到锁就退出。
 let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--keywin", "--realshot", "--axdump", "--axprobe",
-                "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome"]
+                "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome",
+                "--sidebar-snapshot", "--settings-snapshot", "--ball-snapshot"]
 let isCLIMode = argv.contains { cliFlags.contains($0) }
 if !isCLIMode {
     let lockPath = (NSHomeDirectory() as NSString)

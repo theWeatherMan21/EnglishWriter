@@ -128,8 +128,14 @@ final class FloatBall: NSPanel {
     }
 
     func handleLeftClick() {
-        guard phase == .issues, count > 0 else { return }
-        HoverCoordinator.shared.openNextIssue()
+        // Grammarly 口径（知澜 11-19 P1 规格）：**点球 = 开建议侧栏**。
+        // 旧行为是「跳到下一条建议」，那是卡的交互，不是产品的入口。
+        // 侧栏已开着 → 再点一次收起（同 Grammarly 的 toggle 手感）。
+        if InlineController.shared.isSidebarVisible {
+            InlineController.shared.hideSidebar()
+        } else {
+            InlineController.shared.showSidebar()
+        }
     }
 }
 

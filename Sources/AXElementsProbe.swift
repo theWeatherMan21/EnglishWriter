@@ -25,6 +25,13 @@ enum AXElementsProbe {
         Target(name: "Word", bundleIds: ["com.microsoft.Word"]),
         Target(name: "Outlook", bundleIds: ["com.microsoft.Outlook"]),
         Target(name: "Safari", bundleIds: ["com.apple.Safari"]),
+        // 11-19 新增：这几个是卡上点名要覆盖的宿主，必须在真机探到再开
+        // 探不到就老实记 not-running，绝不拿 role 兜底假装支持
+        Target(name: "Telegram", bundleIds: ["org.telegram.desktop", "com.tdesktop.Telegram"]),
+        Target(name: "WPS", bundleIds: ["com.kingsoft.wpsoffice.mac", "com.kingsoft.wpsoffice.mac.wps"]),
+        Target(name: "Pages", bundleIds: ["com.apple.iWork.Pages"]),
+        Target(name: "Slack", bundleIds: ["com.tinyspeck.slackmacgap"]),
+        Target(name: "Chrome", bundleIds: ["com.google.Chrome"]),
     ]
 
     @MainActor

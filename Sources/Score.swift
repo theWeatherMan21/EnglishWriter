@@ -46,9 +46,11 @@ enum Scorer {
             s.correctness = 100
         }
         let byType = Dictionary(grouping: items, by: { $0.type }).mapValues { $0.count }
+        // 这一行只描述「正确性」这一维的构成：把清晰度/风格也算进来会让人以为
+        // 正确性扣分是表达问题造成的（11-19 视觉复核指出）
         s.correctnessNote = items.isEmpty
             ? "没有拼写或语法问题"
-            : "拼写 \(byType["spelling"] ?? 0) · 语法 \(byType["grammar"] ?? 0) · 清晰度 \(byType["clarity"] ?? 0) · 风格 \(byType["style"] ?? 0)"
+            : "拼写 \(byType["spelling"] ?? 0) · 语法 \(byType["grammar"] ?? 0)"
 
         // —— Clarity：句长 / 被动 / 冗长词
         let avgLen = sentences.isEmpty ? 0 : sentences.map(\.count).reduce(0, +) / max(1, sentences.count)

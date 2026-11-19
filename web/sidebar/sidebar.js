@@ -2,6 +2,16 @@
 const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const typeColor = t => t === 'clarity' ? '#4A6EDE' : (t === 'style' ? '#7E57C2' : '#EE1437');
+// 类别图标：形状与颜色双编码（Grammarly 的辨识度就来自「同一个色还有一个形状」）
+// 拼写/语法 = 圆；清晰度 = 方；表达 = 菱形。色盲也能分辨。
+const typeIcon = t => {
+  const c = typeColor(t), shape = t === 'clarity'
+    ? `<rect x="3" y="3" width="12" height="12" rx="3" fill="${c}"/>`
+    : (t === 'style'
+      ? `<path d="M9 2.5 15.5 9 9 15.5 2.5 9Z" fill="${c}"/>`
+      : `<circle cx="9" cy="9" r="6.5" fill="${c}"/>`);
+  return `<svg class="ico" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">${shape}</svg>`;
+};
 
 const EW = {
   data: null,
@@ -15,7 +25,12 @@ const EW = {
     const pct = Math.max(0, Math.min(1, d.overall / 100));
     const arc = document.getElementById('arc');
     arc.style.stroke = pct >= .8 ? '#2E7D32' : (pct >= .5 ? '#F59E0B' : '#EE1437');
-    arc.style.strokeDashoffset = (257.6 * (1 - pct)).toFixed(1);
+    // 弧长必须按 SVG 里真实的 r 算：index.html r=47 → 2πr=295.3。
+    // 写死 257.6（那是 r=41 的值）会让 59 分画成 64%，分数和弧对不上。
+    const r = Number(arc.getAttribute('r')) || 47;
+    const circ = 2 * Math.PI * r;
+    arc.style.strokeDasharray = circ.toFixed(1);
+    arc.style.strokeDashoffset = (circ * (1 - pct)).toFixed(1);
 
     document.getElementById('dims').innerHTML = d.dims.map(x => {
       const sev = '#1F2328';   // 分数不带类别色（类别色只给色点和进度条）
@@ -23,28 +38,37 @@ const EW = {
       // 每行只放「维度名 / 分数 / 进度条」，计数与百分比一律不进评分行（避免口径混在一起）
       return `<div class="dim" title="${esc(x.note || '')}"><span class="n">${esc(x.name)}</span>
         <span class="v" style="color:${sev}">${x.value}</span>
-        <span class="bar"><i style="width:${x.value}%;background:${cat}"></i></span></div>`;
+        <span class="bar"><i style="width:${x.value}%;background:${cat}"></i></span>
+        <span class="note">${esc(x.note || '')}</span></div>`;
     }).join('');
 
-    const colors = ['#1F2328', '#EE1437', '#4A6EDE', '#7E57C2'];
+    // 两档筛选：重要（无 style）/ 全部。分段控件，不再是四根彩色小横条。
+    const mode = this.filter === 'all' ? 1 : 0;
     document.getElementById('tabs').innerHTML = d.tabs.map((t, i) =>
-      `<div class="tab ${(this.filter === null && i === 0) || this.filter === ['grammar', 'clarity', 'style'][i - 1] ? 'on' : ''}"
-            onclick="EW.pick(${i})"><i style="background:${colors[i]}"></i>
-       <span>${esc(t.name)}<b style="color:#1F2328">${t.n}</b></span></div>`).join('')
-      + `<button class="allbtn" title="一次改完所有建议，可用 ⌘Z 撤销" onclick="EW.post({action:'acceptAll'})">全部接受</button>`;
+      `<div class="tab ${mode === i ? 'on' : ''}" onclick="EW.pick(${i})">
+         <span>${esc(t.name)}<b>${t.n}</b></span></div>`).join('');
 
-    const groups = (d.groups || []).filter(g => !this.filter || g.type === this.filter);
+    const imp = it => mode === 1 || it.type !== 'style';
+    const groups = (d.groups || []).map(g => ({ ...g, items: g.items.filter(imp) }))
+                                   .filter(g => g.items.length);
+
+    // 列表级动作放列表头右侧，和筛选项分开，避免被当成第五个 tab
+    const shown = groups.reduce((n, g) => n + g.items.length, 0);
+    document.getElementById('listhead').innerHTML =
+      `<span>${shown} 条建议</span>` +
+      (shown ? `<button class="allbtn" title="一次改完当前列表的建议，可用 ⌘Z 撤销"
+                onclick="EW.post({action:'acceptAll'})">全部接受</button>` : '');
     if (!groups.length) {
       document.getElementById('list').innerHTML =
-        `<div class="empty"><div class="tick">✓</div><div>没有发现问题</div></div>`;
+        `<div class="empty"><div class="tick">✓</div><div>没有更多建议</div></div>`;
       document.getElementById('tone').textContent = d.tone ? ('语气：' + d.tone) : '';
       return;
     }
     document.getElementById('list').innerHTML = groups.map(g => `<div class="group">
-      <div class="ghead"><em style="background:${typeColor(g.type)}"></em>
+      <div class="ghead">${typeIcon(g.type)}
         ${esc(g.title)} <span>${g.items.length}</span></div>
       ${g.items.map(it => `<div class="row" data-id="${it.id}" onclick="EW.post({action:'jump',id:${it.id}})">
-          <div class="line"><span class="old">${esc(it.original)}</span> → <span class="new">${esc(it.replacement)}</span></div>
+          <div class="line">${typeIcon(g.type)}<span class="old">${esc(it.original)}</span> → <span class="new">${esc(it.replacement)}</span></div>
           <div class="reason">${esc(it.reason)}</div>
           <div class="acts">
             <button class="btn" onclick="event.stopPropagation();EW.post({action:'dismiss',id:${it.id}})">忽略</button>
@@ -62,7 +86,20 @@ const EW = {
     setTimeout(() => this.post({ action: 'accept', id: id }), 180);
   },
 
-  pick(i) { this.filter = i === 0 ? null : ['grammar', 'clarity', 'style'][i - 1]; this.render(this.data); },
+  pick(i) { this.filter = i === 0 ? null : 'all'; this.render(this.data); },
+
+  // 内容自然高度（不含被 100vh 撑出来的空白）：Swift 侧据此把窗口缩到刚好
+  naturalHeight() {
+    const w = document.querySelector('.wrap');
+    if (!w) return 0;
+    const h0 = w.style.height, m0 = w.style.minHeight;
+    w.style.height = 'auto';
+    w.style.minHeight = '0';
+    const h = Math.ceil(w.getBoundingClientRect().height);
+    w.style.height = h0;
+    w.style.minHeight = m0;
+    return h;
+  },
 
   focus(i) {
     const el = document.querySelector(`.row[data-id="${i}"]`);

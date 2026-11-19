@@ -560,8 +560,13 @@ final class InlineController {
     }
 
     /// 打开建议侧栏（当前输入框的这批建议；外部 App 的侧栏入口）
+    var isSidebarVisible: Bool { Sidebar.shared.isVisible }
+
+    func hideSidebar() { Sidebar.shared.orderOutAndClear() }
+
     func showSidebar() {
-        guard !items.isEmpty else { return }
+        // Grammarly 口径：0 条也开（面板里显示「没有更多建议」+ 评分），
+        // 否则「点球没反应」会被当成缺陷——旧代码这里 guard !items.isEmpty 直接 return。
         let score = Scorer.score(text: lastText, items: items, formality: GoalsStore.load().formality)
         let sb = Sidebar.shared
         sb.onAccept = { [weak self] it in
@@ -592,7 +597,17 @@ final class InlineController {
                 if applied > 0 { Toast.show("已改 \(applied) 处 · ⌘Z 撤销") }
             }
         }
-        sb.present(items: items, score: score, at: nil)
+        let ballRect = FloatBall.shared.isVisible ? FloatBall.shared.frame : nil
+        sb.present(items: items, score: score, at: ballRect)
+    }
+
+    /// 侧栏开着时，每次新检查结果都要推进去（Grammarly 的栏是实时跟着字变的，
+    /// 打开那一刻定格的栏会立刻露馅）。没开就什么都不做，避免白白重排。
+    private func syncSidebarIfOpen() {
+        guard Sidebar.shared.isVisible else { return }
+        let score = Scorer.score(text: lastText, items: items, formality: GoalsStore.load().formality)
+        // at: nil = 保持用户当前拖动到的位置，不重新贴球
+        Sidebar.shared.present(items: items, score: score, at: nil)
     }
 
     /// 忽略一条：只去掉这条线与卡片，不改宿主文本
@@ -1372,6 +1387,7 @@ final class InlineController {
             diag.lastRectCount = 0
             // 检查过、0 命中 → 绿点。原来这里直接 return，球会留着上一轮的旧数字（假的）
             updateFloatBall(items: [], specs: [], element: el, pid: pid)
+            syncSidebarIfOpen()
             return
         }
         var specs: [UnderlineSpec] = []
@@ -1392,6 +1408,7 @@ final class InlineController {
         overlay.render(specs)
         overlayPid = pid
         printRects(specs, items: cleaned)
+        syncSidebarIfOpen()
     }
 
     func clearUnderlines() {

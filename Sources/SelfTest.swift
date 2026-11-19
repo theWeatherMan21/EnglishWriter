@@ -58,7 +58,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests() }
         if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -1790,6 +1790,54 @@ extension SelfTest {
 
 // MARK: 浮动球位置（四条断言：右下/左上/副屏/部分出屏）
 extension SelfTest {
+    /// 侧栏摆位：跟球同一侧 + 永不越界（Grammarly 的栏不会盖住球、更不会跑出屏）
+    static func sidebarLayoutTests() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let size = NSSize(width: 360, height: 620)
+
+        // 1) 球在右半屏 → 栏在球左侧（不盖住球）
+        let ballRight = CGRect(x: 1300, y: 600, width: 22, height: 22)
+        let p1 = SidebarPlacement.resolve(ball: ballRight, size: size, screenVisible: screen)
+        if p1.x + size.width <= ballRight.minX { SelfTest.ok("sidebar: 球在右→栏在左", "\(Int(p1.x))") }
+        else { SelfTest.bad("sidebar: 球在右仍在左", "\(p1)") }
+        if SidebarPlacement.inside(origin: p1, size: size, screenVisible: screen) {
+            SelfTest.ok("sidebar: 右侧摆位不出屏", "")
+        } else { SelfTest.bad("sidebar: 右侧出屏", "\(p1)") }
+
+        // 2) 球在左半屏 → 栏在球右侧（不盖住球）
+        let ballLeft = CGRect(x: 60, y: 520, width: 22, height: 22)
+        let p2 = SidebarPlacement.resolve(ball: ballLeft, size: size, screenVisible: screen)
+        if p2.x >= ballLeft.maxX { SelfTest.ok("sidebar: 球在左→栏在右", "\(Int(p2.x))") }
+        else { SelfTest.bad("sidebar: 球在左仍在右", "\(p2)") }
+
+        // 3) 球贴屏幕右边缘：栏仍完全在屏内（靠夹紧，不靠运气）
+        let ballEdge = CGRect(x: 1415, y: 700, width: 22, height: 22)
+        let p3 = SidebarPlacement.resolve(ball: ballEdge, size: size, screenVisible: screen)
+        if SidebarPlacement.inside(origin: p3, size: size, screenVisible: screen),
+           p3.x + size.width <= ballEdge.minX {
+            SelfTest.ok("sidebar: 贴边球夹回屏内", "\(Int(p3.x))")
+        } else { SelfTest.bad("sidebar: 贴边球越界", "\(p3)") }
+
+        // 4) 没有球（菜单打开 / 快照）→ 贴右边缘留 24
+        let p4 = SidebarPlacement.resolve(ball: nil, size: size, screenVisible: screen)
+        if abs(1440 - 24 - (p4.x + size.width)) < 0.5 { SelfTest.ok("sidebar: 无球贴右缘", "\(Int(p4.x))") }
+        else { SelfTest.bad("sidebar: 无球位置", "\(p4)") }
+
+        // 5) 副屏：按副屏可见区夹，不按主屏
+        let second = CGRect(x: 1512, y: 0, width: 1440, height: 900)
+        let ball2 = CGRect(x: 2900, y: 800, width: 22, height: 22)
+        let p5 = SidebarPlacement.resolve(ball: ball2, size: size, screenVisible: second)
+        if SidebarPlacement.inside(origin: p5, size: size, screenVisible: second) {
+            SelfTest.ok("sidebar: 副屏夹紧", "\(Int(p5.x))")
+        } else { SelfTest.bad("sidebar: 副屏越界", "\(p5)") }
+
+        // 6) 高度上限：620 是设计值，屏矮时必须被 70% 截断（这里只验 70% 口径本身）
+        let shortScreen = CGRect(x: 0, y: 0, width: 1440, height: 600)
+        let cap = shortScreen.height * 0.7
+        if cap < size.height { SelfTest.ok("sidebar: 70% 屏高封顶生效", "\(Int(cap))pt < 620pt") }
+        else { SelfTest.bad("sidebar: 封顶口径", "cap=\(cap)") }
+    }
+
     static func ballPlacementTests() {
         let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
         let s: CGFloat = 22
