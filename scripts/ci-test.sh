@@ -83,6 +83,18 @@ if [ "${EW_WITH_LIVE:-0}" = "1" ]; then
     "$BIN" --live-rewrite || { echo "真模型改写失败"; exit 1; }
 fi
 
+echo "== 浏览器扩展端到端（headless Chrome + CDP：点线弹卡 / 键盘 / contenteditable）=="
+CFT_BIN="$PWD/.tools/chrome-for-testing/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+if [ -x "$CFT_BIN" ] || bash scripts/chrome-testing-up.sh prepare >/dev/null 2>&1; then
+    bash scripts/ci-ext.sh || { echo "扩展端到端验收失败"; exit 1; }
+else
+    # 缺 Chrome for Testing 时明确记 SKIP，不许静默混成绿；CI 里要它必须跑就设 EW_CI_REQUIRE_EXT=1
+    if [ "${EW_CI_REQUIRE_EXT:-0}" = "1" ]; then
+        echo "FAIL  扩展端到端未跑：本机没有 Chrome for Testing"; exit 1
+    fi
+    echo "SKIP  扩展端到端：本机没有 Chrome for Testing（不影响原生断言）"
+fi
+
 echo "== 装机版 vs 仓库 build（旧则拦，别让爹地点到旧二进制）=="
 if [ -x "/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" ]; then
     bash scripts/install-check.sh || { echo "装机版落后仓库 build：先 bash scripts/install.sh"; exit 1; }
