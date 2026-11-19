@@ -131,7 +131,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         scheduleCheck()
     }
 
-    @objc private func openSidebar() {
+    @MainActor @objc private func openSidebar() {
         let sb = Sidebar.shared
         sb.onAccept = { [weak self] it in
             Task { @MainActor in self?.applyItem(it) }
@@ -141,6 +141,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         sb.onJump = { [weak self] it in
             Task { @MainActor in self?.focusItem(it) }
+        }
+        sb.onAcceptAll = { [weak self] in
+            Task { @MainActor in self?.acceptAll() }
         }
         sb.present(items: items, score: lastScore, at: nil)
     }
@@ -178,6 +181,29 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         paint(items)
     }
 
+    /// 全部接受：offset 一次性算好，**从大到小**反向应用（前面改了会把后面的偏移顶走）
+    @MainActor
+    func acceptAll() {
+        let target = items.sorted { $0.start > $1.start }
+        guard !target.isEmpty else { return }
+        textView.undoManager?.beginUndoGrouping()
+        var applied = 0
+        for it in target {
+            let r = NSRange(location: it.start, length: it.length)
+            guard NSMaxRange(r) <= textView.string.utf16.count else { continue }
+            let repl = it.replacementRespectingSentenceCase(in: textView.string)
+            if textView.shouldChangeText(in: r, replacementString: repl) {
+                textView.replaceCharacters(in: r, with: repl)
+                textView.didChangeText()
+                applied += 1
+            }
+        }
+        textView.undoManager?.endUndoGrouping()
+        clearHighlight()
+        if applied > 0 { Toast.show("已改 \(applied) 处 · ⌘Z 撤销") }
+        scheduleCheck()
+    }
+
     @MainActor
     private func applyItem(_ it: DiffItem) {
         let r = NSRange(location: it.start, length: it.length)
@@ -203,7 +229,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     /// 深度检查：把当前全文丢给模型（语法/清晰度/风格四类），5–8 秒回来并合并到现有建议
-    @objc private func deepCheck() {
+    @MainActor @objc private func deepCheck() {
         let text = textView.string
         let cfg = SettingsStore.load()
         guard cfg.isComplete else { status.stringValue = "模型三项没填，深度检查不可用"; return }
@@ -230,7 +256,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
     }
 
-    @objc private func refill() {
+    @MainActor @objc private func refill() {
         textView.string = sample
         scheduleCheck()
     }
@@ -277,6 +303,10 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 self.didAutoOpenSidebar = true
                 self.openSidebar()
                 self.focusItem(items[0])
+            }
+            if ProcessInfo.processInfo.arguments.contains("--accept-all-demo"), !self.didAutoOpenSidebar, !items.isEmpty {
+                self.didAutoOpenSidebar = true
+                self.acceptAll()
             }
             if ProcessInfo.processInfo.arguments.contains("--deep"), !self.didAutoOpenSidebar {
                 self.didAutoOpenSidebar = true
@@ -348,15 +378,18 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
     }
 
-    @objc private func acceptRow(_ sender: NSButton) {
+    @MainActor @objc private func acceptRow(_ sender: NSButton) {
         guard sender.tag < items.count else { return }
         let it = items[sender.tag]
         let r = NSRange(location: it.start, length: it.length)
         guard let storage = textView.textStorage, NSMaxRange(r) <= storage.length else { return }
-        if textView.shouldChangeText(in: r, replacementString: it.replacement) {
-            textView.replaceCharacters(in: r, with: it.replacement)
+        let repl = it.replacementRespectingSentenceCase(in: textView.string)
+        if textView.shouldChangeText(in: r, replacementString: repl) {
+            textView.replaceCharacters(in: r, with: repl)
             textView.didChangeText()      // 注册撤销，⌘Z 可回退
+            Toast.show("已改 1 处 · ⌘Z 撤销")
         }
+        clearHighlight()
         scheduleCheck()
     }
 

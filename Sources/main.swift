@@ -161,6 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else if args.contains("--axaccept") { await AXCheck.acceptRun(args) }
                     else if args.contains("--axprobe-chrome") { await ChromeProbe.run(args) }
                     else if args.contains("--passive") { await Passive.run(args) }
+                    else if args.contains("--probe-mail"), args.contains("--wait-english") {
+                        let ok = await MailProbe.waitForEnglish(args); exit(ok ? 0 : 1)
+                    }
                     else if args.contains("--probe-mail") { let ok = await MailProbe.run(args); exit(ok ? 0 : 1) }
                     else { await AXCheck.run(args) }
                 }

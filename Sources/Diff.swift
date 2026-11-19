@@ -301,3 +301,24 @@ enum MockDiff {
         return out
     }
 }
+
+extension DiffItem {
+    /// 句首大写修正：原文在句首且建议是小写开头时，把它大写。
+    /// 实案：In order to → to 应用在句首，正文变成「to save time」，读起来像坏掉了。
+    func replacementRespectingSentenceCase(in text: String) -> String {
+        let ns = text as NSString
+        guard start <= ns.length, !replacement.isEmpty else { return replacement }
+        let first = replacement.unicodeScalars.first!
+        guard CharacterSet.lowercaseLetters.contains(first) else { return replacement }
+        var i = start - 1
+        var atSentenceStart = true
+        while i >= 0 {
+            let ch = ns.substring(with: NSRange(location: i, length: 1))
+            if ch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { i -= 1; continue }
+            atSentenceStart = ".!?\n".contains(ch)
+            break
+        }
+        guard atSentenceStart else { return replacement }
+        return replacement.prefix(1).uppercased() + replacement.dropFirst()
+    }
+}

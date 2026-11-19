@@ -21,6 +21,7 @@ final class Sidebar: NSPanel {
     var onAccept: ((DiffItem) -> Void)?
     var onDismiss: ((DiffItem) -> Void)?
     var onJump: ((DiffItem) -> Void)?
+    var onAcceptAll: (() -> Void)?
 
     private var items: [DiffItem] = []
     private var dismissed = Set<String>()
@@ -101,6 +102,14 @@ final class Sidebar: NSPanel {
         filter.frame = NSRect(x: 18, y: 310, width: 200, height: 24)
         root.addSubview(filter)
 
+        let acceptAll = NSButton(title: "全部接受", target: self, action: #selector(acceptAllTapped))
+        acceptAll.bezelStyle = .rounded
+        acceptAll.controlSize = .small
+        acceptAll.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        acceptAll.frame = NSRect(x: width - 106, y: 308, width: 88, height: 26)
+        acceptAll.tag = 992
+        root.addSubview(acceptAll)
+
         // 列表
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: 258)
         listScroll.hasVerticalScroller = true
@@ -165,6 +174,7 @@ final class Sidebar: NSPanel {
         }
         dimsBox.frame = NSRect(x: 108, y: h - 194, width: 240, height: 156)
         filter.frame = NSRect(x: 18, y: h - 210, width: 200, height: 24)
+        contentView?.viewWithTag(992)?.frame = NSRect(x: width - 106, y: h - 212, width: 88, height: 26)
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 210 - 34)
         toneLabel.frame = NSRect(x: 18, y: 16, width: width - 36, height: 16)
         if let root = contentView {
@@ -174,7 +184,12 @@ final class Sidebar: NSPanel {
 
     // MARK: 渲染
 
-    @objc private func closePanel() { orderOut(nil) }
+    @objc private func closePanel() { orderOut(nil); onAcceptAll = nil }
+
+    @objc private func acceptAllTapped() {
+        onAcceptAll?()
+        render()
+    }
 
     @objc private func filterChanged() {
         importantOnly = filter.selectedSegment == 0

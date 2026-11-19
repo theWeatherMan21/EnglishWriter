@@ -49,6 +49,56 @@ enum MailProbe {
         var value: String
     }
 
+    /// --wait-english：后台等一封英文邮件出现（不催用户、不造假）
+    /// 每 30 秒查一次；英文可见块 ≥5 就跑全套；超时退出并如实记 no-english-message-found
+    @MainActor
+    static func waitForEnglish(_ argv: [String]) async -> Bool {
+        setvbuf(stdout, nil, _IONBF, 0)
+        var timeout: Double = 2 * 3600
+        if let i = argv.firstIndex(of: "--timeout"), i + 1 < argv.count, let v = Double(argv[i + 1]) { timeout = v }
+        var outPath = NSHomeDirectory() + "/dev/EnglishWriter/qa/evidence/mail-probe.json"
+        if let i = argv.firstIndex(of: "--out"), i + 1 < argv.count { outPath = argv[i + 1] }
+
+        print("\n--- 守候：等屏幕上出现英文邮件（每 30 秒查一次，超时 \(Int(timeout/60)) 分钟）---")
+        let start = Date()
+        while Date().timeIntervalSince(start) < timeout {
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").first
+                ?? NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.lastPathComponent == "Mail.app" }) {
+                let wins = windows(app.processIdentifier)
+                for w in wins {
+                    let title = str(w, kAXTitleAttribute) ?? ""
+                    let els = descendants(w, depth: 12)
+                    guard let body = els.first(where: { (str($0, kAXRoleAttribute) ?? "") == "AXWebArea" }) else { continue }
+                    let wRect = frame(w)
+                    let visible = WebText.blocks(of: body).filter { b in
+                        let ns = NSRange(location: 0, length: (b.text as NSString).length)
+                        return WebText.lineRects(for: ns, in: b).contains { wRect.insetBy(dx: -2, dy: -2).intersects($0) }
+                    }
+                    let english = visible.filter { (b: WebText.Block) -> Bool in
+                        (b.text as NSString).length >= 8 && LanguageGate.isEnglish(b.text)
+                    }
+                    print("  [\(Date().formatted(date: .omitted, time: .standard))] 「\(title.prefix(34))」可见 \(visible.count) 块，英文 \(english.count) 块")
+                    if english.count >= 5 {
+                        print("  → 出现英文邮件（英文块 \(english.count)），跑全套")
+                        return await run(argv)
+                    }
+                }
+                if wins.isEmpty { print("  [\(Date().formatted(date: .omitted, time: .standard))] Mail 在跑但没有窗口") }
+            } else {
+                print("  [\(Date().formatted(date: .omitted, time: .standard))] Mail 未运行")
+            }
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+        }
+        let ev: [String: Any] = ["result": "no-english-message-found",
+                                 "waitedSeconds": Int(Date().timeIntervalSince(start))]
+        if let d = try? JSONSerialization.data(withJSONObject: ev, options: [.prettyPrinted]) {
+            let side = (outPath as NSString).deletingLastPathComponent + "/mail-wait.json"
+            try? d.write(to: URL(fileURLWithPath: side))
+            print("  超时未等到英文邮件，证据：\(side)")
+        }
+        return false
+    }
+
     @MainActor
     static func run(_ argv: [String]) async -> Bool {
         var outPath = NSHomeDirectory() + "/dev/EnglishWriter/qa/evidence/mail-probe.json"

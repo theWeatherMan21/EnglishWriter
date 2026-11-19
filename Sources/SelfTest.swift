@@ -47,6 +47,7 @@ enum SelfTest {
         if wantAll || argv.contains("--lang") { languageGateTests() }
         if wantAll || argv.contains("--score") { scoreTests() }
         if wantAll || argv.contains("--req") { requestBodyTests() }
+        if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1167,6 +1168,31 @@ extension SelfTest {
             SelfTest.ok("tone: 触发门槛 150 字符（短文本不判）")
         } else {
             SelfTest.bad("tone: 门槛", "常量不一致")
+        }
+    }
+}
+
+// MARK: 句首大写（应用建议时不许把小写塞到句首）
+extension SelfTest {
+    static func sentenceCaseTests() {
+        let text = "In order to save time, we must decide. Due to the fact that it rained, we stayed."
+        let a = DiffItem(start: 0, length: 11, original: "In order to", replacement: "to", type: "clarity", reason: "")
+        if a.replacementRespectingSentenceCase(in: text) == "To" {
+            SelfTest.ok("replace: 句首小写建议自动大写", "to → To")
+        } else {
+            SelfTest.bad("replace: 句首大写", a.replacementRespectingSentenceCase(in: text))
+        }
+        let mid = DiffItem(start: 32, length: 9, original: "make a de", replacement: "decide", type: "clarity", reason: "")
+        if mid.replacementRespectingSentenceCase(in: text) == "decide" {
+            SelfTest.ok("replace: 句中不改大小写")
+        } else {
+            SelfTest.bad("replace: 句中保持原样", mid.replacementRespectingSentenceCase(in: text))
+        }
+        let cap = DiffItem(start: 0, length: 3, original: "In", replacement: "To", type: "clarity", reason: "")
+        if cap.replacementRespectingSentenceCase(in: text) == "To" {
+            SelfTest.ok("replace: 已大写不重复处理")
+        } else {
+            SelfTest.bad("replace: 已大写", cap.replacementRespectingSentenceCase(in: text))
         }
     }
 }

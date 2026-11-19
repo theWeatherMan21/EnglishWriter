@@ -395,6 +395,15 @@ final class InlineController {
                 self.focusItem(id: id)
             }
         }
+        sb.onAcceptAll = { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let ids = self.items.indices.sorted { self.items[$0].start > self.items[$1].start }
+                var applied = 0
+                for id in ids where self.accept(itemID: id) { applied += 1 }
+                if applied > 0 { Toast.show("已改 \(applied) 处 · ⌘Z 撤销") }
+            }
+        }
         sb.present(items: items, score: score, at: nil)
     }
 
