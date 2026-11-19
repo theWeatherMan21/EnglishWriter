@@ -30,11 +30,14 @@ final class Sidebar: NSPanel {
 
     private let ring = ScoreRing(frame: .zero)
     private let bigScore = NSTextField(labelWithString: "—")
+    private let bandLabel = NSTextField(labelWithString: "")
     private let dimsBox = NSStackView()
     private let listScroll = NSScrollView()
     private let listStack = NSStackView()
     private let toneLabel = NSTextField(labelWithString: "")   // 没结果就不显示，不许出现「未接/占位」字样
-    private let filter = NSSegmentedControl(labels: ["重要建议", "全部建议"], trackingMode: .selectOne, target: nil, action: nil)
+    /// 分类 tab：全部 / 语法 / 清晰度 / 表达；每个顶部 3pt 类别色条 + 灰色计数气泡
+    private var selectedType: String? = nil      // nil = 全部
+    private let tabsBox = NSStackView()
 
     private let width: CGFloat = 360
     // 视觉节奏：4 的倍数，标题 13/正文 11/说明 10，行高 30，卡片圆角 10
@@ -62,7 +65,7 @@ final class Sidebar: NSPanel {
         root.layer?.cornerRadius = 14
         root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        let title = NSTextField(labelWithString: "Overall · 总评分")
+        let title = NSTextField(labelWithString: "写作建议")
         title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         title.textColor = .secondaryLabelColor
         title.frame = NSRect(x: 18, y: 484, width: 200, height: 18)
@@ -76,12 +79,10 @@ final class Sidebar: NSPanel {
         bigScore.frame = NSRect(x: 18, y: 424, width: 84, height: 30)
         root.addSubview(bigScore)
         let scoreCaption = NSTextField(labelWithString: "总评分")
-        scoreCaption.font = NSFont.systemFont(ofSize: 10, weight: .medium)
-        scoreCaption.textColor = .secondaryLabelColor
-        scoreCaption.alignment = .center
-        scoreCaption.frame = NSRect(x: 18, y: 404, width: 84, height: 14)
-        scoreCaption.tag = 991
-        root.addSubview(scoreCaption)
+        bandLabel.font = NSFont.systemFont(ofSize: 14, weight: .heavy)
+        bandLabel.alignment = .center
+        bandLabel.frame = NSRect(x: 6, y: 396, width: 108, height: 18)
+        root.addSubview(bandLabel)
 
         let close = NSButton(title: "✕", target: self, action: #selector(closePanel))
         close.isBordered = false
@@ -97,12 +98,12 @@ final class Sidebar: NSPanel {
         dimsBox.frame = NSRect(x: 108, y: 330, width: 240, height: 156)
         root.addSubview(dimsBox)
 
-        // 筛选
-        filter.target = self
-        filter.action = #selector(filterChanged)
-        filter.selectedSegment = 0
-        filter.frame = NSRect(x: 18, y: 310, width: 200, height: 24)
-        root.addSubview(filter)
+        // 四分类 tab
+        tabsBox.orientation = .horizontal
+        tabsBox.spacing = 6
+        tabsBox.alignment = .centerY
+        tabsBox.frame = NSRect(x: 14, y: 306, width: width - 28, height: 30)
+        root.addSubview(tabsBox)
 
         let acceptAll = NSButton(title: "全部接受", target: self, action: #selector(acceptAllTapped))
         acceptAll.bezelStyle = .rounded
@@ -169,13 +170,14 @@ final class Sidebar: NSPanel {
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 44 - 300 + 250)
         ring.frame = NSRect(x: 18, y: h - 124, width: 84, height: 84)
         bigScore.frame = NSRect(x: 18, y: h - 96, width: 84, height: 30)
-        contentView?.viewWithTag(991)?.frame = NSRect(x: 18, y: h - 116, width: 84, height: 14)
+        bandLabel.frame = NSRect(x: 6, y: h - 128, width: 108, height: 18)
+        bandLabel.superview?.layoutSubtreeIfNeeded()
         // 关闭按钮跟着高度走（固定 y 会被 resize 顶出可视区）
         if let close = contentView?.subviews.first(where: { ($0 as? NSButton)?.title == "✕" }) {
             close.frame = NSRect(x: width - 34, y: h - 36, width: 20, height: 20)
         }
         dimsBox.frame = NSRect(x: 108, y: h - 194, width: 240, height: 156)
-        filter.frame = NSRect(x: 18, y: h - 210, width: 200, height: 24)
+        tabsBox.frame = NSRect(x: 14, y: h - 214, width: width - 28, height: 30)
         contentView?.viewWithTag(992)?.frame = NSRect(x: width - 106, y: h - 212, width: 88, height: 26)
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 210 - 34)
         toneLabel.frame = NSRect(x: 18, y: 16, width: width - 36, height: 16)
@@ -207,31 +209,67 @@ final class Sidebar: NSPanel {
         render()
     }
 
-    @objc private func filterChanged() {
-        importantOnly = filter.selectedSegment == 0
+    @objc private func tabTapped(_ sender: NSButton) {
+        let map: [Int: String?] = [0: nil, 1: "grammar", 2: "clarity", 3: "style"]
+        selectedType = map[sender.tag] ?? nil
         render()
     }
 
+    private func matchesTab(_ it: DiffItem) -> Bool {
+        guard let t = selectedType else { return true }
+        if t == "grammar" { return it.type == "spelling" || it.type == "grammar" }
+        return it.type == t
+    }
+
     private func visibleItems() -> [DiffItem] {
-        let live = items.filter { !dismissed.contains(key($0)) }
-        guard importantOnly else { return live }
-        return live.filter { $0.type == "spelling" || $0.type == "grammar" || $0.type == "clarity" }
+        items.filter { !dismissed.contains(key($0)) && matchesTab($0) }
     }
 
     private func key(_ it: DiffItem) -> String { "\(it.start)-\(it.length)-\(it.replacement)" }
 
+    private func renderTabs() {
+        for v in tabsBox.arrangedSubviews { tabsBox.removeArrangedSubview(v); v.removeFromSuperview() }
+        let defs: [(String, String?, NSColor)] = [
+            ("全部", nil, .secondaryLabelColor),
+            ("语法", "grammar", color(for: "grammar")),
+            ("清晰度", "clarity", color(for: "clarity")),
+            ("表达", "style", color(for: "style")),
+        ]
+        let live = items.filter { !dismissed.contains(key($0)) }
+        for (i, d) in defs.enumerated() {
+            let count = live.filter { it in
+                guard let t = d.1 else { return true }
+                if t == "grammar" { return it.type == "spelling" || it.type == "grammar" }
+                return it.type == t
+            }.count
+            let col = NSStackView()
+            col.orientation = .vertical
+            col.spacing = 3
+            col.alignment = .centerX
+            let bar = NSView()
+            bar.wantsLayer = true
+            bar.layer?.cornerRadius = 1.5
+            bar.layer?.backgroundColor = d.2.withAlphaComponent((selectedType == d.1) ? 1 : 0.7).cgColor
+            bar.heightAnchor.constraint(equalToConstant: 4).isActive = true
+            bar.widthAnchor.constraint(equalToConstant: 54).isActive = true
+
+            let btn = NSButton(title: "\(d.0) \(count)", target: self, action: #selector(tabTapped(_:)))
+            btn.tag = i
+            btn.bezelStyle = .inline
+            btn.isBordered = false
+            btn.font = NSFont.systemFont(ofSize: 11, weight: selectedType == d.1 ? .semibold : .regular)
+            btn.contentTintColor = selectedType == d.1 ? .labelColor : .secondaryLabelColor
+            col.addArrangedSubview(bar)
+            col.addArrangedSubview(btn)
+            tabsBox.addArrangedSubview(col)
+        }
+    }
+
     private func render() {
+        renderTabs()
         bigScore.stringValue = "\(score.overall)"
-        let band = score.overall >= 80 ? "良好" : (score.overall >= 50 ? "需注意" : "需改进")
-        contentView?.viewWithTag(991)?.removeFromSuperview()
-        let caption = NSTextField(labelWithString: "总评分 · \(band)")
-        caption.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
-        caption.textColor = tone(score.overall)
-        caption.alignment = .center
-        caption.tag = 991
-        let hh = contentView?.frame.height ?? 520
-        caption.frame = NSRect(x: 12, y: hh - 118, width: 96, height: 14)
-        contentView?.addSubview(caption)
+        bandLabel.stringValue = Self.bandText(overall: score.overall)
+        bandLabel.textColor = tone(score.overall)
         ring.value = Double(score.overall) / 100.0
         ring.needsDisplay = true
 
@@ -391,6 +429,12 @@ final class Sidebar: NSPanel {
         return col
     }
 
+    /// 档位文案（纯函数，可断言；视觉上 14pt heavy，看不见就等于没做，所以用断言锁住格式）
+    static func bandText(overall: Int) -> String {
+        let band = overall >= 80 ? "良好" : (overall >= 50 ? "需注意" : "需改进")
+        return "等级 \(band) · \(overall)分"
+    }
+
     private func tone(_ v: Int) -> NSColor {
         if v >= 80 { return .systemGreen }
         if v >= 50 { return .systemOrange }
@@ -420,7 +464,7 @@ final class Sidebar: NSPanel {
         let (pb, mb, sb) = parts(cb)
         let out = NSMutableAttributedString()
         let normal: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
+            .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor]
         let oldBad: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.systemRed,
             .strikethroughStyle: NSUnderlineStyle.single.rawValue]

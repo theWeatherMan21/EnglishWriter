@@ -25,6 +25,16 @@ enum UnderlineKind: String, Codable, CaseIterable {
     }
 
     /// 颜色 × 形状双编码（色盲友好）
+    /// 卡片类别行（知澜 11-19 固定格式）
+    var categoryLine: String {
+        switch self {
+        case .spelling: return "正确性 · 修正拼写"
+        case .grammar:  return "正确性 · 语法问题"
+        case .clarity:  return "清晰度 · 精简表达"
+        case .style:    return "表达 · 调整风格"
+        }
+    }
+
     var color: NSColor {
         switch self {
         // 知澜 11-19 给的精确色值（与 Grammarly 一致）：

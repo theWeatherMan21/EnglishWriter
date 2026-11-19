@@ -49,6 +49,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
+        if wantAll || argv.contains("--ui") { uiTextTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1226,5 +1227,25 @@ extension SelfTest {
         } else {
             SelfTest.bad("diffhl: 同词", "old=\(same.oldMid) new=\(same.newMid)")
         }
+    }
+}
+
+// MARK: UI 文案（看不见就是没做 → 用断言锁住格式与档位阈值）
+extension SelfTest {
+    static func uiTextTests() {
+        if Sidebar.bandText(overall: 85).contains("良好") { SelfTest.ok("ui: ≥80 判良好", Sidebar.bandText(overall: 85)) }
+        else { SelfTest.bad("ui: ≥80 判良好", Sidebar.bandText(overall: 85)) }
+        if Sidebar.bandText(overall: 64).contains("需注意") { SelfTest.ok("ui: 50-79 判需注意", Sidebar.bandText(overall: 64)) }
+        else { SelfTest.bad("ui: 50-79 判需注意", Sidebar.bandText(overall: 64)) }
+        if Sidebar.bandText(overall: 30).contains("需改进") { SelfTest.ok("ui: <50 判需改进", Sidebar.bandText(overall: 30)) }
+        else { SelfTest.bad("ui: <50 判需改进", Sidebar.bandText(overall: 30)) }
+        let labels = ["spelling": "正确性 · 修正拼写", "grammar": "正确性 · 语法问题",
+                      "clarity": "清晰度 · 精简表达", "style": "表达 · 调整风格"]
+        var allOK = true
+        for (k, want) in labels {
+            let kind: UnderlineKind = k == "spelling" ? .spelling : (k == "grammar" ? .grammar : (k == "clarity" ? .clarity : .style))
+            if kind.categoryLine != want { allOK = false }
+        }
+        if allOK { SelfTest.ok("ui: 卡片类别行四类文案固定") } else { SelfTest.bad("ui: 类别行文案", "有一类不符") }
     }
 }

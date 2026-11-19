@@ -290,7 +290,7 @@ final class InlineController {
 
     func start() {
         guard focusObserver == nil else { return }
-        HoverCoordinator.shared.start()      // 悬停卡片（全局 mouseMoved + 300ms 停留）
+        HoverCoordinator.shared.start()      // 悬停卡片（全局 mouseMoved + 200ms 停留）
         focusObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main

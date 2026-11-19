@@ -36,13 +36,15 @@ enum SpellingDiff {
         let p = parts(original: original, replacement: replacement)
         let out = NSMutableAttributedString()
         let normal: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.tertiaryLabelColor,
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.secondaryLabelColor,
         ]
         let oldBad: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: NSColor.systemRed,
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold),
+            .foregroundColor: NSColor.white,
+            .backgroundColor: NSColor.systemRed,
             .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .strikethroughColor: NSColor.white,
         ]
         let newGood: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .semibold),

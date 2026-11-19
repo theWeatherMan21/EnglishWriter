@@ -3,7 +3,7 @@
 // 三条硬约束（照 Grammarly 的实测体验，抄错就是「卡顿」差评）：
 //   1. 卡片不许抢焦点：NSPanel([.nonactivatingPanel, .borderless]) + canBecomeKey=false
 //      + 按钮 acceptsFirstMouse=true（否则第一次点击会被系统吃掉）
-//   2. 悬停 300ms 才开；移开立即关；卡片自身区域算「还在悬停」
+//   2. 悬停 200ms 才开；移开 300ms 关；卡片自身区域算「还在悬停」
 //   3. 覆盖窗口 ignoresMouseEvents，所以命中测试走全局 mouseMoved 监听，不靠窗口收事件
 
 import AppKit
@@ -47,7 +47,7 @@ final class HoverCardView: NSView {
     var onPrev: (() -> Void)?
     var onNext: (() -> Void)?
 
-    private let width: CGFloat = 210
+    private let width: CGFloat = 192
     private let pad: CGFloat = 14
     private var height: CGFloat = 120
 
@@ -108,16 +108,17 @@ final class HoverCardView: NSView {
     func configure(kind: UnderlineKind, sentence: String, errorRange: NSRange,
                    original: String, replacement: String, reason: String,
                    allowDict: Bool) {
-        kindLabel.stringValue = "\(kind.labelZH) · \(kind.rawValue)"
+        kindLabel.stringValue = kind.categoryLine
 
-        // 原句里把错处标红加粗
-        let attr = NSMutableAttributedString(string: sentence)
-        let full = NSRange(location: 0, length: (sentence as NSString).length)
-        if errorRange.location >= 0, errorRange.location + errorRange.length <= full.length, errorRange.length > 0 {
-            attr.addAttributes([.foregroundColor: kind.color,
-                                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)], range: errorRange)
-        }
-        sentenceField.attributedStringValue = attr
+        // 上下文句子：…前5词 ~~旧词~~ 新词 后5词…（Grammarly 卡片就是这么给的，不是两个孤立的词）
+        sentenceField.target = self
+        sentenceField.action = #selector(sentenceTapped)
+        sentenceField.isBezeled = false
+        sentenceField.isEditable = false
+        sentenceField.isSelectable = false
+        sentenceField.attributedStringValue = Self.contextSentence(
+            sentence: sentence, errorRange: errorRange,
+            original: original, replacement: replacement)
 
         // 红删绿加
         let diff = NSMutableAttributedString()
@@ -136,14 +137,51 @@ final class HoverCardView: NSView {
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
         ]))
         diffField.attributedStringValue = diff
-
-        reasonField.stringValue = reason.isEmpty ? "（引擎没给理由）" : reason
+        diffField.isHidden = true        // 规格：卡片只留类别 + 上下文句 + 操作
+        reasonField.isHidden = true
+        _ = reason
         dictBtn.isHidden = !allowDict
         // 只有模型配置齐全时才给改写/语气入口（不给死按钮）
         let canRewrite = Rewrite.isAvailable()
         rewriteBtn.isHidden = !canRewrite
         toneBtn.isHidden = !canRewrite
         height = layoutSubviewsManually()
+    }
+
+    @objc private func sentenceTapped() { onAccept?() }
+
+    /// 上下文句子：前 5 词 + 旧词（红删除线）+ 新词（绿粗）+ 后 5 词
+    static func contextSentence(sentence: String, errorRange: NSRange,
+                                original: String, replacement: String) -> NSAttributedString {
+        let ns = sentence as NSString
+        let out = NSMutableAttributedString()
+        let base: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
+
+        var before = "", after = ""
+        if errorRange.location != NSNotFound, errorRange.length > 0,
+           NSMaxRange(errorRange) <= ns.length {
+            let head = ns.substring(to: errorRange.location)
+            let tail = ns.substring(from: NSMaxRange(errorRange))
+            before = head.split(separator: " ").suffix(5).joined(separator: " ")
+            after = tail.split(separator: " ").prefix(5).joined(separator: " ")
+            if !before.isEmpty { before = "…" + before + " " }
+            if !after.isEmpty { after = " " + after + "…" }
+        }
+        out.append(NSAttributedString(string: before, attributes: base))
+        out.append(NSAttributedString(string: original, attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: NSColor.systemRed,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .backgroundColor: NSColor.systemRed.withAlphaComponent(0.12),
+        ]))
+        out.append(NSAttributedString(string: " " + replacement + " ", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+            .foregroundColor: NSColor.systemGreen,
+            .backgroundColor: NSColor.systemGreen.withAlphaComponent(0.18),
+        ]))
+        out.append(NSAttributedString(string: after, attributes: base))
+        return out
     }
 
     /// 手排（不用 Auto Layout：非激活窗口里更稳，也不受 SwiftUI 宏限制）
@@ -160,10 +198,9 @@ final class HoverCardView: NSView {
             options: [.usesLineFragmentOrigin, .usesFontLeading]).height + 2))
         let reasonH = min(56, max(16, reasonField.cell!.cellSize(forBounds: NSRect(x: 0, y: 0, width: textW, height: 200)).height + 2))
 
-        place(kindLabel, 13, gap: 5)
-        place(sentenceField, sentenceH, gap: 6)
-        place(diffField, 18, gap: 6)
-        place(reasonField, reasonH, gap: 10)
+        place(kindLabel, 13, gap: 6)
+        place(sentenceField, sentenceH, gap: 8)
+        _ = reasonH
 
         let btnH: CGFloat = 26
         let btnW: CGFloat = 62
@@ -180,7 +217,7 @@ final class HoverCardView: NSView {
             b.frame = NSRect(x: nx, y: y - btnH - 6, width: navW, height: btnH)
             nx -= navW + 6
         }
-        y += 6
+        y += 8
         if !rewriteBtn.isHidden || !toneBtn.isHidden {
             var x2: CGFloat = pad
             for b in [rewriteBtn, toneBtn] {
@@ -295,7 +332,7 @@ final class HoverCoordinator {
     private var pending: (itemID: Int, rect: CGRect)?
     private var currentOpenIndex = -1
 
-    var dwellDelay: TimeInterval = 0.30
+    var dwellDelay: TimeInterval = 0.20   // 知澜 11-19 规格：200ms 就弹
 
     func start() {
         guard monitor == nil else { return }
@@ -386,6 +423,18 @@ final class HoverCoordinator {
     }
 
     func dismissCard() { panel.dismiss() }
+
+    /// 取证用：直接把卡片摆在指定位置（不走悬停），用来截「悬停 popover」的图
+    func previewCard(kind: UnderlineKind, sentence: String, errorRange: NSRange,
+                     original: String, replacement: String, anchor: CGRect,
+                     onAccept: @escaping () -> Void) {
+        panel.present(kind: kind, sentence: sentence, errorRange: errorRange,
+                      original: original, replacement: replacement, reason: "",
+                      itemID: 0, anchor: anchor,
+                      onAccept: onAccept,
+                      onIgnore: { [weak self] in self?.panel.dismiss() },
+                      onAddDict: nil)
+    }
 
     @MainActor
     func openPrevIssue() {

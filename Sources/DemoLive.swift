@@ -181,6 +181,25 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         highlightedRange = r
     }
 
+    /// 取证：把悬停卡片摆到第一条建议的正下方（跟真实悬停同一套渲染）
+    @MainActor
+    func showCardPreview(_ it: DiffItem) {
+        let r = NSRange(location: it.start, length: it.length)
+        let screen = textView.firstRect(forCharacterRange: r, actualRange: nil)
+        let winRect = textView.convert(screen, to: nil)
+        guard let win = window else { return }
+        let screenRect = win.convertToScreen(winRect)
+        var anchor = CGRect(x: screenRect.minX, y: NSScreen.screens[0].frame.height - screenRect.minY,
+                            width: max(8, screenRect.width), height: max(8, screenRect.height))
+        anchor.origin.y += anchor.height
+        let kind: UnderlineKind = it.type == "spelling" ? .spelling : (it.type == "grammar" ? .grammar : (it.type == "clarity" ? .clarity : .style))
+        HoverCoordinator.shared.previewCard(kind: kind, sentence: textView.string, errorRange: r,
+                                            original: it.original, replacement: it.replacement,
+                                            anchor: anchor) { [weak self] in
+            Task { @MainActor in self?.applyItem(it) }
+        }
+    }
+
     @MainActor
     private func clearHighlight() {
         guard let r = highlightedRange, let storage = textView.textStorage, NSMaxRange(r) <= storage.length else {
@@ -323,6 +342,10 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.lastScore = Scorer.score(text: text, items: items, formality: GoalsStore.load().formality)
             self.lastScoreText = text
             let langSkipped = res.skippedCJK + counter.langSkipped
+            if ProcessInfo.processInfo.arguments.contains("--card-demo"), !self.didAutoOpenSidebar, !items.isEmpty {
+                self.didAutoOpenSidebar = true
+                self.showCardPreview(items[0])
+            }
             if ProcessInfo.processInfo.arguments.contains("--jump-demo"), !self.didAutoOpenSidebar, !items.isEmpty {
                 self.didAutoOpenSidebar = true
                 self.openSidebar()
