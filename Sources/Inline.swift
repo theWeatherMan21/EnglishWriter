@@ -434,13 +434,18 @@ final class InlineController {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-            MainActor.assumeIsolated {
+            // 不要用 MainActor.assumeIsolated：这个通知由 AppKit 的
+            // applicationStatusSubsystemCallback 投递，闭包不在 Swift Concurrency 的
+            // main executor 上下文里，assumeIsolated 会直接崩（本机 11-16 / 11-18 / 11-19
+            // 共 8 份崩溃报告都是这一处，切 App 时随机崩）。手动判定线程 + 派发即可。
+            let apply = { [weak self] in
                 // 切 App：立刻清线（否则旧 App 的线留在屏幕上飘）
                 self?.overlay.clear()
                 self?.lastFocusPid = app.processIdentifier
                 self?.attachObserver(pid: app.processIdentifier)
                 self?.scheduleQuickCheck(after: 0.08)   // 清完马上重画，不是留空白
             }
+            if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
         }
         startPolling()
         // 定期复验：有线挂着就每秒重跑一次检查，把 stamp 刷新到当下。

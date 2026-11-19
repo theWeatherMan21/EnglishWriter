@@ -57,6 +57,18 @@ if echo "$DEEP_OUT" | grep -qE "NO_BUILD|NO_GOLD|跳过"; then
 fi
 [ "$DEEP_RC" -eq 0 ] || { echo "deep 质量回归失败（exit $DEEP_RC）"; exit 1; }
 
+echo "== 崩溃防线：运行路径里禁止 MainActor.assumeIsolated =="
+# 本机 8 份崩溃报告都是 Inline.start() 的 AppKit 通知闭包里 assumeIsolated 直接崩
+# （切 App 时随机崩）。CLI 探针/SelfTest/main 允许，运行路径一律不许。
+BAD_AI=$(grep -rn 'MainActor\.assumeIsolated[[:space:]]*[{(]' Sources/*.swift \
+    | grep -vE 'Sources/(M3MonitorProbe|SelfTest|main)\.swift' || true)
+if [ -n "$BAD_AI" ]; then
+    echo "$BAD_AI"
+    echo "运行路径里出现 MainActor.assumeIsolated：通知闭包里会崩，改 Thread.isMainThread + DispatchQueue.main"
+    exit 1
+fi
+echo "PASS  运行路径零 assumeIsolated"
+
 echo "== 视觉基线 diff（改 CSS 就看得出跑没跑版）=="
 BASELINE="$PWD/qa/baseline"
 if [ -d "$BASELINE" ]; then
