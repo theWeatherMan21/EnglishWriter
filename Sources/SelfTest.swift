@@ -45,6 +45,7 @@ enum SelfTest {
     static func run(_ argv: [String]) -> Int32 {
         if argv.contains("--clickdiag") { return clickDiagTests() }
         if argv.contains("--rewrite-selftest") { return rewriteSelftest() }
+        if argv.contains("--acceptflow") { return acceptFlowTests() }
         // 只要指定了任何一个分组开关，就只跑那一组（--privacy 不该顺手把全组跑一遍）
         let groupFlags = ["--privacy", "--style", "--ui", "--webui", "--score", "--lang",
                           "--diffhl", "--m3", "--settings", "--glossary", "--cjk", "--faults", "--live"]
@@ -2242,6 +2243,68 @@ extension SelfTest {
         }
         if rtOK == pairs.count { SelfTest.ok("worddiff: 往返一致", "\(rtOK)/\(pairs.count)") }
         else { SelfTest.bad("worddiff: 往返", "\(rtOK)/\(pairs.count)") }
+
+        print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
+        return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 接受/撤销闭环（离线，用 M3Doc 替身跑 Mail 写信那条写回路径）
+extension SelfTest {
+    static func acceptFlowTests() -> Int32 {
+        // 用 Mail 写信窗里的真实形态：一段英文 + 两处错
+        var doc = "I have send the report immediatly."
+        var writes: [String] = []
+        let handle = ClosureDoc(pid: 4242, canReadBack: true,
+                                read: { doc },
+                                writeRange: { r, t in
+                                    let ns = doc as NSString
+                                    guard r.location >= 0, r.location + r.length <= ns.length else { return false }
+                                    doc = ns.replacingCharacters(in: r, with: t)
+                                    writes.append(doc)
+                                    return true
+                                },
+                                writeFull: { t in doc = t; writes.append(t); return true })
+        let items = [DiffItem(start: 2, length: 9, original: "have send", replacement: "have sent",
+                              type: "grammar", reason: "完成时"),
+                     DiffItem(start: 23, length: 10, original: "immediatly", replacement: "immediately",
+                              type: "spelling", reason: "拼写")]
+        let stack = M3UndoStack()
+        let before = doc
+
+        // 1) 接受第 1 条 → 文本真的变、只变这一处
+        let out1 = M3Flow.accept(items: items, only: 0, in: handle, stack: stack)
+        if out1.ok, doc == "I have sent the report immediatly." {
+            SelfTest.ok("acceptflow: 接受第 1 条写回正文", doc)
+        } else { SelfTest.bad("acceptflow: 接受第 1 条", "ok=\(out1.ok) doc=\(doc)") }
+
+        // 2) 撤销 → 回到原文
+        let undone = M3Flow.undo(stack: stack)
+        if undone.ok, doc == before {
+            SelfTest.ok("acceptflow: 撤销回到原文", doc)
+        } else { SelfTest.bad("acceptflow: 撤销", "doc=\(doc)") }
+
+        // 3) 越界 itemID 必须失败且不留半截状态
+        let out3 = M3Flow.accept(items: items, only: 9, in: handle, stack: stack)
+        if !out3.ok, doc == before {
+            SelfTest.ok("acceptflow: 越界 id 被拒且不改文本", before)
+        } else { SelfTest.bad("acceptflow: 越界 id", "ok=\(out3.ok)") }
+
+        // 4) canReadBack=false（Chromium 字段读不回）时，写回成功也算成功
+        var writeOnly = before
+        let blind = ClosureDoc(pid: 4243, canReadBack: false,
+                               read: { writeOnly },
+                               writeRange: { r, t in
+                                   let ns = writeOnly as NSString
+                                   guard r.location + r.length <= ns.length else { return false }
+                                   writeOnly = ns.replacingCharacters(in: r, with: t)
+                                   return true
+                               },
+                               writeFull: { t in writeOnly = t; return true })
+        let out4 = M3Flow.accept(items: items, only: 1, in: blind, stack: M3UndoStack())
+        if out4.ok && writeOnly == "I have send the report immediately." {
+            SelfTest.ok("acceptflow: 读不回时按写回结果判定", writeOnly)
+        } else { SelfTest.bad("acceptflow: 读不回", "ok=\(out4.ok) detail=\(out4.detail) doc=\(writeOnly)") }
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1

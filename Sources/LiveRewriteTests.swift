@@ -39,10 +39,51 @@ enum LiveRewriteTests {
         return URLSession(configuration: cfg)
     }
 
-    private static func run(labels: [String], tag: String) async -> Bool {
-        let cfg = SettingsStore.fromEnvironment()
+    /// 五句业务英文 × 3 轮（知澜的口径：5/5 · 5/5 · ms 每轮）
+    private static let batch: [String] = [
+        "I have send the report immediatly and it is very good.",
+        "Please kindly advise us the vessel schedule at your earliest convenience.",
+        "We was late because there is many problems with the booking.",
+        "The cargo was load yesterday and the free time is 10 days.",
+        "Looking forward to hear from you about the B/L copy.",
+    ]
+
+    static func runBatch(labels: [String], tag: String, rounds: Int = 3) async -> Bool {
+        var cfg = SettingsStore.fromEnvironment()
+        if !cfg.isComplete { cfg = SettingsStore.load() }
         guard cfg.isComplete else {
-            print("FAIL  live-" + tag + " 配置缺失：EW_BASE_URL / EW_API_KEY / EW_MODEL 需要三项")
+            print("FAIL  live-" + tag + " 配置缺失（env 与设置面板都为空）")
+            return false
+        }
+        print("  endpoint=" + cfg.baseURL + " model=" + cfg.model)
+        var allOK = true
+        for r in 1...rounds {
+            var okCount = 0, distinct = 0, msTotal = 0
+            for text in batch {
+                let t0 = Date()
+                let cands = (try? await Rewrite.suggest(segment: text, config: cfg, labels: labels,
+                                                        timeout: 45, session: Self.directSession())) ?? []
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                msTotal += ms
+                let applied = cands.map { $0.appliedText(to: text) }
+                if !applied.isEmpty && applied.contains(where: { $0 != text }) { okCount += 1 }
+                if Set(applied).count == applied.count && applied.count > 0 { distinct += 1 }
+            }
+            let avg = msTotal / max(1, batch.count)
+            let pass = okCount == batch.count && distinct == batch.count
+            print("  轮\(r)  \(okCount)/\(batch.count) 有候选 · \(distinct)/\(batch.count) 不重复 · 平均 \(avg)ms  \(pass ? "PASS" : "FAIL")")
+            if !pass { allOK = false }
+        }
+        return allOK
+    }
+
+    private static func run(labels: [String], tag: String) async -> Bool {
+        // 先看环境变量，没有再回落 App 自己的设置（爹地已经在设置面板配好了，
+        // 验收不该每次都手拼三个 env）
+        var cfg = SettingsStore.fromEnvironment()
+        if !cfg.isComplete { cfg = SettingsStore.load() }
+        guard cfg.isComplete else {
+            print("FAIL  live-" + tag + " 配置缺失：env 与设置面板都没配（EW_BASE_URL / EW_API_KEY / EW_MODEL）")
             return false
         }
         print("  endpoint=" + cfg.baseURL + " model=" + cfg.model + " labels=" + labels.joined(separator: "/"))

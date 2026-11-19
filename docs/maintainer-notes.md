@@ -146,3 +146,21 @@ token 状态），定位它到底从哪一行返回的。查清之前不要把�
 `--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`
 
 判据：量「停笔→出线」必须带这三个 flag，否则测的是节流不是代码。
+
+## 永远不要让模型算 offset（11-19，用一轮 rewrite 的血换来的）
+
+改写功能最初让模型返回 `{"start","length","original","replacement"}`。实测 3 轮里 1 轮出现
+`provideus`、`usus` 这种碎片：模型的 start/length 边界经常错 1–2 个字符，
+而且它自己看不出错。表象是「双空格」「重复词」，实际全是 span 错位的副作用。
+
+正解：**让模型只给结果，位置本地算。**
+- 提示词只要 `{"label","note","text"}`，text = 改写后的完整段落
+- 本地用 `WordDiff`（词级 LCS）把整句反推成逐条 edit
+- 原文字串由本地切词产生，天然合法，不可能越界或拼出碎片
+
+同一原则适用于任何「模型指出位置」的场景（diff 建议、标注、高亮、截图定位）。
+附带两个坑：
+1. `WordDiff` 的纯插入（advise us the → advise us of the）如果产出 `length = 0` 的 edit，
+   会被下游 sanitize 丢掉，往返后等于原文。改成「把下一个原词替换成 新词+原词」。
+   守住它的断言：`--rewrite-selftest` 的 `worddiff: 往返一致`。
+2. 验收脚本要能自己读设置（`SettingsStore.load()` 回落），不要逼人事先拼三个 env 变量。
