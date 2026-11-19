@@ -13,8 +13,8 @@ body { margin:0; font: var(--f-body)/1.45 -apple-system, "SF Pro Text", "PingFan
 .ring .num b { font-size: var(--f-score); font-weight:600; letter-spacing:-0.5px; }
 .ring .num span { font-size: var(--f-caption); color: var(--text-muted); margin-top:2px; white-space:nowrap; }
 .dims { flex:1; display:flex; flex-direction:column; gap: var(--s3); }
-.dim { display:grid; grid-template-columns: 52px 28px 1fr; gap: var(--s2); align-items:center; font-size: var(--f-secondary); }
-.dim .n { color: var(--text-muted); }
+.dim { display:grid; grid-template-columns: 56px 30px 1fr; gap: var(--s2); align-items:center; font-size: var(--f-secondary); }
+.dim .n { color: var(--text-muted); white-space: nowrap; }
 .dim .v { font-weight:600; font-variant-numeric: tabular-nums; text-align:right; min-width:28px; }
 .dim .bar { height:4px; border-radius:999px; background: var(--border); overflow:hidden; }
 .dim .bar i { display:block; height:100%; border-radius:999px; }
@@ -31,14 +31,17 @@ body { margin:0; font: var(--f-body)/1.45 -apple-system, "SF Pro Text", "PingFan
 .tab b { font-variant-numeric: tabular-nums; font-weight:600; margin-left:4px; }
 .listhead { display:flex; align-items:center; justify-content:space-between;
             font-size: var(--f-caption); color: var(--text-muted); margin-top:-4px; }
-.allbtn { font-size: var(--f-caption); border:1px solid transparent; background:transparent;
-          color: var(--brand); font-weight:600; border-radius: var(--r-control); padding:4px 8px;
+/* 主操作只有一个实心按钮 = 「全部接受」（Grammarly 的批量主操作在最显眼处） */
+.allbtn { font-size: var(--f-caption); border:1px solid var(--brand); background: var(--brand);
+          color:#fff; font-weight:600; border-radius: var(--r-control); padding:4px 10px;
           cursor:pointer; white-space:nowrap; }
-.allbtn:hover { background: rgba(2,126,111,.08); border-color: rgba(2,126,111,.28); }
+.allbtn:hover { background:#016a5d; border-color:#016a5d; }
 .list { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;
         gap: var(--s2); padding: 0 2px var(--s6) 0; scroll-padding-top: var(--s2); }
 .group { display:flex; flex-direction:column; gap: var(--s1); }
-.ghead { display:flex; align-items:center; gap:6px; font-size: var(--f-secondary); font-weight:600; margin-top: var(--s2); }
+.group + .group { margin-top: 0; }
+.ghead { display:flex; align-items:center; gap:6px; font-size: var(--f-secondary); font-weight:600;
+         margin-top: 0; padding-left: 2px; }
 .ghead .ico { flex:0 0 14px; width:14px; height:14px; }
 .ghead span { color: var(--text-muted); font-weight:500; }
 .row { border:1px solid var(--hairline); border-radius: var(--r-card); background: var(--card-bg);
@@ -53,15 +56,15 @@ body { margin:0; font: var(--f-body)/1.45 -apple-system, "SF Pro Text", "PingFan
 .old { color: var(--danger); background: rgba(211,47,47,.08); text-decoration: line-through; border-radius:3px; padding:0 3px; }
 .new { color: var(--brand); background: rgba(2,126,111,.10); font-weight:600; border-radius:3px; padding:0 3px; }
 .reason { font-size: var(--f-caption); color: var(--text-muted); }
-.acts { display:flex; gap:var(--s1); justify-content:flex-end; }
+.acts { display:flex; gap:var(--s2); justify-content:flex-end; }
 .btn { font-size: var(--f-caption); border-radius: var(--r-control); border:1px solid var(--border);
-       background: var(--bg); color: var(--text-muted); padding:4px 10px; cursor:pointer; }
+       background: var(--bg); color: var(--text-muted); padding:5px 12px; cursor:pointer; }
 .btn:hover { background: var(--bg-subtle); color: var(--text); }
 /* 单个「接受」= 绿字描边（次级）；「忽略」= 纯文字（三级）；实心只留给「全部接受」 */
 .btn.primary { border-color: var(--brand); color: var(--brand); font-weight:600; background: var(--bg); }
 .btn.primary:hover { background: rgba(2,126,111,.08); }
 .foot { font-size: var(--f-caption); color: var(--text-muted); border-top:1px solid var(--hairline);
-        height:40px; display:flex; align-items:center; padding:0 var(--s1); }
+        height:44px; display:flex; align-items:center; padding:0 var(--s2); margin-top: var(--s1); }
 .corner { position:absolute; top:8px; right:10px; display:flex; gap:6px; }
 .iconbtn { width:22px; height:22px; border-radius: var(--r-control); border:none; background:transparent;
            color: var(--text-muted); cursor:pointer; font-size:13px; line-height:1; }

@@ -16,28 +16,33 @@
       "pass" : true
     },
     {
-      "detail" : "tabs=4",
-      "name" : "四个分类 tab",
+      "detail" : "tabs=2",
+      "name" : "两档筛选 tab",
       "pass" : true
     },
     {
-      "detail" : "rows=3",
-      "name" : "建议行数量",
+      "detail" : "rows=2",
+      "name" : "重要建议档 2 行（style 被过滤）",
       "pass" : true
     },
     {
-      "detail" : "groups=3",
-      "name" : "分组数量",
+      "detail" : "groups=2",
+      "name" : "重要建议档 2 组",
       "pass" : true
     },
     {
-      "detail" : "old=3",
-      "name" : "旧词红底块",
+      "detail" : "listhead=2 条建议全部接受",
+      "name" : "列表头条数与筛选一致",
       "pass" : true
     },
     {
-      "detail" : "new=3",
-      "name" : "新词绿底块",
+      "detail" : "old=2",
+      "name" : "旧词红底块（按当前档=2）",
+      "pass" : true
+    },
+    {
+      "detail" : "new=2",
+      "name" : "新词绿底块（按当前档=2）",
       "pass" : true
     },
     {
@@ -66,8 +71,8 @@
       "pass" : true
     },
     {
-      "detail" : "groups after pick=1",
-      "name" : "分类过滤生效",
+      "detail" : "groups after pick=3",
+      "name" : "全部建议档 3 组",
       "pass" : true
     },
     {

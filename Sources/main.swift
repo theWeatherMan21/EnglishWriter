@@ -280,7 +280,7 @@ let argv = CommandLine.arguments
 // --privacy / --style / --ui / --webui 等分组开关也必须能单独跑，
 // 否则它们掉进常驻模式被单实例锁 exit 0，验收通道等于断的（知澜 11-19 实锤）
 if argv.contains("--selftest") || argv.contains("--privacy") || argv.contains("--style")
-    || argv.contains("--ui") || argv.contains("--webui") || argv.contains("--score")
+    || argv.contains("--ui") || argv.contains("--score")
     || argv.contains("--lang") || argv.contains("--diffhl") || argv.contains("--m3") || argv.contains("--settings") {
     exit(SelfTest.run(argv))
 }
