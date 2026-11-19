@@ -67,6 +67,18 @@ final class IgnoreStore {
         original + sep + replacement
     }
 
+    /// 同一条建议的稳定指纹（原文 + 建议，大小写不敏感）：FNV-1a 64，落 `ignore.hashes`。
+    /// 算法与 M3 的 `M3Ignore.hash` 逐字节一致 —— 放在这里是为了本文件不依赖 M3 的未提交文件。
+    static func hash(original: String, replacement: String) -> String {
+        let key = original.lowercased() + sep + replacement.lowercased()
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for b in key.utf8 {
+            h ^= UInt64(b)
+            h = h &* 0x100_0000_01b3
+        }
+        return String(format: "%016llx", h)
+    }
+
     private func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
@@ -86,7 +98,7 @@ final class IgnoreStore {
     /// 永久规则 ∪ 本次规则 ∪ 文本 hash 集合：任一条命中都算忽略
     func isIgnored(original: String, replacement: String) -> Bool {
         loadIfNeeded()
-        if hashes.contains(M3Ignore.hash(original: original, replacement: replacement)) { return true }
+        if hashes.contains(IgnoreStore.hash(original: original, replacement: replacement)) { return true }
         if session.contains(Self.token(original: original, replacement: replacement)) { return true }
         return rules.contains { $0.original == original && $0.replacement == replacement }
     }
@@ -109,7 +121,7 @@ final class IgnoreStore {
         loadIfNeeded()
         guard !isIgnored(original: original, replacement: replacement) else { return false }
         rules.append((original: original, replacement: replacement))
-        hashes.insert(M3Ignore.hash(original: original, replacement: replacement))
+        hashes.insert(IgnoreStore.hash(original: original, replacement: replacement))
         persist()
         return true
     }
