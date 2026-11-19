@@ -1853,6 +1853,15 @@ extension SelfTest {
         if idleKept.count == 1 { SelfTest.ok("stale: 静止 20s 的线仍在", "保留 1") }
         else { SelfTest.bad("stale: 静止线被误杀", "\(idleKept.count)") }
 
+        // 读不到焦点 ≠ 宿主换了：多块线在「无焦点信息」时一条都不许掉
+        let three = (0..<3).map { i in
+            UnderlineSpec(rect: CGRect(x: 10, y: 10 + CGFloat(i) * 20, width: 40, height: 4),
+                          kind: .grammar, itemID: i, ownerPid: 4242, stamp: now.addingTimeInterval(-25))
+        }
+        let keptThree = UnderlineSpec.alive(three, now: now, ttl: 60, frontPid: 4242)
+        if keptThree.count == 3 { SelfTest.ok("attach: 读不到焦点时不清线", "保留 3") }
+        else { SelfTest.bad("attach: 无焦点时掉线", "保留 \(keptThree.count)") }
+
         // 宿主切走 → 立刻灭（不用等 TTL）
         let switched = UnderlineSpec.alive([idle], now: now, ttl: 60, frontPid: 9999)
         if switched.isEmpty { SelfTest.ok("stale: 宿主切走立刻灭", "0") }

@@ -248,6 +248,17 @@ final class UnderlineOverlay: NSPanel {
         let front = ScreenGeom.frontmostWindowPID()
         let keep = UnderlineSpec.alive(specs, now: now, ttl: ttl, frontPid: front)
         guard keep.count != specs.count else { return }
+        // 线为什么消失必须留证据：是超时、还是宿主换了（或宿主进程没了）
+        let dropped = specs.count - keep.count
+        let expired = specs.filter { now.timeIntervalSince($0.stamp) > ttl }.count
+        let wrongHost = specs.filter { sp in
+            now.timeIntervalSince(sp.stamp) <= ttl && sp.ownerPid != 0 && sp.ownerPid != front
+        }.count
+        CheckLog.append(.init(kind: "prune", pid: front, app: appName(front), role: "-",
+                              textLen: 0, sentenceLen: 0, itemCount: dropped, rectCount: keep.count,
+                              elapsed: "-",
+                              err: "掉 \(dropped) 条（超时 \(expired) / 宿主不符 \(wrongHost)；宿主=%@(\(front))",
+                              at: Date()))
         specs = keep
         canvas.specs = keep
         if keep.isEmpty { orderOut(nil) }

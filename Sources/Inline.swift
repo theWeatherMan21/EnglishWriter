@@ -714,6 +714,8 @@ final class InlineController {
         guard let el = cand else {
             emit(CheckEvent(kind: "attach-el-fail", pid: pid, app: appName(pid), role: "-", textLen: 0,
                             sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-", err: "没有焦点元素", at: Date()))
+            // 注意：这里**绝不 clear()**。读不到焦点只说明「这一轮没读到」（窗口非 key、overlay 抢了 key、
+            // AX 暂时沉默都会这样），不代表宿主换了。线该由「前台 App 变没变」和 TTL 决定，不由能不能读到焦点决定。
             // Chromium 的 AX 树是异步长出来的：1.5s 后再试（最多 3 次），别一次取样就判死
             if AXInline.isChromium(pid) {
                 let n = (attachRetries[pid] ?? 0) + 1
