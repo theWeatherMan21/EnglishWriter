@@ -1,5 +1,5 @@
 {
-  "rects": 2,
+  "rects": 4,
   "mode": "cdp-mouse",
   "card": {
     "visible": true,
@@ -15,5 +15,5 @@
   },
   "before": "I have send the immediatly report.",
   "after": "I have sent the immediatly report.",
-  "at": "2026-11-19T18:27:43"
+  "at": "2026-11-19T18:29:03"
 }

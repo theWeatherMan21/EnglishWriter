@@ -473,10 +473,19 @@
     const text = textOf(el);
     if (!text || text.length > 5000) return;
     const caret = caretOf(el);
-    const sent = sentenceAround(text, caret);
-    if (force) window.__EW_DEBUG.notes.push('text=' + text.length + ' sent=' + sent.text.trim().length);
-    if (sent.text.trim().length < 3) { clearUnderlines(); return; }
-    const body = { text: sent.text, language: 'en-GB' };
+    // Grammarly 是整篇检查，不是只看光标所在句。短文档（≤2000 字）整篇送检，
+    // 长文档退回当前句（性能与成本），并记 scope 便于排查。
+    let scopeText, scopeStart, scope;
+    if (text.length <= 2000) {
+      scopeText = text; scopeStart = 0; scope = 'document';
+    } else {
+      const sent = sentenceAround(text, caret);
+      scopeText = sent.text; scopeStart = sent.start; scope = 'sentence';
+    }
+    window.__EW_DEBUG.scope = scope;
+    if (force) window.__EW_DEBUG.notes.push('text=' + text.length + ' scope=' + scope + ' len=' + scopeText.trim().length);
+    if (scopeText.trim().length < 3) { clearUnderlines(); return; }
+    const body = { text: scopeText, language: 'en-GB' };
     try {
       const res = await fetch(API + '/v1/check', {
         method: 'POST',
@@ -489,10 +498,10 @@
       window.__EW_DEBUG.lastEdits = edits;
       window.__EW_DEBUG.engine = j.engine || '';
       window.__EW_DEBUG.elapsedMs = j.elapsedMs || 0;
-      window.__EW_DEBUG.sentStart = sent.start;
-      window.__EW_DEBUG.sentText = sent.text;
+      window.__EW_DEBUG.sentStart = scopeStart;
+      window.__EW_DEBUG.sentText = scopeText;
       if (!edits.length) { clearUnderlines(); return; }
-      drawUnderlines(el, edits, sent.start);
+      drawUnderlines(el, edits, scopeStart);
     } catch (e) {
       window.__EW_DEBUG.notes.push('fetch fail: ' + e.message);
     }
