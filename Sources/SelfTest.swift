@@ -2359,6 +2359,55 @@ extension SelfTest {
             SelfTest.ok("acceptflow: 原生宿主读回不符判失败", out7.detail.prefix(40).description)
         } else { SelfTest.bad("acceptflow: 原生宿主读回不符", "被放过（ok=true）") }
 
+        // 8) 忽略词典：加入词典后同一条建议不再出，其他词不受影响
+        IgnoreStore.shared.clearSession()
+        IgnoreStore.shared.reloadForTesting()
+        let pairA = DiffItem(start: 13, length: 9, original: "advise us", replacement: "provide us",
+                             type: "style", reason: "x")
+        let pairB = DiffItem(start: 23, length: 10, original: "immediatly", replacement: "immediately",
+                             type: "spelling", reason: "y")
+        _ = IgnoreStore.shared.ignore(original: pairA.original, replacement: pairA.replacement)
+        let kept = M3Ignore.filter([pairA, pairB]) {
+            IgnoreStore.shared.isIgnored(original: $0.original, replacement: $0.replacement)
+        }
+        if kept.count == 1, kept[0].original == "immediatly" {
+            SelfTest.ok("ignore: 加入词典后同条不再出、其他词保留", "1/\(2)")
+        } else {
+            SelfTest.bad("ignore: 词典过滤", "\(kept.map { $0.original })")
+        }
+
+        // 9) 词典按「原文+建议」成对命中：同一处原文换成别的建议仍应出
+        let pairC = DiffItem(start: 13, length: 9, original: "advise us", replacement: "inform us",
+                             type: "style", reason: "z")
+        if !IgnoreStore.shared.isIgnored(original: pairC.original, replacement: pairC.replacement) {
+            SelfTest.ok("ignore: 只忽略成对的那一条建议", "inform us 仍出")
+        } else {
+            SelfTest.bad("ignore: 成对命中", "inform us 被误忽略")
+        }
+
+        // 10) 会话级忽略（ignoreSession）不写永久词典
+        IgnoreStore.shared.clearSession()
+        IgnoreStore.shared.ignoreSession(original: pairB.original, replacement: pairB.replacement)
+        let sessionBlocked = IgnoreStore.shared.isIgnored(original: pairB.original, replacement: pairB.replacement)
+        if sessionBlocked {
+            SelfTest.ok("ignore: 会话级忽略生效", "本次不出")
+        } else { SelfTest.bad("ignore: 会话级忽略", "未生效") }
+        IgnoreStore.shared.clearSession()
+        IgnoreStore.shared.reloadForTesting()
+
+        // 11) 两套语义分开：clearSession 只清会话级，词典级（ignore）必须还在
+        _ = IgnoreStore.shared.ignore(original: pairA.original, replacement: pairA.replacement)
+        IgnoreStore.shared.clearSession()
+        let permStill = IgnoreStore.shared.isIgnored(original: pairA.original, replacement: pairA.replacement)
+        let sessGone = !IgnoreStore.shared.isIgnored(original: pairB.original, replacement: pairB.replacement)
+        if permStill && sessGone {
+            SelfTest.ok("ignore: 词典级永久 / 会话级只本会话", "clearSession 后 1 留 1 清")
+        } else {
+            SelfTest.bad("ignore: 两套语义", "perm=\(permStill) sessGone=\(sessGone)")
+        }
+        IgnoreStore.shared.clearSession()
+        IgnoreStore.shared.reloadForTesting()
+
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
     }
