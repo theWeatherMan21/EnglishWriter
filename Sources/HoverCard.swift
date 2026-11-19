@@ -113,6 +113,8 @@ final class HoverCardView: NSView {
         kindLabel.stringValue = kind.categoryLine
 
         // 上下文句子：…前5词 ~~旧词~~ 新词 后5词…（Grammarly 卡片就是这么给的，不是两个孤立的词）
+        sentenceField.maximumNumberOfLines = 3
+        sentenceField.lineBreakMode = .byTruncatingTail
         sentenceField.target = self
         sentenceField.action = #selector(sentenceTapped)
         sentenceField.isBezeled = false
@@ -217,9 +219,9 @@ final class HoverCardView: NSView {
             v.frame = NSRect(x: pad, y: y, width: textW, height: h)
             y += h + gap
         }
-        let sentenceH = min(58, max(18, sentenceField.attributedStringValue.boundingRect(
-            with: NSSize(width: textW, height: 200),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]).height + 2))
+        let sentenceH = min(86, max(34, sentenceField.attributedStringValue.boundingRect(
+            with: NSSize(width: textW, height: 300),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]).height + 6))
         let reasonH = min(56, max(16, reasonField.cell!.cellSize(forBounds: NSRect(x: 0, y: 0, width: textW, height: 200)).height + 2))
 
         place(kindLabel, 13, gap: 6)
@@ -230,7 +232,8 @@ final class HoverCardView: NSView {
         let btnW: CGFloat = 62
         let navW: CGFloat = 26
         var x = textW + pad - btnW
-        for b in [moreBtn, ignoreBtn, acceptBtn] {
+        acceptBtn.isHidden = true          // 接受 = 点修复词/句子（Grammarly 同款）
+        for b in [moreBtn, ignoreBtn, dictBtn] {
             if b.isHidden { continue }
             b.frame = NSRect(x: x, y: y, width: btnW, height: btnH)
             x -= btnW + 6
@@ -457,7 +460,13 @@ final class HoverCoordinator {
                       itemID: 0, anchor: anchor,
                       onAccept: onAccept,
                       onIgnore: { [weak self] in self?.panel.dismiss() },
-                      onAddDict: nil)
+                      onAddDict: {})     // 词典常开：交给上层决定要不要真加
+        // 取证：把卡片窗口矩形写出来，截图时按它精确裁切
+        let f = panel.frame
+        let info: [String: Any] = ["x": f.minX, "y": f.minY, "w": f.width, "h": f.height]
+        if let d = try? JSONSerialization.data(withJSONObject: info) {
+            try? d.write(to: URL(fileURLWithPath: "/tmp/card-frame.json"))
+        }
     }
 
     @MainActor

@@ -69,7 +69,7 @@ final class Sidebar: NSPanel {
         let title = NSTextField(labelWithString: "写作建议")
         title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         title.textColor = .secondaryLabelColor
-        title.frame = NSRect(x: 18, y: 484, width: 200, height: 18)
+        title.frame = NSRect(x: 18, y: 596, width: 200, height: 18)
         root.addSubview(title)
 
         // 总分圆环
@@ -178,7 +178,9 @@ final class Sidebar: NSPanel {
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 44 - 300 + 250)
         ring.frame = NSRect(x: 18, y: h - 124, width: 84, height: 84)
         bigScore.frame = NSRect(x: 18, y: h - 96, width: 84, height: 30)
-        bandLabel.frame = NSRect(x: 6, y: h - 128, width: 108, height: 18)
+        bandLabel.frame = NSRect(x: 6, y: h - 148, width: 108, height: 18)
+        (contentView?.subviews.first(where: { ($0 as? NSTextField)?.stringValue == "写作建议" }))?.frame =
+            NSRect(x: 18, y: h - 26, width: 200, height: 18)
         bandLabel.superview?.layoutSubtreeIfNeeded()
         // 关闭按钮跟着高度走（固定 y 会被 resize 顶出可视区）
         if let close = contentView?.subviews.first(where: { ($0 as? NSButton)?.title == "✕" }) {
