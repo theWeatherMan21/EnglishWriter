@@ -82,3 +82,16 @@ git tag v0.3.0 && git push origin v0.3.0   # tag 触发 .github/workflows/releas
 
 CI 的 Release 产物用 ad-hoc 签名（runner 上没有本机证书）。用固定证书自编的本地包
 `SIGN_ID="SOALedger Dev"`，重编译不丢 TCC 授权；两者差异见 README「签名」一节。
+
+## 探针必须用**装机版**二进制跑（TCC 只授权给那一个路径）
+
+`./build/英文写作助手 --probe-mail` 读 Mail 会得到「窗口=0」，而装机版同样命令得到「窗口=2」。
+原因不是代码：辅助功能（TCC）授权是按**二进制路径**给的，只有 `/Applications/Selfmade/英文写作助手.app` 那份被授权过。
+`build/` 下重新编译出来的产物是另一个路径 → 无权限 → AX 窗口数恒为 0。
+
+判据：探针输出第一行若是 `窗口=0` 而 System Events 报 N>0，先换装机版二进制重跑，别改代码。
+
+正确用法：
+```sh
+"/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" --probe-mail --all-visible --out qa/evidence/mail-probe.json
+```
