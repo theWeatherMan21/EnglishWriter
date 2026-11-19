@@ -356,27 +356,49 @@ final class HoverCoordinator {
     private let panel = HoverCardPanel()          // 旧 AppKit 卡片：保留给离线自测，不再上屏
     private var usingWebCard: Bool { true }
     private var monitor: Any?
+    private var localMonitor: Any?
     private var dwell: DispatchWorkItem?
     private var pending: (itemID: Int, rect: CGRect)?
     private var currentOpenIndex = -1
 
     var dwellDelay: TimeInterval = 0.20   // 知澜 11-19 规格：200ms 就弹
 
+    /// 爹地 11-19：交互砍到一条路 —— 单击划线处直接出卡片，不用悬停、不用等。
     func start() {
         guard monitor == nil else { return }
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
-            Task { @MainActor in self?.onMouseMoved() }
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
+            Task { @MainActor in self?.onClick() }
+        }
+        // 点卡片内部不关（卡片自己的按钮会处理）
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] e in
+            Task { @MainActor in
+                guard let self else { return }
+                if !CardWeb.shared.frame.contains(NSEvent.mouseLocation) { CardWeb.shared.dismiss() }
+            }
+            return e
         }
     }
 
     func stop() {
         if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
         dwell?.cancel()
         panel.dismiss()
     }
 
     /// 自检专用：走一次真实命中流程（全局静默时应当在第一行就返回，不建卡不上屏）
-    func tickForAudit() { onMouseMoved() }
+    func tickForAudit() { onClick() }
+
+    /// 单击：命中某条下划线 → 打开该条卡片；没命中 → 关掉当前卡片
+    private func onClick() {
+        if UnderlineOverlay.globallySilent { return }
+        let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: NSEvent.mouseLocation, size: .zero)).origin
+        if CardWeb.shared.frame.contains(NSEvent.mouseLocation) { return }   // 点在卡片上
+        let specs = InlineController.shared.overlay.currentRects()
+        let hit = specs.first { $0.rect.insetBy(dx: -3, dy: -6).contains(mouseQuartz) }
+        guard let h = hit else { CardWeb.shared.dismiss(); return }
+        open(itemID: h.itemID, rect: h.rect)
+    }
 
     private func onMouseMoved() {
         if UnderlineOverlay.globallySilent { return }   // 只读模式：悬停卡片一律不许出现

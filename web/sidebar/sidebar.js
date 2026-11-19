@@ -18,7 +18,7 @@ const EW = {
     arc.style.strokeDashoffset = (257.6 * (1 - pct)).toFixed(1);
 
     document.getElementById('dims').innerHTML = d.dims.map(x => {
-      const sev = x.value >= 80 ? '#2E7D32' : (x.value >= 50 ? '#F59E0B' : '#EE1437');
+      const sev = '#1F2328';   // 分数不带类别色（类别色只给色点和进度条）
       const cat = { '正确性': '#EE1437', '清晰度': '#4A6EDE', '吸引力': '#2E7D32', '表达': '#7E57C2' }[x.name] || '#027E6F';
       // 每行只放「维度名 / 分数 / 进度条」，计数与百分比一律不进评分行（避免口径混在一起）
       return `<div class="dim" title="${esc(x.note || '')}"><span class="n">${esc(x.name)}</span>
@@ -30,7 +30,7 @@ const EW = {
     document.getElementById('tabs').innerHTML = d.tabs.map((t, i) =>
       `<div class="tab ${(this.filter === null && i === 0) || this.filter === ['grammar', 'clarity', 'style'][i - 1] ? 'on' : ''}"
             onclick="EW.pick(${i})"><i style="background:${colors[i]}"></i>
-       <span>${esc(t.name)}<b>${t.n}</b></span></div>`).join('')
+       <span>${esc(t.name)}<b style="color:#1F2328">${t.n}</b></span></div>`).join('')
       + `<button class="allbtn" title="一次改完所有建议，可用 ⌘Z 撤销" onclick="EW.post({action:'acceptAll'})">全部接受</button>`;
 
     const groups = (d.groups || []).filter(g => !this.filter || g.type === this.filter);

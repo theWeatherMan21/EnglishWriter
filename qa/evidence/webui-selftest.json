@@ -41,6 +41,26 @@
       "pass" : true
     },
     {
+      "detail" : "rgb(247, 248, 250)",
+      "name" : "卡片底色 #F7F8FA",
+      "pass" : true
+    },
+    {
+      "detail" : "rgb(255, 255, 255)",
+      "name" : "面板底 #FFFFFF",
+      "pass" : true
+    },
+    {
+      "detail" : "rgb(247, 248, 250) vs rgb(255, 255, 255)",
+      "name" : "卡片底色与面板不同",
+      "pass" : true
+    },
+    {
+      "detail" : "rgba(0, 0, 0, 0.08) 0px 1px 3px 0px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px",
+      "name" : "卡片有阴影",
+      "pass" : true
+    },
+    {
       "detail" : "tone=语气：正式（次要 友好，本地）",
       "name" : "语气行",
       "pass" : true

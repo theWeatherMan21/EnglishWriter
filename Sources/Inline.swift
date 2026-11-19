@@ -324,6 +324,31 @@ final class InlineController {
         let clamped = NSRange(location: min(sel.location, ns.length),
                               length: min(sel.length, max(0, ns.length - min(sel.location, ns.length))))
         guard clamped.length > 0 else { return nil }
+        // ① 逐 App 适配：没有配置或配置为关 → 不工作（不再靠「通用探测」猜）
+        let app = appName(pid)
+        if let cfg = Integrations.integration(bundleId: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "", appName: app) {
+            _ = cfg
+        } else if Integrations.all.contains(where: { $0.id == app && !$0.isEnabled }) {
+            emit(CheckEvent(kind: "skip-app-disabled", pid: pid, app: app,
+                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "该 App 适配未探明，已关闭", at: Date()))
+            return nil
+        }
+
+        // ② 隐私硬规矩：敏感字段（密码/账号/地址/卡号/id…）一律不激活
+        var idParts: [String] = []
+        for attrName in [kAXIdentifierAttribute, kAXRoleAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+            if let v = attrString(el, attrName as String) { idParts.append(v) }
+        }
+        if Integrations.isSensitive(text: idParts.joined(separator: " ")) {
+            emit(CheckEvent(kind: "skip-sensitive", pid: pid, app: app,
+                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "敏感字段（命中关键词黑名单）", at: Date()))
+            return nil
+        }
+
         currentElement = el
         currentPid = pid
         return (el, pid, full, clamped)
@@ -615,6 +640,31 @@ final class InlineController {
                             err: "读不到文本框内容", at: Date()))
         }
         guard let full else { diag.lastError = "读不到文本框内容"; return }
+        // ① 逐 App 适配：没有配置或配置为关 → 不工作（不再靠「通用探测」猜）
+        let app = appName(pid)
+        if let cfg = Integrations.integration(bundleId: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "", appName: app) {
+            _ = cfg
+        } else if Integrations.all.contains(where: { $0.id == app && !$0.isEnabled }) {
+            emit(CheckEvent(kind: "skip-app-disabled", pid: pid, app: app,
+                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "该 App 适配未探明，已关闭", at: Date()))
+            return
+        }
+
+        // ② 隐私硬规矩：敏感字段（密码/账号/地址/卡号/id…）一律不激活
+        var idParts: [String] = []
+        for attrName in [kAXIdentifierAttribute, kAXRoleAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+            if let v = attrString(el, attrName as String) { idParts.append(v) }
+        }
+        if Integrations.isSensitive(text: idParts.joined(separator: " ")) {
+            emit(CheckEvent(kind: "skip-sensitive", pid: pid, app: app,
+                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "敏感字段（命中关键词黑名单）", at: Date()))
+            return
+        }
+
         currentElement = el
         currentPid = pid
 

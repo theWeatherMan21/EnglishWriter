@@ -50,6 +50,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1332,3 +1333,31 @@ extension SelfTest {
     }
 }
 
+// MARK: 隐私门控 + 逐 App 适配（Grammarly IgnoreKeywordBlocklist 的等价物）
+extension SelfTest {
+    static func privacyTests() {
+        let mustBlock = ["password field", "Login", "credit card number", "CVV", "account name",
+                         "shipping address", "security code", "auth token"]
+        for t in mustBlock {
+            if Integrations.isSensitive(text: t) { SelfTest.ok("privacy: 拦住 \(t)") }
+            else { SelfTest.bad("privacy: 应拦住", t) }
+        }
+        let mustPass = ["Note[id=abc123]", "textView grid container", "notecontent", "正文文本框"]
+        for t in mustPass {
+            if !Integrations.isSensitive(text: t) { SelfTest.ok("privacy: 放行 \(t)") }
+            else { SelfTest.bad("privacy: 不该拦", t) }
+        }
+        // 适配表：未探明的必须是关闭状态，探明的必须是开启
+        let all = Integrations.all
+        if all.count == 5 { SelfTest.ok("integration: 五条配置齐全") } else { SelfTest.bad("integration: 数量", "\(all.count)") }
+        for i in all where !i.isEnabled {
+            if i.note.contains("未探明") { SelfTest.ok("integration: \(i.id) 未探明已关闭") }
+            else { SelfTest.bad("integration: \(i.id) 关闭但没写原因", i.note) }
+        }
+        if let mail = all.first(where: { $0.id == "Mail" }), mail.isMailBody, mail.isEnabled {
+            SelfTest.ok("integration: Mail 标记为邮件正文且启用")
+        } else {
+            SelfTest.bad("integration: Mail 配置", "")
+        }
+    }
+}

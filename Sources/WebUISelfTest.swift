@@ -94,6 +94,15 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
         let newBlocks = await js("document.querySelectorAll('.new').length") as? Int ?? 0
         expect("新词绿底块", newBlocks == 3, "new=\(newBlocks)")
 
+        // 分层必须肉眼可分：卡片底 #F7F8FA vs 面板 #FFFFFF，且卡片有阴影
+        let rowBg = await js("getComputedStyle(document.querySelector('.row')).backgroundColor") as? String ?? ""
+        let bodyBg = await js("getComputedStyle(document.body).backgroundColor") as? String ?? ""
+        expect("卡片底色 #F7F8FA", rowBg.contains("247, 248, 250"), rowBg)
+        expect("面板底 #FFFFFF", bodyBg.contains("255, 255, 255"), bodyBg)
+        expect("卡片底色与面板不同", rowBg != bodyBg, "\(rowBg) vs \(bodyBg)")
+        let shadow = await js("getComputedStyle(document.querySelector('.row')).boxShadow") as? String ?? ""
+        expect("卡片有阴影", shadow.contains("rgba") && shadow != "none", shadow)
+
         let tone = await js("document.getElementById('tone').textContent") as? String ?? ""
         expect("语气行", tone.contains("正式"), "tone=\(tone)")
 

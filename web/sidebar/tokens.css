@@ -7,8 +7,8 @@
   --style: #7E57C2; --engagement: #2E7D32;
   --bg: #FFFFFF; --bg-subtle: #FAFAFA; --border: #E5E7EB;
   --text: #1F2328; --text-muted: #6B7280;
-  --shadow-card: 0 1px 2px rgba(0,0,0,.06);
-  --danger: #D32F2F; --card-bg: #FAFAFA; --hairline: #EEF0F3; --hover-bg: #F5F7F9;
+  --shadow-card: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --danger: #D32F2F; --card-bg: #F7F8FA; --hairline: #EEF0F3; --hover-bg: #F5F7F9;
   --shadow-popover: 0 4px 16px rgba(0,0,0,.12);
   --shadow-panel: 0 8px 32px rgba(0,0,0,.16);
 }
