@@ -542,6 +542,9 @@ final class InlineController {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.enabled, self.lastFocusPid > 0 else { return }
+                // 锁屏时别的 App 的 AX 只剩骨架：继续轮询只会刷 loginwindow 的假事件，
+                // 把真实事件淹掉（11-19 一整夜 649 条 attach-app 就是这么来的）
+                if ScreenLock.isLocked { return }
                 guard let el = AXInline.focusedElement(pid: self.lastFocusPid) else { return }
                 // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
                 let t: String?
@@ -736,6 +739,9 @@ final class InlineController {
 
     private func attachElementObserver(pid: pid_t) {
         guard let observer else { return }
+        // 锁屏 / 登录窗：不挂观察者，免得夜里全是 loginwindow 的假 attach
+        if ScreenLock.isLocked { return }
+        if appName(pid) == "loginwindow" { return }
         if Self.excludedGate(pid: pid) { return }        // 排除的 App 不挂元素观察者
         // Chromium 懒开无障碍（真机 2026-11-19 Chrome 实测）：不置这两个属性，AX 树里永远没有 AXWebArea
         _ = AXInline.enableWebAX(pid)
@@ -877,9 +883,12 @@ final class InlineController {
                                    isWebBody: WebText.isWebBody(el),
                                    isMailBody: isMailBody,
                                    hasEditableWebField: hasEditableWebField) {
-            emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: "-",
+            // 证据必须能自证：是不是真的有可编辑控件被误判成只读？
+            let elRole = attrString(el, kAXRoleAttribute as String) ?? "?"
+            let kind = AXInline.isEditable(el) ? "editable-but-unreadable" : "readonly"
+            emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: elRole,
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
-                            elapsed: "-", err: "只读文本，不检查", at: Date()))
+                            elapsed: "-", err: kind, at: Date()))
             overlay.clear(); items = []; blocks = []; itemBlock = []
             diag.lastError = "只读文本，跳过"
             return

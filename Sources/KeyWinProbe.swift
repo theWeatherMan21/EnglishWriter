@@ -8,6 +8,7 @@ import AppKit
 enum KeyWinProbe {
     static func run(_ argv: [String]) -> Int32 {
         setvbuf(stdout, nil, _IONBF, 0)
+        if ScreenLock.bailIfLocked("--keywin") { return 77 }
         guard let i = argv.firstIndex(of: "--keywin"), i + 1 < argv.count,
               let pid = pid_t(argv[i + 1]) else {
             print("用法：--keywin <pid>")

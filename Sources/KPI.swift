@@ -74,7 +74,12 @@ enum KPI {
             inDomain += 1
             if kind == "click-hit" { inHit += 1 }
         }
-        if inDomain > 0 {
+        if inDomain > 0 && inDomain < 5 {
+            let rate = Double(inHit) / Double(inDomain) * 100
+            print(String(format: "--- 点击命中率：样本不足（%d 次，命中 %d 次 = %.1f%%），本次不判定 ---",
+                         inDomain, inHit, rate))
+            print("  判据：同一 App 且屏幕上有线 ≥5 次样本才评；跨 App \(crossApp) 次、无线 \(emptyLine) 次已排除")
+        } else if inDomain >= 5 {
             let rate = Double(inHit) / Double(inDomain) * 100
             print(String(format: "--- 点击命中率（只在「同一个 App、且屏幕上有线」时统计）---"))
             print(String(format: "  同一 App 且有线：%d 次，命中 %d 次 = %.1f%%", inDomain, inHit, rate))

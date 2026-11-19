@@ -105,6 +105,7 @@ enum MailProbe {
 
     @MainActor
     static func run(_ argv: [String]) async -> Bool {
+        if ScreenLock.bailIfLocked("--probe-mail") { exit(77) }
         var outPath = NSHomeDirectory() + "/dev/EnglishWriter/qa/evidence/mail-probe.json"
         if let i = argv.firstIndex(of: "--out"), i + 1 < argv.count { outPath = argv[i + 1] }
         // 别名：--json <path>（有人手滑把它当目录名用，会建出 "--json/" 这种垃圾目录）

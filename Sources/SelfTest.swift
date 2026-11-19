@@ -43,7 +43,10 @@ enum SelfTest {
     }
 
     static func run(_ argv: [String]) -> Int32 {
-        let wantAll = !argv.contains("--glossary") && !argv.contains("--cjk") && !argv.contains("--faults") && !argv.contains("--live")
+        // 只要指定了任何一个分组开关，就只跑那一组（--privacy 不该顺手把全组跑一遍）
+        let groupFlags = ["--privacy", "--style", "--ui", "--webui", "--score", "--lang",
+                          "--diffhl", "--m3", "--settings", "--glossary", "--cjk", "--faults", "--live"]
+        let wantAll = !argv.contains { groupFlags.contains($0) }
         print("=== 英文写作助手 selftest ===")
 
         if wantAll || argv.contains("--cjk") { cjkTests() }

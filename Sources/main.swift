@@ -135,7 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 常驻输入感知（M2）：AXObserver + 800ms 去抖；无授权时静默降级
         // CLI 验收/探针模式只做它自己的事：绝不装全局点击监听，否则会和常驻实例抢点击
         let cliFlagsInApp = ["--realshot", "--axdump", "--axprobe", "--axcheck", "--axwatch",
-                             "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome"]
+                             "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome",
+                             "--demo-offscreen"]   // 离屏试用窗口：不许装全局监听，免得和常驻实例抢点击
         let isProbeMode = ProcessInfo.processInfo.arguments.contains { cliFlagsInApp.contains($0) }
         if ProcessInfo.processInfo.environment["EW_NO_INLINE"] != "1", !isProbeMode {
             if EnginePrefs.ltEnabled() {
@@ -276,7 +277,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - entry
 
 let argv = CommandLine.arguments
-if argv.contains("--selftest") {
+// --privacy / --style / --ui / --webui 等分组开关也必须能单独跑，
+// 否则它们掉进常驻模式被单实例锁 exit 0，验收通道等于断的（知澜 11-19 实锤）
+if argv.contains("--selftest") || argv.contains("--privacy") || argv.contains("--style")
+    || argv.contains("--ui") || argv.contains("--webui") || argv.contains("--score")
+    || argv.contains("--lang") || argv.contains("--diffhl") || argv.contains("--m3") || argv.contains("--settings") {
     exit(SelfTest.run(argv))
 }
 

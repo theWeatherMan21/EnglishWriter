@@ -446,18 +446,20 @@ final class HoverCoordinator {
         let frontSource = "cgwindow"
         var nearest = Double.greatestFiniteMagnitude
         var nearestRect = CGRect.null
+        var nearestItem = -1
+        var ndx: CGFloat = 0, ndy: CGFloat = 0      // 相对最近线的分解距离（区分「点了别行」和「整体偏移」）
         for sp in specs {
             let dx = max(sp.rect.minX - mouseQuartz.x, 0, mouseQuartz.x - sp.rect.maxX)
             let dy = max(sp.rect.minY - mouseQuartz.y, 0, mouseQuartz.y - sp.rect.maxY)
             let d = (dx * dx + dy * dy).squareRoot()
-            if d < nearest { nearest = d; nearestRect = sp.rect }
+            if d < nearest { nearest = d; nearestRect = sp.rect; ndx = dx; ndy = dy; nearestItem = sp.itemID }
         }
         let diag = String(
-            format: "x=%.1f y=%.1f | owner=%@(%d) front=%@(%d) src=%@ | nearest=%.1f rect=[%.0f,%.0f,%.0f,%.0f]",
+            format: "x=%.1f y=%.1f | owner=%@(%d) front=%@(%d) src=%@ | nearest=%.1f dx=%.1f dy=%.1f item=%d rect=[%.0f,%.0f,%.0f,%.0f]",
             mouseQuartz.x, mouseQuartz.y,
             appName(ownerPid) as NSString, ownerPid,
             appName(frontPid) as NSString, frontPid, frontSource as NSString,
-            nearest == .greatestFiniteMagnitude ? -1 : nearest,
+            nearest == .greatestFiniteMagnitude ? -1 : nearest, ndx, ndy, nearestItem,
             nearestRect.isNull ? 0 : nearestRect.minX, nearestRect.isNull ? 0 : nearestRect.minY,
             nearestRect.isNull ? 0 : nearestRect.width, nearestRect.isNull ? 0 : nearestRect.height)
         CheckLog.append(.init(kind: hit == nil ? "click-miss" : "click-hit",

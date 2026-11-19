@@ -52,6 +52,7 @@ enum AXCheck {
 
     @MainActor
     static func run(_ argv: [String]) async {
+        if ScreenLock.bailIfLocked("--axcheck") { exit(77) }
         var st = Status()
         st.timestamp = ISO8601DateFormatter().string(from: Date())
 
@@ -266,6 +267,7 @@ enum AXCheck {
 
     @MainActor
     static func acceptRun(_ argv: [String]) async {
+        if ScreenLock.bailIfLocked("--axaccept") { exit(77) }
         var st = AcceptStatus()
         st.timestamp = ISO8601DateFormatter().string(from: Date())
         let outDir = value(argv, "--axaccept") ?? (NSHomeDirectory() + "/dev/EnglishWriter/out")

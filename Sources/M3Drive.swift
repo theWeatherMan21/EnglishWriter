@@ -22,6 +22,8 @@ enum M3Drive {
     /// 一次完整链路；out != nil 时把行级日志落盘
     @discardableResult
     static func run(out: String? = nil, verbose: Bool = true) -> Result {
+        if ScreenLock.bailIfLocked("--m3-drive") { return M3Drive.Result(pass: 0, fail: 0) }
+
         var r = Result()
         let t0 = Date()
         func stamp() -> String {
