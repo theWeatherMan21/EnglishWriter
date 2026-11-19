@@ -141,6 +141,8 @@ enum LocalEngine {
     @discardableResult
     static func idleExitIfNeeded() -> Bool {
         guard let pid = runningPID() else { return false }
+        // lastUsed 还是「从未用过」时不能当闲置：外面/自举刚起的 JVM 会被 30s 巡检秒杀（真机踩过）
+        if lastUsed == .distantPast { lastUsed = Date(); return false }
         let idle = Date().timeIntervalSince(lastUsed)
         guard idle >= idleLimit else { return false }
         kill(pid, SIGTERM)
@@ -173,6 +175,7 @@ enum LocalEngine {
             let (_, resp) = try await URLSession.shared.data(for: req)
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             lastProbe = (ok, Date())
+            if ok { touch() }     // 探活成功就算「刚用过」，否则看门狗把刚落地的 JVM 当闲置秒杀
             return ok
         } catch {
             lastProbe = (false, Date())
