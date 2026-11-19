@@ -63,6 +63,13 @@ enum LocalGrammar {
         // ── 重复词（the the / to to）──
         .init(id: "g-doubled-word", pattern: "\\b([A-Za-z]{2,})\\s+\\1\\b",
               template: "$1", reason: "重复词：同一个词连写两次"),
+
+        // ── 业务邮件高频错误（11-19 质量回归抓到的：本地只覆盖 40%）──
+        // advise us the schedule → advise us of the schedule
+        .init(id: "g-advise-of", pattern: "\\b(advise|inform|notify)\\s+(us|me|them|him|her)\\s+(the|your|our|this|that)\\b",
+              template: "$1 $2 of $3", reason: "动词缺介词：advise/inform/notify sb **of** sth"),
+        // 说明：单数主语 + have、look forward to + 原形、will + Ving 三种需要变形，
+        // 写成下面的代码分支（模板做不了），规则表里不重复登记。
     ]
 
     private static let compiled: [(GrammarRule, NSRegularExpression)] = rules.compactMap { r in
@@ -80,6 +87,56 @@ enum LocalGrammar {
         "kept": "keep", "left": "leave", "held": "hold", "met": "meet", "paid": "pay",
         "ran": "run", "sat": "sit", "stood": "stand", "understood": "understand",
         "won": "win", "drove": "drive", "gave": "give", "chose": "choose", "ate": "eat",
+    ]
+
+    /// have/has + 原形 → 过去分词（have send → have sent）
+    private static let baseToParticiple: [String: String] = [
+        "send": "sent", "go": "gone", "do": "done", "see": "seen", "write": "written",
+        "speak": "spoken", "break": "broken", "choose": "chosen", "drive": "driven",
+        "eat": "eaten", "give": "given", "know": "known", "take": "taken", "be": "been",
+        "begin": "begun", "forget": "forgotten", "grow": "grown", "show": "shown",
+    ]
+
+    /// be + 原形 → 过去分词（was load → was loaded）：这批是货物/单证动词的规则变化
+    private static let beToParticiple: [String: String] = [
+        "load": "loaded", "ship": "shipped", "pack": "packed", "book": "booked",
+        "deliver": "delivered", "receive": "received", "confirm": "confirmed",
+        "inspect": "inspected", "discharge": "discharged", "release": "released",
+        "issue": "issued", "dispatch": "dispatched", "arrange": "arranged",
+    ]
+
+    private static let haveBaseRE = try! NSRegularExpression(
+        pattern: "\\b(have|has|had)\\s+([A-Za-z]+)\\b", options: [.caseInsensitive])
+    private static let beBaseRE = try! NSRegularExpression(
+        pattern: "\\b(was|were|is|are|been)\\s+([A-Za-z]+)\\b", options: [.caseInsensitive])
+
+    private static let modalIngRE = try! NSRegularExpression(
+        pattern: "\\b(will|would|shall|should|can|could|may|might|must)\\s+([A-Za-z]+ing)\\b",
+        options: [.caseInsensitive])
+    private static let lookForwardRE = try! NSRegularExpression(
+        pattern: "\\b(look(?:ing)?\\s+forward\\s+to)\\s+(hear|receive|meet|see|work|talk|discuss)\\b",
+        options: [.caseInsensitive])
+    private static let singularNounHaveRE = try! NSRegularExpression(
+        pattern: "\\b(shipment|cargo|vessel|invoice|payment|order|container|document|report|booking|schedule)\\s+have\\b",
+        options: [.caseInsensitive])
+
+    /// Ving → 原形（shipping → ship：去掉 ing，处理双写辅音）
+    private static func baseFromIng(_ w: String) -> String {
+        let l = w.lowercased()
+        guard l.hasSuffix("ing"), l.count > 4 else { return l }
+        var stem = String(l.dropLast(3))
+        let chars = Array(stem)
+        if chars.count >= 2, chars[chars.count - 1] == chars[chars.count - 2],
+           "bdgklmnprt".contains(chars[chars.count - 1]) {
+            stem = String(stem.dropLast())
+        }
+        return stem
+    }
+
+    /// 原形 → 动名词
+    private static let gerund: [String: String] = [
+        "hear": "hearing", "receive": "receiving", "meet": "meeting",
+        "see": "seeing", "work": "working", "talk": "talking", "discuss": "discussing",
     ]
 
     private static let modalPastRE = try! NSRegularExpression(
@@ -127,6 +184,75 @@ enum LocalGrammar {
                                 original: original, replacement: replacement,
                                 type: "grammar",
                                 reason: "语法：情态动词后接动词原形（\(lower) → \(base)）"))
+        }
+
+        // have/has + 原形 → 过去分词（have send → have sent）
+        for m in haveBaseRE.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let r = m.range
+            if !includeGuarded, guarded.contains(where: { NSIntersectionRange($0, r).length > 0 }) { continue }
+            let verb = ns.substring(with: m.range(at: 2))
+            guard let pp = baseToParticiple[verb.lowercased()] else { continue }
+            let aux = ns.substring(with: m.range(at: 1))
+            out.append(DiffItem(start: r.location, length: r.length,
+                                original: ns.substring(with: r),
+                                replacement: "\(aux) \(preserveCase(pp, like: verb))",
+                                type: "grammar",
+                                reason: "语法：完成时用过去分词（have \(verb.lowercased()) → have \(pp)）"))
+        }
+
+        // be + 原形 → 过去分词（was load → was loaded）
+        for m in beBaseRE.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let r = m.range
+            if !includeGuarded, guarded.contains(where: { NSIntersectionRange($0, r).length > 0 }) { continue }
+            let verb = ns.substring(with: m.range(at: 2))
+            guard let pp = beToParticiple[verb.lowercased()] else { continue }
+            let be = ns.substring(with: m.range(at: 1))
+            out.append(DiffItem(start: r.location, length: r.length,
+                                original: ns.substring(with: r),
+                                replacement: "\(be) \(preserveCase(pp, like: verb))",
+                                type: "grammar",
+                                reason: "语法：被动语态用过去分词（was \(verb.lowercased()) → was \(pp)）"))
+        }
+
+        // will + Ving → will + 原形（will shipping → will ship）
+        for m in modalIngRE.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let r = m.range
+            if !includeGuarded, guarded.contains(where: { NSIntersectionRange($0, r).length > 0 }) { continue }
+            let ing = ns.substring(with: m.range(at: 2))
+            let modal = ns.substring(with: m.range(at: 1))
+            let base = baseFromIng(ing)
+            guard base.count >= 2, base != ing.lowercased() else { continue }
+            out.append(DiffItem(start: r.location, length: r.length,
+                                original: ns.substring(with: r),
+                                replacement: "\(modal) \(preserveCase(base, like: ing))",
+                                type: "grammar",
+                                reason: "语法：情态动词后接动词原形（\(ing.lowercased()) → \(base)）"))
+        }
+
+        // look forward to hear → to hearing
+        for m in lookForwardRE.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let r = m.range
+            if !includeGuarded, guarded.contains(where: { NSIntersectionRange($0, r).length > 0 }) { continue }
+            let lead = ns.substring(with: m.range(at: 1))
+            let verb = ns.substring(with: m.range(at: 2))
+            guard let g = gerund[verb.lowercased()] else { continue }
+            out.append(DiffItem(start: r.location, length: r.length,
+                                original: ns.substring(with: r),
+                                replacement: "\(lead) \(preserveCase(g, like: verb))",
+                                type: "grammar",
+                                reason: "语法：look forward to 后接动名词（to \(verb.lowercased()) → to \(g)）"))
+        }
+
+        // 单数主语 + have → has
+        for m in singularNounHaveRE.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let r = m.range
+            if !includeGuarded, guarded.contains(where: { NSIntersectionRange($0, r).length > 0 }) { continue }
+            let noun = ns.substring(with: m.range(at: 1))
+            out.append(DiffItem(start: r.location, length: r.length,
+                                original: ns.substring(with: r),
+                                replacement: "\(noun) has",
+                                type: "grammar",
+                                reason: "主谓一致：单数主语 \(noun.lowercased()) 配 has"))
         }
 
         return DiffSanitize.consolidate(out, in: text)

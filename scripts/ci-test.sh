@@ -19,6 +19,8 @@ echo "== 本地规则：清晰度/风格 + 语法兜底（含反例，防误报�
 EW_OUT="$PWD/out" "$BIN" --selftest --style || { echo "本地规则断言失败"; exit 1; }
 # Mail 块路径离屏验收（不碰真实 Mail）：建议>0、每条反查得到块、矩形在窗口内、同词去重、上限 20
 "$BIN" --mail-selftest || { echo "Mail 块路径验收失败"; exit 1; }
+# 业务英文质量回归：真实航运邮件的错例召回 ≥80%，正确句零误报
+"$BIN" --quality || { echo "业务英文质量回归失败"; exit 1; }
 
 echo "== 设置面板截图（离屏合成，用户配置零接触）=="
 "$BIN" --settings-snapshot "$PWD/qa/evidence/settings-panel.png" \
