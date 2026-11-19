@@ -1,0 +1,112 @@
+name: Release
+
+# 打 tag（v0.3.0 这类）触发：跑一遍不依赖本地引擎的自测 → 构建 .app → 打包 zip → 附到 Release。
+# CI runner 上没有开发者证书，产物用 ad-hoc 签名（SIGN_ID="-"），未公证；
+# 用户首次打开需在系统设置里「仍要打开」，升级后可能要在辅助功能里重新勾一次。
+# 想要「重编译不丢授权」的用户应自己用固定证书编译，见 README「签名」一节。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（X.Y.Z），手动触发时用"
+        required: true
+        default: "0.3.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swiftc --version
+
+      - name: Selftest gate（不依赖本地引擎）
+        run: bash scripts/ci-test.sh
+
+      - name: Resolve version
+        id: ver
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # 输入经 env 传入，先按 X.Y.Z 校验再使用（防注入）
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            V="$INPUT_VERSION"
+          else
+            V="${REF_NAME#v}"
+          fi
+          printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "版本号必须是 X.Y.Z"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "V=$V"
+
+      - name: Build app（ad-hoc signed）
+        env:
+          SIGN_ID: "-"
+          RELEASE_VERSION: ${{ steps.ver.outputs.version }}
+        run: bash scripts/build.sh
+
+      - name: Verify signature + smoke
+        run: |
+          APP="build/英文写作助手.app"
+          codesign --verify --deep --strict "$APP"
+          codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "Identifier=|Signature=|TeamIdentifier=" || true
+          ./build/英文写作助手 --selftest --m3 --settings
+          ./build/英文写作助手 --demo-selfcheck
+
+      - name: Package zip
+        id: pkg
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          mkdir -p dist
+          ZIP="dist/EnglishWriter-${V}-macos.zip"
+          ditto -c -k --keepParent "build/英文写作助手.app" "$ZIP"
+          shasum -a 256 "$ZIP" | tee "dist/SHA256SUMS.txt"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.version }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+        run: |
+          TAG="v$V"
+          NOTES="$(cat <<'EOF'
+          macOS 版英文写作助手（Grammarly 开源替代）。
+
+          ## 安装
+          1. 下载 `EnglishWriter-<版本>-macos.zip`，解压。
+          2. 把 `英文写作助手.app` 拖进 `/Applications`。
+          3. 首次打开被 Gatekeeper 拦：系统设置 → 隐私与安全性 → 「仍要打开」，
+             或 `xattr -dr com.apple.quarantine /Applications/英文写作助手.app`。
+          4. 系统设置 → 隐私与安全性 → 辅助功能 → 勾上「英文写作助手」。
+
+          ## 签名方式
+          本产物由 GitHub Actions 在 macOS runner 上构建，**ad-hoc 签名**（`codesign -s -`），未公证、无开发者 ID。
+          因为签名标识每次构建都不同，**升级后可能需要在辅助功能里重新勾选一次**。
+
+          想要「重编译不丢 TCC 授权」，用固定证书自己编译：
+
+          ```bash
+          git clone https://github.com/theWeatherMan21/EnglishWriter.git
+          cd EnglishWriter
+          SIGN_ID="SOALedger Dev" bash scripts/build.sh   # 换成你机器上任意稳定证书
+          ```
+
+          同一证书重复编译，辅助功能授权不会丢；换证书或改 bundle id 才需要重新勾。
+
+          ## 隐私
+          默认只用本机 LanguageTool + 系统拼写词典，文本不出本机；只有你自己在设置里填齐
+          base URL / API key / model 三件套，才会把当前句发给你填的那个接口。
+          EOF
+          )"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            && gh release upload "$TAG" "$ZIP" dist/SHA256SUMS.txt --clobber \
+            || gh release create "$TAG" "$ZIP" dist/SHA256SUMS.txt \
+                 --title "EnglishWriter $V" --notes "$NOTES" --verify-tag
