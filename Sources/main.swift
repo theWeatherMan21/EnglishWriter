@@ -282,7 +282,7 @@ let argv = CommandLine.arguments
 if argv.contains("--selftest") || argv.contains("--privacy") || argv.contains("--style")
     || argv.contains("--ui") || argv.contains("--score")
     || argv.contains("--lang") || argv.contains("--diffhl") || argv.contains("--m3") || argv.contains("--settings")
-    || argv.contains("--clickdiag") {
+    || argv.contains("--clickdiag") || argv.contains("--rewrite-selftest") {
     exit(SelfTest.run(argv))
 }
 

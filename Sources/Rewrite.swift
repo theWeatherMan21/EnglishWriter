@@ -135,6 +135,30 @@ enum Rewrite {
                 edits[i].replacement = rep
             }
             edits.removeAll { $0.replacement == $0.original }
+            // 硬校验（知澜 11-19 提的）：original 必须是原文对应位置的精确子串，
+            // 否则会拼出 "send usus the…" 这种碎片（模型给的 span 边界错了）。
+            let segNS = segment as NSString
+            var relocated: [DiffItem] = []
+            for var e in edits {
+                guard e.length > 0 else { continue }
+                if e.start + e.length <= segNS.length {
+                    let slice = segNS.substring(with: NSRange(location: e.start, length: e.length))
+                    if slice == e.original || slice.lowercased() == e.original.lowercased() {
+                        relocated.append(e); continue
+                    }
+                }
+                // 边界错了就按原文重新定位（±60 字符内找 original），找不到才丢
+                let window0 = max(0, e.start - 60), window1 = min(segNS.length, e.start + e.length + 60)
+                let found = segNS.range(of: e.original,
+                                        options: [.caseInsensitive],
+                                        range: NSRange(location: window0, length: window1 - window0))
+                if found.location != NSNotFound {
+                    e.start = found.location
+                    e.length = found.length
+                    relocated.append(e)
+                }
+            }
+            edits = relocated
             let cleaned = DiffSanitize.clean(edits, in: segment)
             guard !cleaned.isEmpty else { continue }
             let label = (c.label?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
@@ -148,7 +172,9 @@ enum Rewrite {
             guard cand.isMeaningful(for: segment) else { continue }   // 没改动的不算候选
             out.append(cand)
         }
-        return out
+        // 同一 appliedText 只留第一条（去重下沉到 parse，调用方不用再各自处理）
+        var seenOut = Set<String>()
+        return out.filter { seenOut.insert($0.appliedText(to: segment)).inserted }
     }
 
 

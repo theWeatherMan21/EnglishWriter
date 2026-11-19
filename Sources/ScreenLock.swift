@@ -28,6 +28,14 @@ enum ScreenLock {
         return true
     }
 
+    /// 挂观察者 / 发 attach-app 的门控（纯函数，可断言）。
+    /// 11-19 发现：emit 在 isLocked 判断之前就发出了，夜里仍会写 attach-app loginwindow。
+    static func shouldAttach(locked: Bool, appName: String) -> Bool {
+        if locked { return false }
+        if appName == "loginwindow" { return false }
+        return true
+    }
+
     /// 探针入口统一调用：锁屏就返回 true（调用方应打印 SKIP 并 exit(77)）
     static func bailIfLocked(_ probe: String) -> Bool {
         guard isLocked else { return false }

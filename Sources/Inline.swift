@@ -733,6 +733,8 @@ final class InlineController {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
         self.observer = observer
         observedPid = pid
+        // 门控放在 emit 之前：锁屏 / 登录窗连事件都不发（否则夜里照样写 attach-app loginwindow）
+        guard ScreenLock.shouldAttach(locked: ScreenLock.isLocked, appName: appName(pid)) else { return }
         emit(CheckEvent(kind: "attach-app", pid: pid, app: appName(pid), role: "-", textLen: 0, sentenceLen: 0,
                         itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
         attachElementObserver(pid: pid)

@@ -44,6 +44,7 @@ enum SelfTest {
 
     static func run(_ argv: [String]) -> Int32 {
         if argv.contains("--clickdiag") { return clickDiagTests() }
+        if argv.contains("--rewrite-selftest") { return rewriteSelftest() }
         // 只要指定了任何一个分组开关，就只跑那一组（--privacy 不该顺手把全组跑一遍）
         let groupFlags = ["--privacy", "--style", "--ui", "--webui", "--score", "--lang",
                           "--diffhl", "--m3", "--settings", "--glossary", "--cjk", "--faults", "--live"]
@@ -2141,5 +2142,76 @@ extension SelfTest {
             if got == want { SelfTest.ok("lock: " + name, got ? "轮询" : "跳过") }
             else { SelfTest.bad("lock: " + name, "期望 \(want) 实际 \(got)") }
         }
+
+        // attach-app 的真实发射点门控（不是只测 shouldPoll）
+        let attachCases: [(String, Bool, String, Bool)] = [
+            ("锁屏 → 不发 attach-app",       true,  "Mail", false),
+            ("loginwindow → 不发 attach-app", false, "loginwindow", false),
+            ("未锁正常 App → 发 attach-app",   false, "Mail", true),
+        ]
+        for (name, locked, app, want) in attachCases {
+            let got = ScreenLock.shouldAttach(locked: locked, appName: app)
+            if got == want { SelfTest.ok("attach: " + name, got ? "发" : "不发") }
+            else { SelfTest.bad("attach: " + name, "期望 \(want) 实际 \(got)") }
+        }
+    }
+}
+
+// MARK: - 改写纯函数断言（不联网，覆盖 parse / acceptCandidate / 去重 / 应用顺序）
+extension SelfTest {
+    static func rewriteSelftest() -> Int32 {
+        let seg = "Please kindly advise us the schedule."   // "advise us" 后面是空格
+
+        // 1) 正常替换：边界空格处理正确，不许粘成 provideus
+        let ok1 = Rewrite.parse(#"{"candidates":[{"label":"更正式","edits":[{"start":14,"length":9,"original":"advise us","replacement":"provide us","type":"style","reason":"更正式"}]}]}"#, segment: seg)
+        if let c = ok1.first, c.appliedText(to: seg).contains("provide us"),
+           !c.appliedText(to: seg).contains("provideus") {
+            SelfTest.ok("rewrite: 边界空格正确（provide us）", c.appliedText(to: seg))
+        } else { SelfTest.bad("rewrite: 边界空格", "\(ok1.map { $0.appliedText(to: seg) })") }
+
+        // 2) span 边界错（original 不是原文子串）→ 丢弃，不产出碎片
+        let bad = Rewrite.parse(#"{"candidates":[{"label":"更清晰","edits":[{"start":14,"length":4,"original":"usus","replacement":"us","type":"style","reason":"x"}]}]}"#, segment: seg)
+        if bad.isEmpty {
+            SelfTest.ok("rewrite: 错位 span 被丢弃", "0 条")
+        } else { SelfTest.bad("rewrite: 错位 span", "\(bad.map { $0.appliedText(to: seg) })") }
+
+        // 3) 双空格候选必须被判不合格
+        let dbl = RewriteCandidate(label: "更简洁",
+                                   items: [DiffItem(start: 0, length: 6, original: "Please", replacement: "Please  ", type: "style", reason: "x")])
+        if !Rewrite.acceptCandidate(dbl, segment: seg) {
+            SelfTest.ok("rewrite: 双空格候选被拒", "false")
+        } else { SelfTest.bad("rewrite: 双空格候选", "被放过") }
+
+        // 4) 同一条重复给两次 → 去重只剩 1（parse 内部按 appliedText 去重）
+        let dupJSON = #"{"candidates":[{"label":"更简洁","edits":[{"start":14,"length":9,"original":"advise us","replacement":"inform us","type":"style","reason":"x"}]},{"label":"更正式","edits":[{"start":14,"length":9,"original":"advise us","replacement":"inform us","type":"style","reason":"y"}]}]}"#
+        let dup = Rewrite.parse(dupJSON, segment: seg)
+        if dup.count == 1 { SelfTest.ok("rewrite: 重复候选去重", "1 条") }
+        else { SelfTest.bad("rewrite: 去重", "\(dup.count) 条") }
+
+        // 5) 缺 label → 兜底非空
+        let noLabel = Rewrite.parse(#"{"candidates":[{"edits":[{"start":14,"length":9,"original":"advise us","replacement":"inform us","type":"style","reason":"x"}]}]}"#, segment: seg)
+        if let c = noLabel.first, !c.label.isEmpty { SelfTest.ok("rewrite: 缺 label 有兜底", c.label) }
+        else { SelfTest.bad("rewrite: label 兜底", "空") }
+
+        // 6) 两处替换、后一条偏移更靠前：应用顺序不能串
+        let items = [DiffItem(start: 28, length: 8, original: "schedule", replacement: "plan", type: "style", reason: "x"),
+                     DiffItem(start: 14, length: 9, original: "advise us", replacement: "inform us", type: "style", reason: "y")]
+        let applied = RewriteCandidate(label: "t", items: items).appliedText(to: seg)
+        if applied.contains("inform us") && applied.contains(" plan") && !applied.contains("schedule") {
+            SelfTest.ok("rewrite: 多编辑应用顺序", applied)
+        } else { SelfTest.bad("rewrite: 应用顺序", applied) }
+
+        // 7) acceptCandidate 对「与原文相同」的候选返回 false
+        let same = RewriteCandidate(label: "x", items: [])
+        if !Rewrite.acceptCandidate(same, segment: seg) { SelfTest.ok("rewrite: 空候选被拒", "false") }
+        else { SelfTest.bad("rewrite: 空候选", "被放过") }
+
+        // 8) 机械断言：savegrade 时 appliedText 不含双空格
+        if let c = ok1.first, !c.appliedText(to: seg).contains("  ") {
+            SelfTest.ok("rewrite: 结果无双空格", "ok")
+        } else { SelfTest.bad("rewrite: 结果双空格", "有") }
+
+        print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
+        return fail == 0 ? 0 : 1
     }
 }
