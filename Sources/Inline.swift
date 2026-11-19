@@ -37,6 +37,27 @@ func appName(_ pid: pid_t) -> String {
 
 enum AXInline {
     /// 焦点文本框里的全文
+    /// 可编辑元素判定（爹地 11-19 P0：只检查可编辑区域，只读正文一个字都不许碰）
+    /// 命中任一即算可编辑：
+    ///   · role ∈ AXTextArea / AXTextField / AXComboBox
+    ///   · kAXEditableAttribute == true
+    /// 其余（AXStaticText / 只读 AXWebArea / 列表行 / 说明文字）一律不是
+    static func isEditable(_ el: AXUIElement) -> Bool {
+        var roleRaw: CFTypeRef?
+        var role = ""
+        if AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRaw) == .success,
+           let r = roleRaw as? String { role = r }
+
+        var editRaw: CFTypeRef?
+        var editable = false
+        if AXUIElementCopyAttributeValue(el, "AXEditable" as CFString, &editRaw) == .success,
+           let b = editRaw as? Bool { editable = b }
+        if editable { return true }
+        return role == kAXTextAreaRole as String
+            || role == kAXTextFieldRole as String
+            || role == kAXComboBoxRole as String
+    }
+
     static func fullText(of el: AXUIElement) -> String? {
         if let v = attrString(el, kAXValueAttribute as String), !v.isEmpty { return v }
         // Web 输入框常见：value 在子节点上
@@ -411,7 +432,7 @@ final class InlineController {
     @MainActor
     func rewriteContext() -> (element: AXUIElement, pid: pid_t, full: String, sel: NSRange)? {
         let pid = lastFocusPid
-        guard pid > 0, let el = AXInline.focusedElement(pid: pid) ?? AXInline.biggestTextArea(pid: pid),
+        guard pid > 0, let el = AXInline.focusedElement(pid: pid),
               let full = AXInline.fullText(of: el) else { return nil }
         let sel = AXInline.selectedRange(el) ?? currentSentenceRange
         let ns = full as NSString
@@ -488,7 +509,7 @@ final class InlineController {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.enabled, self.lastFocusPid > 0 else { return }
-                guard let el = AXInline.focusedElement(pid: self.lastFocusPid) ?? AXInline.biggestTextArea(pid: self.lastFocusPid) else { return }
+                guard let el = AXInline.focusedElement(pid: self.lastFocusPid) else { return }
                 // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
                 let t: String?
                 if WebText.isWebBody(el) {
@@ -687,10 +708,8 @@ final class InlineController {
                 emit(CheckEvent(kind: "attach-web", pid: pid, app: appName(pid), role: role,
                                 textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                                 elapsed: "-", err: "焦点不可读 → 改挂前台窗口正文", at: Date()))
-            } else if let better = AXInline.biggestTextArea(pid: pid) {
-                cand = better
-                role = attrString(better, kAXRoleAttribute as String) ?? ""
             }
+            // 不再回落到「窗口里最大的 AXTextArea」：那是在猜，猜中的永远是正文段落（爹地 11-19）
         }
         guard let el = cand else {
             emit(CheckEvent(kind: "attach-el-fail", pid: pid, app: appName(pid), role: "-", textLen: 0,
@@ -779,15 +798,23 @@ final class InlineController {
         } else {
             diag.lastError = "没有焦点文本框"; return
         }
-        var full = AXInline.fullText(of: el)
-        if full == nil {
-            // 焦点落在窗口/工具栏上时读到空：改取该 App 前台窗口里最大的可读 AXTextArea，别白丢这次检查
-            if let alt = AXInline.biggestTextArea(pid: pid), let f2 = AXInline.fullText(of: alt) {
-                el = alt
-                full = f2
-                diag.fallbackTextArea += 1
-            }
+        // P0 硬门槛：只读文本一个字都不读、一条线都不画。
+        // 唯一例外：Mail 的邮件正文（宿主是 Mail 且元素是 AXWebArea）。
+        // 浏览器宿主已在上游 skip-browser；这里管的是其它 App 的只读正文（PDF / 预览 / 面板说明）。
+        let isMailBody = WebText.isWebBody(el) && appName(pid) == "Mail"
+        let hasEditableWebField = WebText.isWebBody(el) && AXInline.textField(in: el) != nil
+        if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
+                                   isWebBody: WebText.isWebBody(el),
+                                   isMailBody: isMailBody,
+                                   hasEditableWebField: hasEditableWebField) {
+            emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: "-",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "只读文本，不检查", at: Date()))
+            overlay.clear(); items = []; blocks = []; itemBlock = []
+            diag.lastError = "只读文本，跳过"
+            return
         }
+        var full = AXInline.fullText(of: el)
         // WebKit 正文（Mail 写信 / 网页）：焦点元素是 WebArea 外层、AXValue 恒空 →
         // 必须在 no-text 判定之前接前台窗口正文，否则「读不到文本框内容」，一个字都不查。
         if !WebText.isWebBody(el), full == nil || (full?.isEmpty ?? true),
@@ -1389,5 +1416,20 @@ final class InlineController {
         for (i, it) in items.enumerated() {
             print("  edit#\(i) \(it.kind.rawValue) 「\(it.original)」→「\(it.replacement)」 @\(it.start)+\(it.length)")
         }
+    }
+}
+
+// MARK: - 只检查可编辑区域（爹地 11-19 P0）
+
+/// 进检查前的硬门槛。纯函数，便于断言。
+/// 规则：可编辑元素才检查；只读正文唯一例外是 Mail 的邮件正文；
+/// 网页里存在可编辑输入控件时也放行（随后会切到那个控件）。
+enum InlineGate {
+    static func shouldCheck(editable: Bool, isWebBody: Bool, isMailBody: Bool,
+                            hasEditableWebField: Bool) -> Bool {
+        if editable { return true }
+        if isWebBody && isMailBody { return true }
+        if isWebBody && hasEditableWebField { return true }
+        return false
     }
 }

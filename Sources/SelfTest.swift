@@ -59,7 +59,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1845,5 +1845,25 @@ extension SelfTest {
         let none = UnderlineSpec.alive([stale], now: now, ttl: 2.0)
         if none.isEmpty { SelfTest.ok("stale: 全过期则清空", "0") }
         else { SelfTest.bad("stale: 清空", "\(none.count)") }
+    }
+}
+
+// MARK: 只读文本不检查（P0 门槛）
+extension SelfTest {
+    static func editableGateTests() {
+        let cases: [(String, Bool, Bool, Bool, Bool, Bool)] = [
+            ("原生输入框可编辑 → 查",        true,  false, false, false, true),
+            ("只读正文（PDF/预览/面板）→ 不查", false, false, false, false, false),
+            ("Mail 邮件正文（只读但例外）→ 查", false, true,  true,  false, true),
+            ("网页里有可编辑控件 → 查",       false, true,  false, true,  true),
+            ("非 Mail 的网页正文 → 不查",     false, true,  false, false, false),
+            ("可编辑元素即使不是 web → 查",   true,  false, false, false, true),
+        ]
+        for (name, editable, web, mail, field, want) in cases {
+            let got = InlineGate.shouldCheck(editable: editable, isWebBody: web,
+                                             isMailBody: mail, hasEditableWebField: field)
+            if got == want { SelfTest.ok("gate: " + name, got ? "查" : "跳过") }
+            else { SelfTest.bad("gate: " + name, "期望 \(want) 实际 \(got)") }
+        }
     }
 }

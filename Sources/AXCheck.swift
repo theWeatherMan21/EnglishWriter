@@ -105,7 +105,10 @@ enum AXCheck {
                 finish(8)
             }
             let tmp = NSTemporaryDirectory() + "ew-axcheck-\(getpid()).rtf"
-            try? "".write(toFile: tmp, atomically: true, encoding: .utf8)
+            // 必须是**合法 RTF**：空文件会让 TextEdit 弹「打开文稿」选择器（0 documents、1 dialog window），
+            // body() 就找不到任何 AXTextArea —— macOS 27 实测，这就是「窗口数=1 却没有正文」的根因。
+            let rtf = "{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Helvetica;}}\\f0\\fs24 }"
+            try? rtf.write(toFile: tmp, atomically: true, encoding: .utf8)
             spawnedTemp = tmp
             guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else {
                 st.reason = "找不到 \(bundle) 的安装位置"
@@ -128,8 +131,9 @@ enum AXCheck {
                 finish(8)
             }
             st.notes.append("【--spawn】爹地已批准：临时空白文档（\(a.processIdentifier)），跑完杀进程、删临时文件")
-            // 爹地口径：开完立刻最小化，后台操作
-            if let win = windows(a.processIdentifier).first { setMinimized(win, true) }
+            // 注意：这里**不能**先最小化再找正文 —— 最小化后窗口 AXFrame 会退化成 0，
+            // body(minArea: 4000) 找不到任何 AXTextArea（macOS 27 TextEdit 实测：
+            // 一最小化就 FAIL「没有可写的 AXTextArea（窗口数=1）」）。最小化放到找到正文之后。
         }
         guard let app = target else {
             st.reason = "目标 \(bundle) 未运行"
@@ -139,11 +143,12 @@ enum AXCheck {
         st.pid = app.processIdentifier
         if spawnedTemp == nil { st.notes.append("未激活、未新建窗口、未发键击、未截屏") }
 
-        // 2) 找一个可写的正文容器（最大的 AXTextArea）
+        // 2) 找一个可写的正文容器（最大的 AXTextArea）—— 先找，再最小化
         guard let found = body(pid: st.pid, minArea: 4000) else {
             st.reason = "目标没有可写的 AXTextArea（窗口数=\(windowCount(st.pid))）"
             finish(5)
         }
+        if spawnedTemp != nil, let w = found.window ?? windows(st.pid).first { setMinimized(w, true) }
         let el = found.element
         st.bodyRole = attrString(el, kAXRoleAttribute as String) ?? "?"
         st.bodyRectQuartz = rects(frameOf(el))
@@ -286,7 +291,10 @@ enum AXCheck {
         if target == nil {
             guard spawn else { st.reason = "目标 \(bundle) 未运行"; finish(8) }
             let tmp = NSTemporaryDirectory() + "ew-axaccept-\(getpid()).rtf"
-            try? "".write(toFile: tmp, atomically: true, encoding: .utf8)
+            // 必须是**合法 RTF**：空文件会让 TextEdit 弹「打开文稿」选择器（0 documents、1 dialog window），
+            // body() 就找不到任何 AXTextArea —— macOS 27 实测，这就是「窗口数=1 却没有正文」的根因。
+            let rtf = "{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Helvetica;}}\\f0\\fs24 }"
+            try? rtf.write(toFile: tmp, atomically: true, encoding: .utf8)
             temp = tmp
             guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else {
                 st.reason = "找不到 \(bundle)"; finish(8)
