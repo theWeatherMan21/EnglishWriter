@@ -41,4 +41,9 @@ else
     echo "（本机未安装，跳过；CI 机器不装 App 属正常）"
 fi
 
+# 断言会写 qa/evidence/*.json（运行产物）。收尾把已跟踪的证据文件恢复到 HEAD，
+# 免得每跑一次测试就多出一个「刷新证据」的提交（知澜 11-19 指出的流程噪音）。
+# 真要把新证据入库：跑完自己 git add qa/evidence/<file>。
+git checkout -- qa/evidence 2>/dev/null || true
+
 echo "全部通过"
