@@ -65,6 +65,7 @@ struct UnderlineSpec: Equatable {
 // MARK: - 画布
 
 final class UnderlineCanvas: NSView {
+    var flashRect: CGRect? { didSet { needsDisplay = true } }
     var specs: [UnderlineSpec] = [] {
         didSet { needsDisplay = true }
     }
@@ -72,8 +73,12 @@ final class UnderlineCanvas: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard !specs.isEmpty else { return }
         NSGraphicsContext.current?.shouldAntialias = true
+        if let f = flashRect {
+            NSColor.systemYellow.withAlphaComponent(0.35).setFill()
+            NSBezierPath(roundedRect: f, xRadius: 3, yRadius: 3).fill()
+        }
+        guard !specs.isEmpty else { return }
         for spec in specs { UnderlinePainter.stroke(spec.rect, spec.kind) }
     }
 }
@@ -122,6 +127,8 @@ enum UnderlinePainter {
 final class UnderlineOverlay: NSPanel {
     private let canvas = UnderlineCanvas()
     private(set) var specs: [UnderlineSpec] = []
+    /// 定位闪示：点侧栏某条 → 对应词黄底 2 秒（Grammarly 那一环）
+    private var flash: CGRect?
 
     /// 静默模式：只算 specs、绝不上屏（A 层真机验收用 —— 屏幕上不许出现任何像素）
     /// 默认 false，生产行为不变；清空时自动复位。
@@ -157,13 +164,16 @@ final class UnderlineOverlay: NSPanel {
     func render(_ specs: [UnderlineSpec]) {
         guard !specs.isEmpty else { clear(); return }
         self.specs = specs
-        let box = ScreenGeom.union(specs.map(\.rect)).insetBy(dx: -6, dy: -6)
+        var all = specs.map(\.rect)
+        if let f = flash { all.append(f) }
+        let box = ScreenGeom.union(all).insetBy(dx: -6, dy: -6)
         let appKit = ScreenGeom.toAppKit(box)
         setFrame(appKit, display: false)
         canvas.specs = specs.map {
             UnderlineSpec(rect: $0.rect.offsetBy(dx: -box.minX, dy: -box.minY),
                           kind: $0.kind, itemID: $0.itemID)
         }
+        canvas.flashRect = flash?.offsetBy(dx: -box.minX, dy: -box.minY)
         canvas.needsDisplay = true
         if !silent && !Self.globallySilent {
             Audit.show()
@@ -171,7 +181,20 @@ final class UnderlineOverlay: NSPanel {
         }
     }
 
+    /// 闪示一个位置：黄底 2 秒后自动消失（不改宿主文本、不抢焦点）
+    func flash(_ rect: CGRect) {
+        guard !silent, !Self.globallySilent else { return }
+        flash = rect.insetBy(dx: -2, dy: -2)
+        render(specs)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            self.flash = nil
+            self.render(self.specs)
+        }
+    }
+
     func clear() {
+        flash = nil
         specs = []
         canvas.specs = []
         orderOut(nil)

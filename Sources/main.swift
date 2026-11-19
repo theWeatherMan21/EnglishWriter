@@ -92,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Rewrite.isAvailable() {
             menu.addItem(NSMenuItem(title: "改写选中段落…", action: #selector(rewriteAction), keyEquivalent: ""))
         }
+        menu.addItem(NSMenuItem(title: "建议侧栏…", action: #selector(sidebarAction), keyEquivalent: "s"))
         menu.addItem(NSMenuItem(title: "清掉下划线", action: #selector(clearAction), keyEquivalent: ""))
         menu.addItem(.separator())
         // 面向用户：点一下就能看见整套效果（不依赖 Mail/Word 能不能读文本）
@@ -172,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func checkNowAction() { InlineController.shared.checkNow() }
     @MainActor @objc private func demoLiveAction() { DemoLive.shared.show() }
     @MainActor @objc private func goalsAction() { GoalsWindow.shared.show() }
+    @MainActor @objc private func sidebarAction() { InlineController.shared.showSidebar() }
 
     /// 改写选中段落：选中才亮（没选区就提示），模型没配时菜单项根本不出现
     @MainActor @objc private func rewriteAction() {

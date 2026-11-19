@@ -371,6 +371,73 @@ final class InlineController {
         }
     }
 
+    /// 打开建议侧栏（当前输入框的这批建议；外部 App 的侧栏入口）
+    func showSidebar() {
+        guard !items.isEmpty else { return }
+        let score = Scorer.score(text: lastText, items: items, formality: GoalsStore.load().formality)
+        let sb = Sidebar.shared
+        sb.onAccept = { [weak self] it in
+            guard let self, let id = self.items.firstIndex(where: { $0.start == it.start && $0.length == it.length })
+            else { return }
+            _ = self.accept(itemID: id)
+        }
+        sb.onDismiss = { [weak self] it in
+            Task { @MainActor in
+                guard let self else { return }
+                self.dropItem(start: it.start, length: it.length)
+            }
+        }
+        sb.onJump = { [weak self] it in
+            Task { @MainActor in
+                guard let self,
+                      let id = self.items.firstIndex(where: { $0.start == it.start && $0.length == it.length })
+                else { return }
+                self.focusItem(id: id)
+            }
+        }
+        sb.present(items: items, score: score, at: nil)
+    }
+
+    /// 忽略一条：只去掉这条线与卡片，不改宿主文本
+    func dropItem(start: Int, length: Int) {
+        // 先按 itemID 摘掉对应的线，再从列表移除（避免移除后 index 全体位移）
+        let removedIDs = Set(items.indices.filter { (i: Int) -> Bool in
+            items[i].start == start && items[i].length == length
+        })
+        let keep = overlay.specs.filter { (sp: UnderlineSpec) -> Bool in !removedIDs.contains(sp.itemID) }
+        items.removeAll(where: { (it: DiffItem) -> Bool in it.start == start && it.length == length })
+        overlay.render(keep)
+    }
+
+    /// 侧栏「定位」：把宿主光标挪到该条并闪示（不改文本、不抢输入焦点）
+    func focusItem(id: Int) {
+        guard items.indices.contains(id) else { return }
+        let it = items[id]
+        if let el = currentElement {
+            // 原生文本框：直接设选区块
+            func setRange(_ e: AXUIElement, _ loc: Int, _ len: Int) {
+                var r = CFRange(location: loc, length: len)
+                if let v = AXValueCreate(.cfRange, &r) {
+                    AXUIElementSetAttributeValue(e, kAXSelectedTextRangeAttribute as CFString, v)
+                }
+            }
+            if AXInline.selectedRange(el) != nil {
+                setRange(el, it.start, it.length)
+            } else if itemBlock.indices.contains(id), blocks.indices.contains(itemBlock[id]) {
+                // Web 正文：把块内偏移折算到该块的 AX range
+                var local = it.start
+                for b in blocks where b.element !== blocks[itemBlock[id]].element {
+                    local -= (b.text as NSString).length
+                }
+                let block = blocks[itemBlock[id]]
+                setRange(block.element, max(0, local), it.length)
+            }
+        }
+        if let spec = overlay.specs.first(where: { $0.itemID == id }) {
+            overlay.flash(spec.rect)
+        }
+    }
+
     /// 被动/验收模式用：onCheck 装好之后再补挂一次前台 App
     /// （start() 早于 onCheck 赋值，否则「启动时前台已是你正在打字的 App」这类情况会一条事件都不发）
     func reattachFrontmost() {

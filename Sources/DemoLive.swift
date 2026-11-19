@@ -139,15 +139,34 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             Task { @MainActor in self?.removePaint(for: it) }
         }
         sb.onJump = { [weak self] it in
-            Task { @MainActor in
-                guard let self else { return }
-                let r = NSRange(location: it.start, length: it.length)
-                self.textView.setSelectedRange(r)
-                self.textView.scrollRangeToVisible(r)
-                self.window?.makeKeyAndOrderFront(nil)
-            }
+            Task { @MainActor in self?.focusItem(it) }
         }
         sb.present(items: items, score: lastScore, at: nil)
+    }
+
+    /// 正文联动：黄底高亮 2 秒 + 滚动到可见 + 把窗口提到前面（Grammarly 点一下就能定位的那一环）
+    @MainActor
+    func focusItem(_ it: DiffItem) {
+        let r = NSRange(location: it.start, length: it.length)
+        guard let storage = textView.textStorage, NSMaxRange(r) <= storage.length else { return }
+        window?.makeKeyAndOrderFront(nil)
+        textView.setSelectedRange(r)
+        textView.scrollRangeToVisible(r)
+        textView.showFindIndicator(for: r)      // 系统自带的黄色闪示，2 秒自动消失，不污染文本属性
+
+        // 再补一层我们自己的黄底，保证在深色/浅色主题下都看得见；2 秒后撤掉并重画下划线
+        storage.beginEditing()
+        storage.addAttribute(.backgroundColor, value: NSColor.systemYellow.withAlphaComponent(0.35), range: r)
+        storage.endEditing()
+        let flashSec = ProcessInfo.processInfo.environment["EW_FLASH_SEC"].flatMap { Double($0) } ?? 2
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(flashSec * 1_000_000_000))
+            guard NSMaxRange(r) <= storage.length else { return }
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: r)
+            storage.endEditing()
+            self.paint(self.items)
+        }
     }
 
     @MainActor
@@ -244,6 +263,11 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.lastScore = Scorer.score(text: text, items: items, formality: GoalsStore.load().formality)
             self.lastScoreText = text
             let langSkipped = res.skippedCJK + counter.langSkipped
+            if ProcessInfo.processInfo.arguments.contains("--jump-demo"), !self.didAutoOpenSidebar, !items.isEmpty {
+                self.didAutoOpenSidebar = true
+                self.openSidebar()
+                self.focusItem(items[0])
+            }
             if ProcessInfo.processInfo.arguments.contains("--deep"), !self.didAutoOpenSidebar {
                 self.didAutoOpenSidebar = true
                 self.deepCheck()
