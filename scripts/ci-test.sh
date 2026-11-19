@@ -36,6 +36,29 @@ echo "== 行内几何断言（真 NSTextView + AX 交叉校验）=="
 echo "== WebView UI（离屏断言，无窗口）=="
 "$BIN" --webui || { echo "WebView UI 断言失败"; exit 1; }
 
+echo "== 隐私 / 门控断言（--privacy）=="
+"$BIN" --privacy || { echo "privacy 断言失败"; exit 1; }
+
+echo "== 改写纯函数（--rewrite-selftest：边界空格 / 错位 span / 去重 / WordDiff 往返）=="
+"$BIN" --rewrite-selftest || { echo "改写纯函数断言失败"; exit 1; }
+
+echo "== 接受/撤销闭环 + 忽略词典（--acceptflow）=="
+"$BIN" --acceptflow || { echo "写回闭环断言失败"; exit 1; }
+
+echo "== 点击几何诊断（--clickdiag）=="
+"$BIN" --clickdiag || { echo "点击几何断言失败"; exit 1; }
+
+echo "== 业务英文深度回归（--quality --deep：召回 100% + 正确句零误报）=="
+"$BIN" --quality --deep || { echo "deep 质量回归失败"; exit 1; }
+
+echo "== KPI（画线率 / 点击命中 / 日志完整性；只报不拦）=="
+"$BIN" --kpi | tail -3 || true
+
+if [ "${EW_WITH_LIVE:-0}" = "1" ]; then
+    echo "== 真模型（--live-rewrite 5 句 × 3 轮 / --live-tone）=="
+    "$BIN" --live-rewrite || { echo "真模型改写失败"; exit 1; }
+fi
+
 echo "== 装机版 vs 仓库 build（旧则拦，别让爹地点到旧二进制）=="
 if [ -x "/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" ]; then
     bash scripts/install-check.sh || { echo "装机版落后仓库 build：先 bash scripts/install.sh"; exit 1; }

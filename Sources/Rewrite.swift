@@ -139,6 +139,8 @@ enum Rewrite {
             for i in edits.indices {
                 var rep = edits[i].replacement
                 let start = edits[i].start, len = edits[i].length
+                // 越界的 span 不要碰 character(at:)：start=9999 会直接抛 NSRangeException
+                guard start >= 0, start <= seg.length, len >= 0, start + len <= seg.length else { continue }
                 let prevIsSpace = start == 0 || seg.character(at: start - 1) == 32
                 let nextIsSpace = start + len >= seg.length || seg.character(at: start + len) == 32
                 if prevIsSpace, rep.hasPrefix(" ") { rep.removeFirst() }
@@ -159,7 +161,11 @@ enum Rewrite {
                     }
                 }
                 // 边界错了就按原文重新定位（±60 字符内找 original），找不到才丢
-                let window0 = max(0, e.start - 60), window1 = min(segNS.length, e.start + e.length + 60)
+                // 边界要夹死：start 可能是 9999 这种越界值，直接算 window 会得到负长度 → NSRange 崩
+                let anchor = max(0, min(e.start, segNS.length))
+                let window0 = max(0, anchor - 60)
+                let window1 = min(segNS.length, anchor + max(0, e.length) + 60)
+                guard window1 > window0 else { continue }
                 let found = segNS.range(of: e.original,
                                         options: [.caseInsensitive],
                                         range: NSRange(location: window0, length: window1 - window0))
