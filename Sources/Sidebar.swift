@@ -208,6 +208,16 @@ final class Sidebar: NSPanel {
 
     private func render() {
         bigScore.stringValue = "\(score.overall)"
+        let band = score.overall >= 80 ? "良好" : (score.overall >= 50 ? "需注意" : "需改进")
+        contentView?.viewWithTag(991)?.removeFromSuperview()
+        let caption = NSTextField(labelWithString: "总评分 · \(band)")
+        caption.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+        caption.textColor = tone(score.overall)
+        caption.alignment = .center
+        caption.tag = 991
+        let hh = contentView?.frame.height ?? 520
+        caption.frame = NSRect(x: 12, y: hh - 118, width: 96, height: 14)
+        contentView?.addSubview(caption)
         ring.value = Double(score.overall) / 100.0
         ring.needsDisplay = true
 
@@ -264,12 +274,35 @@ final class Sidebar: NSPanel {
             let group = live.filter { $0.type == t }
             guard !group.isEmpty else { continue }
             let gap = NSView()
-            gap.heightAnchor.constraint(equalToConstant: t == order.first ? 2 : 10).isActive = true
+            gap.heightAnchor.constraint(equalToConstant: t == order.first ? 2 : 12).isActive = true
             listStack.addArrangedSubview(gap)
-            let h = NSTextField(labelWithString: "\(titles[t] ?? t)（\(group.count)）")
-            h.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            h.textColor = .secondaryLabelColor
-            listStack.addArrangedSubview(h)
+            if t != order.first {
+                let line = NSView()
+                line.wantsLayer = true
+                line.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+                line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+                line.widthAnchor.constraint(equalToConstant: width - 40).isActive = true
+                listStack.addArrangedSubview(line)
+                let g2 = NSView(); g2.heightAnchor.constraint(equalToConstant: 6).isActive = true
+                listStack.addArrangedSubview(g2)
+            }
+            let head = NSStackView()
+            head.orientation = .horizontal
+            head.spacing = 6
+            let dot = NSView()
+            dot.wantsLayer = true
+            dot.layer?.cornerRadius = 3
+            dot.layer?.backgroundColor = color(for: t).cgColor
+            dot.widthAnchor.constraint(equalToConstant: 6).isActive = true
+            dot.heightAnchor.constraint(equalToConstant: 6).isActive = true
+            let h = NSTextField(labelWithString: titles[t] ?? t)
+            h.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            h.textColor = .labelColor
+            let c = NSTextField(labelWithString: "\(group.count)")
+            c.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+            c.textColor = .secondaryLabelColor
+            head.addArrangedSubview(dot); head.addArrangedSubview(h); head.addArrangedSubview(c)
+            listStack.addArrangedSubview(head)
             for it in group { listStack.addArrangedSubview(rowView(for: it)) }
             let spacer = NSView()
             spacer.heightAnchor.constraint(equalToConstant: 4).isActive = true
@@ -284,6 +317,7 @@ final class Sidebar: NSPanel {
         row.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         row.wantsLayer = true
         row.layer?.cornerRadius = 8
+        row.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.03).cgColor
 
         let dot = NSView()
         dot.wantsLayer = true
@@ -311,12 +345,14 @@ final class Sidebar: NSPanel {
         acceptBtn.bezelStyle = .rounded
         acceptBtn.controlSize = .small
         acceptBtn.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        acceptBtn.contentTintColor = .controlAccentColor
         acceptBtn.tag = it.start
 
         let dismissBtn = NSButton(title: "忽略", target: self, action: #selector(dismissRow(_:)))
-        dismissBtn.bezelStyle = .rounded
+        dismissBtn.bezelStyle = .inline
         dismissBtn.controlSize = .small
         dismissBtn.font = NSFont.systemFont(ofSize: 11)
+        dismissBtn.contentTintColor = .secondaryLabelColor
         dismissBtn.tag = it.start
 
         for b in [jumpBtn, acceptBtn, dismissBtn] { b.identifier = NSUserInterfaceItemIdentifier("\(it.start)") }
@@ -324,13 +360,14 @@ final class Sidebar: NSPanel {
         row.addArrangedSubview(jumpBtn); row.addArrangedSubview(acceptBtn); row.addArrangedSubview(dismissBtn)
 
         // 理由（模型给的 reason 直接显示，没有就按类型给一句人话）
-        let reasonText = it.reason.isEmpty ? defaultReason(it.type) : it.reason
+        var reasonText = it.reason.isEmpty ? defaultReason(it.type) : it.reason
+        if reasonText.contains(it.original) && reasonText.contains(it.replacement) { reasonText = "" }
         let reason = NSTextField(wrappingLabelWithString: reasonText)
         reason.font = NSFont.systemFont(ofSize: 10)
         reason.textColor = .tertiaryLabelColor
         reason.preferredMaxLayoutWidth = 300
         reason.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        let col = NSStackView(views: [row, reason])
+        let col = NSStackView(views: reasonText.isEmpty ? [row] : [row, reason])
         col.orientation = .vertical
         col.alignment = .leading
         col.spacing = 1
