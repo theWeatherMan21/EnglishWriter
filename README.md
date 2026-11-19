@@ -205,3 +205,22 @@ bash scripts/passive-selfcheck.sh
 - **常驻检查日志**：`~/Library/Application Support/EnglishWriter/check-log.jsonl`
   每次 attach / skip-cjk / no-text / check / render 落一行（app、role、文本长度、命中数、矩形数、耗时、错误）。
   用户报「打了没反应」时先读它——里面能看出是没挂上元素、读到 0 字、还是中文被跳过。单文件超 5MB 自动轮转。
+
+### 排障：App 看起来「卡住、点什么都没反应」
+
+第一件事不是猜，是**枚举它的 AX 窗口**：
+
+```
+osascript -e 'tell application "System Events" to tell process "英文写作助手" to get {name, count of windows}'
+```
+
+- 正常：0 个窗口（菜单栏常驻 App，不开窗时就是 0），或 1 个「试用」窗口
+- **异常：只剩 `AXSystemDialog`、没有 `AXWindow`** → 主窗口已经被系统对话框吞掉或已销毁，
+  浮动球还在飘但所有点击都落空。这种状态修不如重启：`kill` 后重新 `open -a`，别在原地调。
+- 读不到任何窗口且 `pgrep` 为空 → 进程已退（多半是被安装脚本或探针收尾带走），重启即可。
+
+判断「点了没反应」的完整顺序：
+1. `pgrep -f "Selfmade/英文写作助手"` —— 进程在不在
+2. AX 窗口枚举 —— 主窗口还在不在（本条）
+3. `tail check-log.jsonl` —— 有没有 `demo-check` / `click-hit` / `click-miss`，
+   以及 miss 的 `rectCount` 是 0（本来没有线）还是 >0（坐标换算问题）
