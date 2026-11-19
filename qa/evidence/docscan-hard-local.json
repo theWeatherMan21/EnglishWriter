@@ -1,0 +1,44 @@
+{
+  "chars" : 105,
+  "edits" : 4,
+  "elapsedMs" : 20,
+  "engine" : "spell+rules",
+  "file" : "\/tmp\/hard.txt",
+  "items" : [
+    {
+      "length" : 2,
+      "original" : "is",
+      "reason" : "主谓一致：There is + 复数 → There are",
+      "replacement" : "are",
+      "start" : 6,
+      "type" : "grammar"
+    },
+    {
+      "length" : 11,
+      "original" : "should sent",
+      "reason" : "语法：情态动词后接动词原形（sent → send）",
+      "replacement" : "should send",
+      "start" : 29,
+      "type" : "grammar"
+    },
+    {
+      "length" : 6,
+      "original" : "We was",
+      "reason" : "主谓一致：we\/they\/you 配 were",
+      "replacement" : "We were",
+      "start" : 60,
+      "type" : "grammar"
+    },
+    {
+      "length" : 7,
+      "original" : "recieve",
+      "reason" : "拼写：recieve → receive（系统词典）",
+      "replacement" : "receive",
+      "start" : 77,
+      "type" : "spelling"
+    }
+  ],
+  "modelItems" : 0,
+  "sentences" : 3,
+  "skippedCJK" : 0
+}

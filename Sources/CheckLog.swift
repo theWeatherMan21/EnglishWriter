@@ -26,7 +26,7 @@ struct CheckLog {
             "kind": e.kind, "pid": Int(e.pid), "app": e.app, "role": e.role,
             "textLen": e.textLen, "sentenceLen": e.sentenceLen,
             "itemCount": e.itemCount, "rectCount": e.rectCount,
-            "elapsed": e.elapsed, "err": e.err,
+            "elapsed": e.elapsed, "err": e.err, "path": e.path,
         ]
         let key = "\(e.kind)|\(e.app)|\(e.role)|\(e.textLen)|\(e.itemCount)|\(e.rectCount)|\(e.err)"
         if key == lastKey, Date().timeIntervalSince(lastAt) < 60 { return }

@@ -262,13 +262,17 @@ final class InlineController {
         var elapsed: String
         var err: String
         var at: Date
+        /// 走的那条读取通道：value / statictext(块N) / none（区分「压根没走文本块」和「走了但块为 0」）
+        var path: String = "-"
     }
     /// 外部注册的观察者（--passive 用）。默认 nil = 零开销。
     var onCheck: ((CheckEvent) -> Void)?
 
     private func emit(_ e: CheckEvent) {
-        onCheck?(e)
-        CheckLog.append(e)      // 常驻落盘：爹地「打了没反应」时，我能拿事实说话
+        var ev = e
+        if ev.path == "-" { ev.path = diag.lastPath }
+        onCheck?(ev)
+        CheckLog.append(ev)     // 常驻落盘：爹地「打了没反应」时，我能拿事实说话
     }
 
     struct InlineDiag: CustomStringConvertible {
