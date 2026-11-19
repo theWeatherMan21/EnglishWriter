@@ -520,8 +520,8 @@ final class InlineController {
                                          app: appName(self.lastFocusPid),
                                          role: attrString(el, kAXRoleAttribute as String) ?? "",
                                          textLen: (joined as NSString).length, sentenceLen: 0,
-                                         itemCount: blks.count, rectCount: 0,
-                                         elapsed: "-", err: "-", at: Date()))
+                                         itemCount: 0, rectCount: 0,
+                                         elapsed: "-", err: "blocks=\(blks.count)", at: Date()))
                     t = joined.isEmpty ? nil : joined
                 } else {
                     t = AXInline.fullText(of: el)
@@ -1004,7 +1004,9 @@ final class InlineController {
     /// App 主动退让，绝不两套同时在一个宿主上画线（11-19 定的架构）。
     private static let browserBundleIDs: Set<String> = [
         "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
-        "org.chromium.Chromium", "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+        "org.chromium.Chromium",
+        // Safari 不在名单里：我们还没有 Safari 扩展（Safari 只认 .appex，Chrome 的 MV3 装不进去）。
+        // 爹地日常用 Safari 最多，所以这条路由 App 自己画；有 Safari 扩展之后再移交。
         "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser",
         "com.operasoftware.Opera", "com.vivaldi.Vivaldi", "org.mozilla.firefox",
     ]
@@ -1328,8 +1330,12 @@ final class InlineController {
             return
         }
         var specs: [UnderlineSpec] = []
+        // AXBoundsForRange 给不出矩形时（自家窗口 / 非 key 窗口实测会这样），
+        // 退回元素自身 frame —— 有矩形可画，好过「有建议、零条线」
+        let elFrame = elementRectQuartz(el)
         for (idx, it) in cleaned.enumerated() {
-            let rects = AXInline.lineRects(for: it.utf16Range, in: el)
+            var rects = AXInline.lineRects(for: it.utf16Range, in: el)
+            if rects.isEmpty, elFrame.width > 0, elFrame.height > 0 { rects = [elFrame] }
             for r in rects {
                 specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: idx))
             }

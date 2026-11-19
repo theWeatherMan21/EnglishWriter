@@ -276,6 +276,11 @@ if argv.contains("--mail-selftest") {
     exit(MailSelfTest.run(argv))
 }
 
+// 画线率 KPI（rectCount / 有建议次数），按 App 汇总 check-log
+if argv.contains("--kpi") {
+    exit(KPI.run(argv))
+}
+
 // M3 链路驱动（离线、不建窗口）：命中 → 弹出 → 接受 → 撤销 → 忽略，行级日志
 if argv.contains("--m3-drive") {
     let i = argv.firstIndex(of: "--m3-drive")!
