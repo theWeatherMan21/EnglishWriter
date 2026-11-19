@@ -2122,6 +2122,22 @@ extension SelfTest {
         if e.item == -1 && e.rect.isNull { SelfTest.ok("clickdiag: 空表返回空", "item=-1") }
         else { SelfTest.bad("clickdiag: 空表", "\(e)") }
 
+        // 9) WordDiff 往返：edits 应用后必须等于目标文本（否则「修好的句子」会被 diff 弄坏）
+        let pairs = [
+            ("Please kindly advise us the vessel schedule.", "Please kindly advise us of the vessel schedule."),
+            ("We was late because there is many problems.", "We were late because there were many problems."),
+            ("I have send the report immediatly.", "I have sent the report immediately."),
+        ]
+        var rtOK = 0
+        for (a, b) in pairs {
+            let items = WordDiff.edits(original: a, rewritten: b)
+            let back = applyEdits(items, to: a)
+            if back == b { rtOK += 1 }
+            else { print("  ROUNDTRIP FAIL: \(back)  ≠  \(b)") }
+        }
+        if rtOK == pairs.count { SelfTest.ok("worddiff: 往返一致", "\(rtOK)/\(pairs.count)") }
+        else { SelfTest.bad("worddiff: 往返", "\(rtOK)/\(pairs.count)") }
+
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
     }
@@ -2210,6 +2226,22 @@ extension SelfTest {
         if let c = ok1.first, !c.appliedText(to: seg).contains("  ") {
             SelfTest.ok("rewrite: 结果无双空格", "ok")
         } else { SelfTest.bad("rewrite: 结果双空格", "有") }
+
+        // 9) WordDiff 往返：edits 应用后必须等于目标文本（否则「修好的句子」会被 diff 弄坏）
+        let pairs = [
+            ("Please kindly advise us the vessel schedule.", "Please kindly advise us of the vessel schedule."),
+            ("We was late because there is many problems.", "We were late because there were many problems."),
+            ("I have send the report immediatly.", "I have sent the report immediately."),
+        ]
+        var rtOK = 0
+        for (a, b) in pairs {
+            let items = WordDiff.edits(original: a, rewritten: b)
+            let back = applyEdits(items, to: a)
+            if back == b { rtOK += 1 }
+            else { print("  ROUNDTRIP FAIL: \(back)  ≠  \(b)") }
+        }
+        if rtOK == pairs.count { SelfTest.ok("worddiff: 往返一致", "\(rtOK)/\(pairs.count)") }
+        else { SelfTest.bad("worddiff: 往返", "\(rtOK)/\(pairs.count)") }
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1

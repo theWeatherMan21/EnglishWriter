@@ -45,21 +45,18 @@ enum Rewrite {
         You rewrite ONE selected passage for a Chinese shipping-logistics professional.
         Return ONLY JSON, no fence, no prose:
         {"candidates":[{"label":"<\(labels.joined(separator: "|"))>","note":"<一句话中文说明>",
-          "edits":[{"start":<UTF-16 offset in the PASSAGE>,"length":<UTF-16 length>,
-                   "original":"<exact substring>","replacement":"<new substring>",
-                   "type":"spelling|grammar|clarity|style","reason":"<中文理由，≤20字>"}]}]}
+          "text":"<改写后的完整段落>"}]}
 
         Rules:
         1. Produce exactly \(labels.count) candidates, one per label, in this order: \(labels.joined(separator: ", ")).
-        2. Every candidate MUST be expressed as per-span edits against the ORIGINAL passage.
-           Never return the whole passage as one edit.
+        2. "text" MUST be the COMPLETE rewritten passage (the whole input), not a fragment.
+           Do NOT output offsets or spans — the app computes the diff itself.
         3. Keep meaning, facts, numbers and industry terms unchanged: \(terms)
         4. Do not translate. Do not add sentences. Only rewrite what the label asks for.
-        5. start/length are UTF-16 offsets in the ORIGINAL passage (counted from 0).
-        6. Keep "reason" under 20 Chinese characters — the response gets truncated otherwise.
-        7. NEVER delete words or drop information: replacement must read as a complete, grammatical sentence.
-        8. Do not introduce new errors: no repeated words ("the the"), no double spaces, no dangling prepositions.
-        9. If a candidate would be identical to the original or to another candidate, choose a different wording instead.
+        5. Every candidate must be a grammatical sentence: never delete words, never repeat a word
+           (no "the the"), no double spaces.
+        6. Keep "note" under 20 Chinese characters.
+        7. Each label must give a DIFFERENT wording from the others.
         """
     }
 
@@ -120,6 +117,20 @@ enum Rewrite {
         var out: [RewriteCandidate] = []
         for (i, c) in raw.enumerated() {
             // 只接受逐条 diff：整段文本整段替换的候选一律丢（违反口径 1）
+            // 首选：模型只给整句 → 本地算 diff（原文字串天然合法，不会出现越界/碎片）
+            if let raw = c.text?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                // 先修一类可自动纠正的碎句：advise/inform/notify us the X → … us of the X
+                // （模型常把 "advise us the schedule" 原样留下或改成缺介词的形式）
+                let text = raw.replacingOccurrences(
+                    of: #"\b(advise|inform|notify)\s+(us|me|them|him|her)\s+(the|your|our|this|that)\b"#,
+                    with: "$1 $2 of $3", options: [.regularExpression, .caseInsensitive])
+                let items = WordDiff.edits(original: segment, rewritten: text)
+                guard !items.isEmpty else { continue }
+                let label = (c.label?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+                    ?? (i < defaultLabels.count ? defaultLabels[i] : "版本 \(i + 1)")
+                out.append(RewriteCandidate(label: label, items: items, note: c.note ?? ""))
+                continue
+            }
             guard var edits = c.edits, !edits.isEmpty else { continue }
             // 边界空格清理：模型把 "kindly advise us the" 改成 " advise us of the" 时，
             // 接上去会变成双空格（11-19 实测 6 条候选全因此被拒）。这里直接修，不丢候选。
@@ -172,6 +183,18 @@ enum Rewrite {
             guard cand.isMeaningful(for: segment) else { continue }   // 没改动的不算候选
             out.append(cand)
         }
+        // 集中修一次：无论候选来自 text 还是 edits，都把「advise us the」补成「advise us of the」，
+        // 再用 WordDiff 重建 edits（原文字串天然合法）
+        out = out.map { c in
+            let applied = c.appliedText(to: segment)
+            let fixed = applied.replacingOccurrences(
+                of: #"\b(advise|inform|notify)\s+(us|me|them|him|her)\s+(the|your|our|this|that)\b"#,
+                with: "$1 $2 of $3", options: [.regularExpression, .caseInsensitive])
+            guard fixed != applied else { return c }
+            let items = WordDiff.edits(original: segment, rewritten: fixed)
+            return items.isEmpty ? c : RewriteCandidate(label: c.label, items: items, note: c.note)
+        }
+
         // 同一 appliedText 只留第一条（去重下沉到 parse，调用方不用再各自处理）
         var seenOut = Set<String>()
         return out.filter { seenOut.insert($0.appliedText(to: segment)).inserted }
@@ -220,6 +243,9 @@ enum Rewrite {
         if out.range(of: #"\b(\w+) \1\b"#, options: .regularExpression) != nil { return false }  // 重复词
         let ratio = Double(out.count) / Double(max(1, segment.count))
         if ratio < 0.6 || ratio > 1.8 { return false }              // 删太多 / 加太多
+        // 缺动词的碎句：实测出现「Please let us the vessel schedule…」（let us 后面没动词）
+        if out.range(of: #"\b(let|allow|ask|tell|advise|inform|notify)\s+us\s+(the|a|an|your|our)\b"#,
+                     options: [.regularExpression, .caseInsensitive]) != nil { return false }
         return true
     }
 
