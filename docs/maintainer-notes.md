@@ -164,3 +164,44 @@ token 状态），定位它到底从哪一行返回的。查清之前不要把�
    会被下游 sanitize 丢掉，往返后等于原文。改成「把下一个原词替换成 新词+原词」。
    守住它的断言：`--rewrite-selftest` 的 `worddiff: 往返一致`。
 2. 验收脚本要能自己读设置（`SettingsStore.load()` 回落），不要逼人事先拼三个 env 变量。
+
+## 验收账本：哪些能离屏证明，哪些只能真机（11-19 夜，解锁后照这张表点）
+
+一句话：**离屏能证的都证了；剩下两条必须有人在真 App 里点几下，脚本替代不了。**
+
+### A. 离屏可证（`bash scripts/ci-test.sh` 一条命令，EXIT=0 才算过）
+
+| 能力 | 命令 | 现有断言 |
+|---|---|---|
+| 门控 / 护栏 / diff 契约 / M3 卡片 | `--selftest --m3 --settings` | 45 |
+| 本地规则清晰度/风格 + 语法兜底 | `--selftest --style` | 64 |
+| Mail 块路径（离屏同构） | `--mail-selftest` | 6 |
+| WebView 侧栏 / 卡片 UI | `--webui` | 16 |
+| 隐私 / 锁屏门控 / attach 发射点 | `--privacy` | 74 |
+| 改写纯函数（含 WordDiff 往返 / 越界 span） | `--rewrite-selftest` | 9 |
+| 接受→撤销→词典（含原生读回不符判失败） | `--acceptflow` | 11 |
+| 点击几何（dy/dx/最近一条/空表） | `--clickdiag` | 7 |
+| 业务英文质量 | `--quality --deep` | 召回 100%（10/10）、正确句零误报 8 句 |
+| 真模型改写 5 句 × 3 轮 | `EW_WITH_LIVE=1` + `--live-rewrite` | 5/5 · 5/5 · ~4.2s |
+| 视觉基线（改 CSS 必看） | `--pngdiff` vs `qa/baseline/` | 阈值 0.1%，超了留差异图 |
+| 浏览器扩展端到端 | `scripts/ci-ext.sh`（headless） | 点线弹卡 / 键盘 / contenteditable |
+
+### B. 只有真机能证（锁屏期间一律不算证据）
+
+1. **原生行内下划线 + 点线弹卡**：`check-log.jsonl` 里要看到 `click-hit`。
+   判据：`grep -c click-hit` 增长，且那条日志 `owner=<App>(pid)` 与前台一致。
+2. **Mail 写信窗写回**：接受后正文真的变了、撤销回原文。
+   判据：`render ... itemCount>0 && rectCount>0` 出现在 `[compose]` 窗口记录里。
+
+### C. 解锁后的三步验收（爹地自己点，30 秒）
+
+1. 打开 TextEdit 写一句 `We was late because there is many problems with the booking.`
+   → 应出现下划线；点线 → 弹出卡片 → 点「接受」→ 句子变 `We were late…`
+2. Mail 新建邮件，粘同一句 → 同样出线、接受后正文变化
+3. 切到 Safari 里任意英文输入框（扩展）→ 出线、点线弹卡
+   三条都顺 = 真机闭环成立；任一条没反应，把 `~/Library/Application Support/EnglishWriter/check-log.jsonl` 最后 50 行发我，日志里 `owner/front/nearest/path` 会直接指向原因。
+
+### D. 已知不做（不是缺口）
+
+- Chrome 商店安装路径：还没打算发布，等真要上架再验。
+- 锁屏期间的点击/写回样本：环境限制，不计入质量结论。
