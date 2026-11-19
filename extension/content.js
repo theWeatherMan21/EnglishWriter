@@ -261,7 +261,8 @@
         d.style.height = r.h + 'px';
         const line = document.createElement('i');
         d.appendChild(line);
-        d.onmouseenter = () => showCard(e, d);
+        // 单击划线处 → 直接弹卡片（爹地 11-19：悬停那套是复杂化，点了才出才是他要的）
+        d.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); showCard(e, d); };
         layer.appendChild(d);
         rects.push({ ...r, type: e.type });
       });

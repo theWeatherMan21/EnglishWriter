@@ -973,7 +973,29 @@ final class InlineController {
 
     // MARK: WebKit 正文（按文本块）
 
+    /// 浏览器宿主：线由浏览器扩展自己画（DOM Range 精度比 AX 高一个数量级），
+    /// App 主动退让，绝不两套同时在一个宿主上画线（11-19 定的架构）。
+    private static let browserBundleIDs: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
+        "org.chromium.Chromium", "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+        "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser",
+        "com.operasoftware.Opera", "com.vivaldi.Vivaldi", "org.mozilla.firefox",
+    ]
+
+    private func isBrowserHost(pid: pid_t) -> Bool {
+        guard let app = NSRunningApplication(processIdentifier: pid),
+              let bid = app.bundleIdentifier else { return false }
+        return Self.browserBundleIDs.contains(bid)
+    }
+
     private func checkWeb(pid: pid_t, body: AXUIElement) {
+        if isBrowserHost(pid: pid) {
+            emit(CheckEvent(kind: "skip-browser", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "浏览器宿主：线归扩展，App 不画", at: Date()))
+            overlay.clear(); items = []; blocks = []; itemBlock = []
+            return
+        }
         let blks = WebText.blocks(of: body)
         guard !blks.isEmpty else {
             diag.lastError = "Web 正文里没有可读文本块"

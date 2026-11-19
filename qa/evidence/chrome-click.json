@@ -1,0 +1,17 @@
+{
+  "rects": 1,
+  "mode": "cdp-mouse",
+  "card": {
+    "visible": true,
+    "orig": "immediatly",
+    "rep": "immediately",
+    "buttons": [
+      "接受",
+      "忽略此类",
+      "关闭"
+    ]
+  },
+  "before": "I have send the immediatly report.",
+  "after": "I have send the immediately report.",
+  "at": "2026-11-19T16:07:28"
+}
