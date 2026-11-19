@@ -12,14 +12,22 @@ enum ScreenGeom {
         NSScreen.screens.first?.frame.maxY ?? 0
     }
 
-    /// Quartz（左上原点）→ AppKit（左下原点）
-    static func toAppKit(_ r: CGRect) -> NSRect {
-        NSRect(x: r.minX, y: topOffset - r.maxY, width: r.width, height: r.height)
+    /// Quartz（左上原点）→ AppKit（左下原点）。topOffset 可显式传入，便于离屏断言多屏/Retina 情形
+    static func toAppKit(_ r: CGRect, topOffset off: CGFloat? = nil) -> NSRect {
+        let o = off ?? topOffset
+        return NSRect(x: r.minX, y: o - r.maxY, width: r.width, height: r.height)
     }
 
     /// AppKit（左下原点）→ Quartz（左上原点）
-    static func toQuartz(_ r: NSRect) -> CGRect {
-        CGRect(x: r.minX, y: topOffset - r.maxY, width: r.width, height: r.height)
+    static func toQuartz(_ r: NSRect, topOffset off: CGFloat? = nil) -> CGRect {
+        let o = off ?? topOffset
+        return CGRect(x: r.minX, y: o - r.maxY, width: r.width, height: r.height)
+    }
+
+    /// 点也用同一套口径（点击命中只关心点，宽高恒 0）
+    static func pointToQuartz(_ p: CGPoint, topOffset off: CGFloat? = nil) -> CGPoint {
+        let o = off ?? topOffset
+        return CGPoint(x: p.x, y: o - p.y)
     }
 
     /// 覆盖窗口只覆盖一条屏幕时用它定位

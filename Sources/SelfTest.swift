@@ -59,7 +59,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1864,6 +1864,36 @@ extension SelfTest {
                                              isMailBody: mail, hasEditableWebField: field)
             if got == want { SelfTest.ok("gate: " + name, got ? "查" : "跳过") }
             else { SelfTest.bad("gate: " + name, "期望 \(want) 实际 \(got)") }
+        }
+    }
+}
+
+// MARK: 坐标换算（主屏 Retina / 主屏非 Retina / 副屏在右 / 副屏在左）
+extension SelfTest {
+    static func coordTests() {
+        // 四种布局用「主屏高度」这一个变量区分：900(Retina 主屏) / 1080 / 900+副屏右 / 副屏在上(-200)
+        let layouts: [(String, CGFloat)] = [
+            ("主屏 Retina 900", 900), ("主屏 1080", 1080),
+            ("副屏在右", 900), ("副屏在上", 1180),
+        ]
+        for (name, off) in layouts {
+            let rectQ = CGRect(x: 300, y: 200, width: 60, height: 14)
+            let appKit = ScreenGeom.toAppKit(rectQ, topOffset: off)
+            let back = ScreenGeom.toQuartz(appKit, topOffset: off)
+            if abs(back.minX - rectQ.minX) < 0.01 && abs(back.minY - rectQ.minY) < 0.01 {
+                SelfTest.ok("coord: 往返一致 · \(name)", "y=\(Int(back.minY))")
+            } else {
+                SelfTest.bad("coord: 往返 · \(name)", "\(back) vs \(rectQ)")
+            }
+            // 点：线中央 → 转成 AppKit 点 → 再转回 Quartz，必须落回矩形内且能命中
+            let centerAppKit = CGPoint(x: appKit.midX, y: appKit.midY)
+            let centerQ = ScreenGeom.pointToQuartz(centerAppKit, topOffset: off)
+            let specs = [UnderlineSpec(rect: rectQ, kind: .grammar, itemID: 7)]
+            if rectQ.contains(centerQ), HoverCoordinator.hitTest(specs, at: centerQ) != nil {
+                SelfTest.ok("coord: 点线中央必命中 · \(name)", "\(Int(centerQ.x)),\(Int(centerQ.y))")
+            } else {
+                SelfTest.bad("coord: 命中 · \(name)", "\(centerQ)")
+            }
         }
     }
 }

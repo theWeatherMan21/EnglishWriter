@@ -422,15 +422,35 @@ final class HoverCoordinator {
                                       DemoLive.shared.windowRef].compactMap { $0 }
         for w in ownWindows where w.isVisible && w.frame.contains(mouseAppKit) { return }
 
-        let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: mouseAppKit, size: .zero)).origin
+        let mouseQuartz = ScreenGeom.pointToQuartz(mouseAppKit)
         let specs = InlineController.shared.overlay.currentRects()
         let hit = HoverCoordinator.hitTest(specs, at: mouseQuartz)
+        // miss 必须能自证差在哪：点坐标（两种口径）、最近一条线、以及「谁画的线 vs 现在前台是谁」。
+        // 只有 rectCount 时，看不出是坐标偏了、还是点在别的 App 上（那是正常 miss）。
+        let ownerPid = InlineController.shared.currentPid
+        let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+        var nearest = Double.greatestFiniteMagnitude
+        var nearestRect = CGRect.null
+        for sp in specs {
+            let dx = max(sp.rect.minX - mouseQuartz.x, 0, mouseQuartz.x - sp.rect.maxX)
+            let dy = max(sp.rect.minY - mouseQuartz.y, 0, mouseQuartz.y - sp.rect.maxY)
+            let d = (dx * dx + dy * dy).squareRoot()
+            if d < nearest { nearest = d; nearestRect = sp.rect }
+        }
+        let diag = String(
+            format: "x=%.1f y=%.1f | owner=%@(%d) front=%@(%d) | nearest=%.1f rect=[%.0f,%.0f,%.0f,%.0f]",
+            mouseQuartz.x, mouseQuartz.y,
+            appName(ownerPid) as NSString, ownerPid,
+            appName(frontPid) as NSString, frontPid,
+            nearest == .greatestFiniteMagnitude ? -1 : nearest,
+            nearestRect.isNull ? 0 : nearestRect.minX, nearestRect.isNull ? 0 : nearestRect.minY,
+            nearestRect.isNull ? 0 : nearestRect.width, nearestRect.isNull ? 0 : nearestRect.height)
         CheckLog.append(.init(kind: hit == nil ? "click-miss" : "click-hit",
-                              pid: InlineController.shared.currentPid,
-                              app: appName(InlineController.shared.currentPid),
+                              pid: ownerPid,
+                              app: appName(ownerPid),
                               role: "-", textLen: 0, sentenceLen: 0,
                               itemCount: hit?.itemID ?? -1, rectCount: specs.count,
-                              elapsed: "-", err: "-", at: Date()))
+                              elapsed: "-", err: diag, at: Date()))
         guard let h = hit else { CardWeb.shared.dismiss(); return }
         open(itemID: h.itemID, rect: h.rect)
     }
@@ -443,7 +463,7 @@ final class HoverCoordinator {
         lastMoveAt = now
 
         let mouseAppKit = NSEvent.mouseLocation
-        let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: mouseAppKit, size: .zero)).origin
+        let mouseQuartz = ScreenGeom.pointToQuartz(mouseAppKit)
 
         // 落在卡片上（含旧 AppKit 卡片）→ 保持，不关也不切
         if CardWeb.shared.isVisible, CardWeb.shared.frame.contains(mouseAppKit) { return }

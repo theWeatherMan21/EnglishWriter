@@ -55,6 +55,39 @@ enum KPI {
                          r.app as NSString, r.checks, r.withItems, r.withRects, r.drawRate * 100, top))
         }
 
+        // 点击命中率：只统计「点的 App 就是画线的 App」那部分。
+        // 点在别的 App 上 miss 是正确行为（那些线不在那儿），混进来会把命中率算低。
+        var inDomain = 0, inHit = 0, crossApp = 0, emptyLine = 0
+        for line in text.split(separator: "\n") {
+            guard let d = line.data(using: .utf8),
+                  let e = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+            let kind = e["kind"] as? String ?? ""
+            guard kind == "click-hit" || kind == "click-miss" else { continue }
+            let err = e["err"] as? String ?? ""
+            let rects = e["rectCount"] as? Int ?? 0
+            // 新格式：owner=Mail(1343) front=Mail(1343)
+            let owner = err.range(of: "owner=").map { String(err[$0.upperBound...].prefix(while: { $0 != "(" })) }
+            let front = err.range(of: "front=").map { String(err[$0.upperBound...].prefix(while: { $0 != "(" })) }
+            if owner == nil || front == nil { continue }        // 旧格式没有 App 信息，无法判定
+            if rects == 0 { emptyLine += 1; continue }          // 屏幕上本来没有线，点哪儿都算 miss
+            if owner != front { crossApp += 1; continue }        // 点在别的 App 上：正常 miss
+            inDomain += 1
+            if kind == "click-hit" { inHit += 1 }
+        }
+        if inDomain > 0 {
+            let rate = Double(inHit) / Double(inDomain) * 100
+            print(String(format: "--- 点击命中率（只在「同一个 App、且屏幕上有线」时统计）---"))
+            print(String(format: "  同一 App 且有线：%d 次，命中 %d 次 = %.1f%%", inDomain, inHit, rate))
+            print("  排除：跨 App 点击 \(crossApp) 次（那些线不在这儿，正常 miss）；无线的点击 \(emptyLine) 次")
+            if rate < 95 {
+                print(String(format: "=== 点击 KPI：FAIL（目标 ≥95%%，当前 %.1f%%）===", rate))
+                return 1
+            }
+            print("=== 点击 KPI：PASS（≥95%）===")
+        } else {
+            print("--- 点击命中率：还没有带坐标的样本（新格式上线后需要真人点几次）---")
+        }
+
         // 目标：原生与浏览器宿主都 ≥ 90%
         var below: [String] = []
         for r in sorted where r.withItems >= 5 && r.drawRate < 0.9 {
