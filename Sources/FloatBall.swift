@@ -135,14 +135,25 @@ private final class BallView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let b = ball else { return }
-        let r = bounds.insetBy(dx: 1, dy: 1)
+        BallArt.draw(in: bounds, phase: b.phase, count: b.count, severity: b.severity)
+    }
 
+    override func mouseDown(with event: NSEvent) { ball?.handleLeftClick() }
+    override func rightMouseDown(with event: NSEvent) { ball?.handleRightClick() }
+}
+
+/// 球的绘制实现（唯一一份）：上屏的 BallView 与离屏快照共用，
+/// 避免「截图好看、上屏另一套」这种自欺欺人的证据。
+enum BallArt {
+
+    static func draw(in bounds: NSRect, phase: FloatBall.Phase, count n: Int, severity: UnderlineKind) {
+        let r = bounds.insetBy(dx: 1, dy: 1)
         NSColor.windowBackgroundColor.withAlphaComponent(0.96).setFill()
         NSBezierPath(ovalIn: r).fill()
 
-        switch b.phase {
+        switch phase {
         case .unknown:
-            // 空心灰环 + ?：明确表达「我不知道」，和绿点、数字环都能一眼区分
+            // 空心灰环 + ?：明确表达「我不知道」，和绿点、数字环一眼区分
             let grey = NSColor.tertiaryLabelColor
             grey.setStroke()
             let ring = NSBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
@@ -162,8 +173,7 @@ private final class BallView: NSView {
             NSBezierPath(ovalIn: r.insetBy(dx: 6, dy: 6)).fill()
 
         case .issues:
-            let n = b.count
-            let color: NSColor = b.severity.color
+            let color: NSColor = severity.color
             color.setStroke()
             let ring = NSBezierPath(ovalIn: r.insetBy(dx: 1.5, dy: 1.5))
             ring.lineWidth = 2.5
@@ -178,6 +188,40 @@ private final class BallView: NSView {
         }
     }
 
-    override func mouseDown(with event: NSEvent) { ball?.handleLeftClick() }
-    override func rightMouseDown(with event: NSEvent) { ball?.handleRightClick() }
+    /// 离屏渲染三态成一张 PNG（取证用，不开窗、不上屏）
+    /// 判据：文件存在且宽高符合期望；像素级差异由 SVG/PNG 目视确认。
+    @discardableResult
+    static func snapshot(to path: String, cell: CGFloat = 88) -> Bool {
+        let states: [(FloatBall.Phase, Int, UnderlineKind)] = [
+            (.unknown, 0, .grammar),
+            (.clear, 0, .grammar),
+            (.issues, 3, .grammar),
+        ]
+        let w = cell * CGFloat(states.count)
+        let h = cell
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(w), pixelsHigh: Int(h),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: w, height: h).fill()
+        for (i, st) in states.enumerated() {
+            let cellRect = NSRect(x: CGFloat(i) * cell, y: 0, width: cell, height: cell)
+            let ballRect = cellRect.insetBy(dx: (cell - 22 * 2) / 2, dy: (cell - 22 * 2) / 2)
+            NSGraphicsContext.current?.saveGraphicsState()
+            let t = NSAffineTransform()
+            t.translateX(by: ballRect.minX, yBy: ballRect.minY)
+            t.scale(by: 2)     // 2 倍放大，肉眼能看清
+            t.concat()
+            BallArt.draw(in: NSRect(x: 0, y: 0, width: 22, height: 22), phase: st.0, count: st.1, severity: st.2)
+            NSGraphicsContext.current?.restoreGraphicsState()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        guard let data = rep.representation(using: .png, properties: [:]) else { return false }
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        return (try? data.write(to: url)) != nil
+    }
 }

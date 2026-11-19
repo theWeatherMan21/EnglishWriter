@@ -289,6 +289,14 @@ if argv.contains("--ax-elements") {
     exit(code)
 }
 
+if argv.contains("--ball-snapshot") {
+    let out = argv.firstIndex(of: "--ball-snapshot").flatMap { $0 + 1 < argv.count ? argv[$0 + 1] : nil }
+        ?? (ProcessInfo.processInfo.environment["EW_OUT"].map { $0 + "/ball-states.png" })
+        ?? (FileManager.default.currentDirectoryPath + "/out/ball-states.png")
+    let ok = BallArt.snapshot(to: out)
+    print(ok ? "球态快照：\(out)" : "球态快照失败：\(out)")
+    exit(ok ? 0 : 1)
+}
 if argv.contains("--webui") {
     exit(WebUISelfTest.run(argv))
 }
