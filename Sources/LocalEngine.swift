@@ -9,6 +9,16 @@ import Foundation
 
 enum SpanGuard {
     /// 这些区间里的建议一律丢弃：画在箱号上或把 FCL 改成别的，都是误报
+    /// 模型返回的建议也要过术语/单号护栏：模型会把 free time 改成 free time allowed，
+    /// 那是业务口径不是语法错（11-19 深度检查实测，连续两轮复现）。
+    static func filterModelItems(_ items: [DiffItem], in text: String) -> [DiffItem] {
+        let guarded = guardedRanges(in: text)
+        guard !guarded.isEmpty else { return items }
+        return items.filter { it in
+            !guarded.contains { NSIntersectionRange($0, NSRange(location: it.start, length: it.length)).length > 0 }
+        }
+    }
+
     static func guardedRanges(in text: String) -> [NSRange] {
         let ns = text as NSString
         var out: [NSRange] = []

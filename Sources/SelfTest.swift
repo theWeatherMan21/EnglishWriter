@@ -61,7 +61,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }

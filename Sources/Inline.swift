@@ -1052,7 +1052,7 @@ final class InlineController {
                 let noSpace = !sentence.contains(" ")
                 if noSpace || (sentence as NSString).length < 15 { return }
                 let out = try await InlineEngine.review(text: sentence, config: cfg)
-                let mergedModel = DiffSanitize.consolidate(out.items + instant, in: sentence)
+                let mergedModel = DiffSanitize.consolidate(SpanGuard.filterModelItems(out.items, in: sentence) + instant, in: sentence)
                 await MainActor.run {
                     guard let self else { return }
                     self.diag.lastElapsed = String(format: "%.2fs", out.elapsed)

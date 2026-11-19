@@ -224,7 +224,7 @@ final class LocalAPI {
             do {
                 let out = try await InlineEngine.review(text: text, config: cfg)
                 let merged = CategoryPrefs.filterForDisplay(
-                    DiffSanitize.consolidate(out.items + SpellCheck.items(in: text)
+                    DiffSanitize.consolidate(SpanGuard.filterModelItems(out.items, in: text) + SpellCheck.items(in: text)
                                              + LocalGrammar.apply(to: text) + StyleRules.apply(to: text), in: text))
                 let edits = merged.map { it -> [String: Any] in
                     ["start": it.start, "length": it.length, "original": it.original,
