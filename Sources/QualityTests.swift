@@ -44,6 +44,7 @@ enum QualityTests {
     static func run(_ argv: [String]) -> Int32 {
         setvbuf(stdout, nil, _IONBF, 0)
         if argv.contains("--deep") { return runDeep() }
+        if argv.contains("--rewrite") { return runRewrite() }
         var caught = 0, missed: [String] = []
         var falsePositives: [String] = []
 
@@ -147,5 +148,77 @@ extension QualityTests {
         for m in missed { print("  MISS: \(m)") }
         for f in fps { print("  FP  : \(f)") }
         return (recall >= 80 && fps.isEmpty) ? 0 : 1
+    }
+}
+
+// MARK: - 改写候选质量（真模型）——只验「出几条」不算验收
+extension QualityTests {
+    static let rewriteSamples: [String] = [
+        "I have send the report immediatly and it is very good.",
+        "Please kindly advise us the vessel schedule at your earliest convenience.",
+        "We was late because there is many problems with the booking.",
+        "The cargo was load yesterday and the free time is 10 days.",
+        "Looking forward to hear from you about the B/L copy.",
+    ]
+
+    static func runRewrite() -> Int32 {
+        let cfg = SettingsStore.load()
+        guard Rewrite.isAvailable(cfg) else {
+            print("SKIP rewrite：模型未配置")
+            return 77
+        }
+        print("--- 改写候选质量（真模型 \(cfg.model)）---")
+        var fails = 0, total = 0, meaningful = 0, distinctOK = 0, guardOK = 0
+        var times: [Int] = []
+
+        for text in rewriteSamples {
+            let sem = DispatchSemaphore(value: 0)
+            var cands: [RewriteCandidate] = []
+            var ms = 0
+            Task {
+                let t0 = Date()
+                cands = (try? await Rewrite.suggest(segment: text, config: cfg)) ?? []
+                ms = Int(Date().timeIntervalSince(t0) * 1000)
+                sem.signal()
+            }
+            sem.wait()
+            times.append(ms)
+            total += 1
+
+            if cands.isEmpty { print("  FAIL 无候选：\(text)"); fails += 1; continue }
+            let texts = cands.map { $0.appliedText(to: text) }
+            if texts.contains(where: { $0 != text }) { meaningful += 1 }
+            else { print("  FAIL 候选与原文相同：\(text)"); fails += 1 }
+
+            if Set(texts).count >= min(2, cands.count) { distinctOK += 1 }
+            else { print("  FAIL 候选重复：\(text)"); fails += 1 }
+
+            // 术语守卫：free time / B/L 这类不许被改掉
+            let guarded = SpanGuard.guardedRanges(in: text)
+            let guardRanges = guarded.map { (text as NSString).substring(with: $0).lowercased() }
+            var violated = false
+            for t in texts {
+                let lower = t.lowercased()
+                for term in guardRanges where !lower.contains(term) { violated = true }
+            }
+            if violated { print("  FAIL 改写动了受保护术语：\(text)"); fails += 1 } else { guardOK += 1 }
+
+            // LANG-GUARD：候选里出现大量非 ASCII 说明模型跑偏
+            for t in texts {
+                let nonAscii = t.unicodeScalars.filter { $0.value > 127 }.count
+                if Double(nonAscii) / Double(max(1, t.unicodeScalars.count)) > 0.2 {
+                    print("  FAIL 候选出现非英文内容：\(t)"); fails += 1; break
+                }
+            }
+            print(String(format: "  ok  %@ → %d 条（%dms）", String(text.prefix(28)) as NSString, cands.count, ms))
+        }
+
+        let avg = times.isEmpty ? 0 : times.reduce(0, +) / times.count
+        SelfTest.ok("rewrite: 有意义的候选", "\(meaningful)/\(total) 段")
+        SelfTest.ok("rewrite: 候选互不重复", "\(distinctOK)/\(total) 段")
+        SelfTest.ok("rewrite: 受保护术语未被改", "\(guardOK)/\(total) 段")
+        if avg < 8000 { SelfTest.ok("rewrite: 平均耗时", "\(avg)ms（上限 8000）") }
+        else { SelfTest.bad("rewrite: 平均耗时", "\(avg)ms") }
+        return fails == 0 ? 0 : 1
     }
 }

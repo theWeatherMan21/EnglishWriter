@@ -413,6 +413,24 @@ final class HoverCoordinator {
         M3Flow.hit(specs, at: p, dx: 3, dy: 6)
     }
 
+    /// 纯函数：点击点到最近一条线的分解距离（诊断用，可断言）
+    /// - Returns: (rect, dx, dy, itemID, hit)
+    nonisolated static func nearestLine(_ specs: [UnderlineSpec], at p: CGPoint)
+        -> (rect: CGRect, dx: CGFloat, dy: CGFloat, item: Int, hit: Bool) {
+        var best = (rect: CGRect.null, dx: CGFloat.greatestFiniteMagnitude,
+                    dy: CGFloat.greatestFiniteMagnitude, item: -1, hit: false)
+        for sp in specs {
+            let dx = max(sp.rect.minX - p.x, 0, p.x - sp.rect.maxX)
+            let dy = max(sp.rect.minY - p.y, 0, p.y - sp.rect.maxY)
+            let d = (dx * dx + dy * dy).squareRoot()
+            let bd = (best.dx * best.dx + best.dy * best.dy).squareRoot()
+            if d < bd {
+                best = (sp.rect, dx, dy, sp.itemID, hitTest([sp], at: p) != nil)
+            }
+        }
+        return best
+    }
+
     /// 点击后这段时间内的焦点变化不算数：点文字必然移动光标，光标移动会触发重检查，
     /// 重检查会把线清掉 —— 于是「点得越准，越查不到线」（11-19 竞态）。
     private(set) var lastClickAt: Date = .distantPast

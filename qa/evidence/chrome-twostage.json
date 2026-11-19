@@ -1,0 +1,58 @@
+{
+  "snapA": {
+    "rects": [
+      {
+        "x": 52,
+        "y": 72,
+        "w": 64,
+        "h": 18,
+        "cls": "u gram"
+      },
+      {
+        "x": 186,
+        "y": 72,
+        "w": 73,
+        "h": 18,
+        "cls": "u spell"
+      },
+      {
+        "x": 326,
+        "y": 72,
+        "w": 11,
+        "h": 18,
+        "cls": "u gram"
+      }
+    ],
+    "ms": 4111
+  },
+  "snapB": {
+    "rects": [
+      {
+        "x": 52,
+        "y": 72,
+        "w": 64,
+        "h": 18,
+        "cls": "u gram"
+      },
+      {
+        "x": 186,
+        "y": 72,
+        "w": 73,
+        "h": 18,
+        "cls": "u spell"
+      },
+      {
+        "x": 326,
+        "y": 72,
+        "w": 11,
+        "h": 18,
+        "cls": "u gram"
+      }
+    ],
+    "ms": 7722
+  },
+  "dropped": 0,
+  "duplicates": 0,
+  "sentence": "I have send the report immediatly and there is many reasons.",
+  "at": "2026-11-19T19:49:28"
+}

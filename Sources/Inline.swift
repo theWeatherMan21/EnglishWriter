@@ -541,10 +541,11 @@ final class InlineController {
         guard pollTimer == nil else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.enabled, self.lastFocusPid > 0 else { return }
-                // 锁屏时别的 App 的 AX 只剩骨架：继续轮询只会刷 loginwindow 的假事件，
-                // 把真实事件淹掉（11-19 一整夜 649 条 attach-app 就是这么来的）
-                if ScreenLock.isLocked { return }
+                guard let self else { return }
+                // 锁屏 / 登录窗 / 未启用：都不轮询（纯函数 ScreenLock.shouldPoll 负责判定）
+                guard ScreenLock.shouldPoll(locked: ScreenLock.isLocked, enabled: self.enabled,
+                                            pid: self.lastFocusPid,
+                                            appName: appName(self.lastFocusPid)) else { return }
                 guard let el = AXInline.focusedElement(pid: self.lastFocusPid) else { return }
                 // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
                 let t: String?
@@ -996,7 +997,9 @@ final class InlineController {
         diag.checks += 1
         lastText = full
         // 立即出「零进程」结果：系统词典拼写 + 本地 clarity/style 规则（毫秒级、不依赖 LT 是否在跑）
-        let instant = DiffSanitize.consolidate(SpellCheck.items(in: sentence) + StyleRules.apply(to: sentence), in: sentence)
+        // 即时层要和浏览器同口径：拼写 + 本地语法规则 + 清晰度/风格（之前漏了 LocalGrammar）
+        let instant = DiffSanitize.consolidate(SpellCheck.items(in: sentence) + LocalGrammar.apply(to: sentence)
+                                               + StyleRules.apply(to: sentence), in: sentence)
         if !instant.isEmpty {
             apply(items: shift(instant, by: sentenceRange.location), sentenceRange: sentenceRange, element: el, pid: pid)
         }

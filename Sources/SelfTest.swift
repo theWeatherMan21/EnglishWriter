@@ -43,6 +43,7 @@ enum SelfTest {
     }
 
     static func run(_ argv: [String]) -> Int32 {
+        if argv.contains("--clickdiag") { return clickDiagTests() }
         // 只要指定了任何一个分组开关，就只跑那一组（--privacy 不该顺手把全组跑一遍）
         let groupFlags = ["--privacy", "--style", "--ui", "--webui", "--score", "--lang",
                           "--diffhl", "--m3", "--settings", "--glossary", "--cjk", "--faults", "--live"]
@@ -62,7 +63,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ContrastTests.run() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
+        if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -2074,6 +2075,71 @@ extension SelfTest {
             SelfTest.ok("settings: .env 里没有可用 key，返回 nil", "nil")
         } else {
             SelfTest.bad("settings: 不该取到 key", String(describing: got))
+        }
+    }
+}
+
+// MARK: - 点击诊断（纯函数断言：最近线 + dx/dy 分解）
+extension SelfTest {
+    static func clickDiagTests() -> Int32 {
+        let r = CGRect(x: 747, y: 177, width: 66, height: 17)   // 底边 194
+        let specs = [UnderlineSpec(rect: r, kind: .grammar, itemID: 0, ownerPid: 4242)]
+
+        // 1) 点在下一行（真实样本：18:32 TextEdit 差 27px）
+        let a = HoverCoordinator.nearestLine(specs, at: CGPoint(x: 780, y: 221))
+        if abs(a.dy - 27) < 0.01 && a.dx == 0 && !a.hit {
+            SelfTest.ok("clickdiag: 下一行 dy=27 不命中", "\(Int(a.dx)),\(Int(a.dy)) hit=\(a.hit)")
+        } else { SelfTest.bad("clickdiag: 下一行", "\(a)") }
+
+        // 2) 点在线上（y=190 在 177…194 内）→ 命中
+        let b = HoverCoordinator.nearestLine(specs, at: CGPoint(x: 780, y: 190))
+        if b.hit && b.dx == 0 && b.dy == 0 {
+            SelfTest.ok("clickdiag: 线上命中", "hit=\(b.hit)")
+        } else { SelfTest.bad("clickdiag: 线上", "\(b)") }
+
+        // 3) 点在右侧 10pt（x 超出 maxX=813 → 790 其实在内侧；用 823 验证 dx=10）
+        let c = HoverCoordinator.nearestLine(specs, at: CGPoint(x: 823, y: 190))
+        if abs(c.dx - 10) < 0.01 && c.dy == 0 && !c.hit {
+            SelfTest.ok("clickdiag: 右侧 dx=10 不命中", "\(Int(c.dx)),\(Int(c.dy))")
+        } else { SelfTest.bad("clickdiag: 右侧", "\(c)") }
+
+        // 4) 多条线：取距离最近的那条
+        let far = UnderlineSpec(rect: CGRect(x: 100, y: 400, width: 40, height: 14), kind: .spelling,
+                                itemID: 9, ownerPid: 4242)
+        let d = HoverCoordinator.nearestLine(specs + [far], at: CGPoint(x: 780, y: 221))
+        if d.item == 0 { SelfTest.ok("clickdiag: 取最近一条", "item=0") }
+        else { SelfTest.bad("clickdiag: 取最近", "item=\(d.item)") }
+
+        // 5) 点在左侧 7pt（minX=747 → 740）
+        let l = HoverCoordinator.nearestLine(specs, at: CGPoint(x: 740, y: 190))
+        if abs(l.dx - 7) < 0.01 && l.dy == 0 && !l.hit {
+            SelfTest.ok("clickdiag: 左侧 dx=7 不命中", "\(Int(l.dx)),\(Int(l.dy))")
+        } else { SelfTest.bad("clickdiag: 左侧", "\(l)") }
+
+        // 6) 空表不崩
+        let e = HoverCoordinator.nearestLine([], at: .zero)
+        if e.item == -1 && e.rect.isNull { SelfTest.ok("clickdiag: 空表返回空", "item=-1") }
+        else { SelfTest.bad("clickdiag: 空表", "\(e)") }
+
+        print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
+        return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: 锁屏门控（不靠碰巧，直接断言）
+extension SelfTest {
+    static func lockGateTests() {
+        let cases: [(String, Bool, Bool, pid_t, String, Bool)] = [
+            ("锁屏 → 不轮询",            true,  true,  123, "Mail", false),
+            ("未锁 + 启用 + 正常 App",   false, true,  123, "Mail", true),
+            ("未锁但未启用 → 不轮询",    false, false, 123, "Mail", false),
+            ("pid 无效 → 不轮询",        false, true,  0,   "Mail", false),
+            ("loginwindow → 不轮询",     false, true,  618, "loginwindow", false),
+        ]
+        for (name, locked, enabled, pid, app, want) in cases {
+            let got = ScreenLock.shouldPoll(locked: locked, enabled: enabled, pid: pid, appName: app)
+            if got == want { SelfTest.ok("lock: " + name, got ? "轮询" : "跳过") }
+            else { SelfTest.bad("lock: " + name, "期望 \(want) 实际 \(got)") }
         }
     }
 }

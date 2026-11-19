@@ -18,6 +18,16 @@ enum ScreenLock {
         return false
     }
 
+    /// 轮询门控（纯函数，可断言）：锁屏 / 登录窗 / 未启用 / 无 pid 时都不轮询，
+    /// 免得夜里把 loginwindow 的假 attach 灌进 check-log（11-19 实测 649 条）。
+    static func shouldPoll(locked: Bool, enabled: Bool, pid: pid_t, appName: String) -> Bool {
+        if locked { return false }
+        if !enabled { return false }
+        if pid <= 0 { return false }
+        if appName == "loginwindow" { return false }
+        return true
+    }
+
     /// 探针入口统一调用：锁屏就返回 true（调用方应打印 SKIP 并 exit(77)）
     static func bailIfLocked(_ probe: String) -> Bool {
         guard isLocked else { return false }
