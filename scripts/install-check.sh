@@ -5,7 +5,7 @@
 # 而我报的是「已交付」。这种错我自己犯过，用脚本闸住。
 #
 # 用法：bash scripts/install-check.sh [--install]
-#   退出码：0 = SYNC / 1 = STALE（仓库更新，需要装）/ 2 = 未安装
+#   退出码：0 = SYNC / 0 = NO_BUILD（未本地编译，跳过比对）/ 1 = STALE（仓库更新，需要装）/ 2 = 未安装
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 3
 
@@ -20,8 +20,10 @@ if [ ! -x "$BIN" ]; then
 fi
 if [ ! -x "$BUILD" ]; then
   echo "仓库 build : 不存在（先 bash scripts/build.sh）"
-  echo "RESULT: NO_BUILD"
-  exit 1
+  # 没有仓库 build 就无从比对：这不是「旧」，只是没在本地编译过。
+  # 陌生人装了 Release 版再 clone 下来跑 ci-test.sh 会走到这里，判失败等于假红。
+  echo "RESULT: NO_BUILD（仓库未编译，跳过比对）"
+  exit 0
 fi
 
 # 用内容哈希比对，不用 mtime：cp -R 会把装机文件的 mtime 改成「复制时刻」，
