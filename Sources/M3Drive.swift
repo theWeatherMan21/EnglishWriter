@@ -62,7 +62,8 @@ enum M3Drive {
         let hoverPoint = CGPoint(x: rectFor(2).midX, y: rectFor(2).midY)
         let hit = HoverCoordinator.hitTest(specs, at: hoverPoint)
         line("hover", "cursor=(\(Int(hoverPoint.x)),\(Int(hoverPoint.y))) → hit=\(hit.map { "item\($0.itemID) \"\(items[$0.itemID].original)\"" } ?? "nil")")
-        check("命中第三条", hit?.itemID == 2, "点 (164,247) 落在 rect#2 上")
+        check("命中第三条", hit?.itemID == 2,
+              "点 (\(Int(hoverPoint.x)),\(Int(hoverPoint.y))) 落在 rect#2 上")
 
         let missPoint = CGPoint(x: rectFor(2).midX, y: rectFor(2).maxY + 20)
         let miss = HoverCoordinator.hitTest(specs, at: missPoint)
