@@ -490,8 +490,9 @@ enum SelfTest {
                 shot = savePNG(rep)
             }
         }
-        if size.width == 320, size.height > 90, size.height < 260 {
-            ok("M3·卡片尺寸", "\(Int(size.width))×\(Int(size.height))（320pt 宽，高度按内容自适应）")
+        // 11-19 按 Grammarly 实测规格把卡片收窄到 210pt（原来是 320）
+        if size.width == 210, size.height > 90, size.height < 300 {
+            ok("M3·卡片尺寸", "\(Int(size.width))×\(Int(size.height))（210pt 宽，高度按内容自适应）")
         } else {
             bad("M3·卡片尺寸", "\(size)")
         }
