@@ -26,6 +26,16 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var checkTask: Task<Void, Never>?
     private var debounce: Timer?
 
+    /// 类别行统一文案（知澜给的固定格式）
+    static func categoryLabel(_ type: String) -> String {
+        switch type {
+        case "spelling": return "正确性 · 修正拼写"
+        case "grammar": return "正确性 · 语法问题"
+        case "clarity": return "清晰度 · 精简表达"
+        default: return "表达 · 调整风格"
+        }
+    }
+
     private let sample = """
     There is many reasons why we should sent the booking confirmation to the customer immediatly.
 
@@ -80,6 +90,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         tv.allowsUndo = true
         tv.delegate = self
         tv.string = sample
+        let click = NSClickGestureRecognizer(target: self, action: #selector(textClicked(_:)))
+        click.delaysPrimaryMouseButtonEvents = false
+        tv.addGestureRecognizer(click)
         tv.backgroundColor = NSColor.textBackgroundColor
         tv.insertionPointColor = .systemBlue
         scroll.documentView = tv
@@ -265,6 +278,17 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         scheduleCheck()
+    }
+
+    /// 点正文里的词 → 侧栏对应卡片展开并高亮（双向联动的另一半）
+    @MainActor @objc private func textClicked(_ g: NSClickGestureRecognizer) {
+        guard let tv = textView else { return }
+        let p = tv.convert(g.location(in: tv), from: nil)
+        let idx = tv.characterIndexForInsertion(at: p)
+        if let hit = items.first(where: { idx >= $0.start && idx < $0.start + max(1, $0.length) }) {
+            Sidebar.shared.select(start: hit.start)
+            focusItem(hit)
+        }
     }
 
     private func scheduleCheck() {

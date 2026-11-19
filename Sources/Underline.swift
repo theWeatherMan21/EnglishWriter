@@ -27,10 +27,12 @@ enum UnderlineKind: String, Codable, CaseIterable {
     /// 颜色 × 形状双编码（色盲友好）
     var color: NSColor {
         switch self {
-        case .spelling: return NSColor.systemRed
-        case .grammar:  return NSColor.systemRed
-        case .clarity:  return NSColor.systemBlue
-        case .style:    return NSColor.systemPurple
+        // 知澜 11-19 给的精确色值（与 Grammarly 一致）：
+        // 正确性 #EE1437 红 / 清晰度 #4A6EDE 蓝 / 表达 紫 / 吸引力 绿
+        case .spelling: return NSColor(srgbRed: 0xEE/255.0, green: 0x14/255.0, blue: 0x37/255.0, alpha: 1)
+        case .grammar:  return NSColor(srgbRed: 0xEE/255.0, green: 0x14/255.0, blue: 0x37/255.0, alpha: 1)
+        case .clarity:  return NSColor(srgbRed: 0x4A/255.0, green: 0x6E/255.0, blue: 0xDE/255.0, alpha: 1)
+        case .style:    return NSColor(srgbRed: 0x9B/255.0, green: 0x51/255.0, blue: 0xD2/255.0, alpha: 1)
         }
     }
 

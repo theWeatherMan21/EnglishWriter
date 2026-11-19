@@ -188,6 +188,20 @@ final class Sidebar: NSPanel {
 
     @objc private func closePanel() { orderOut(nil); onAcceptAll = nil }
 
+    /// 从正文点词过来：把这条对应的卡片滚到可见并闪一下行背景（双向联动）
+    @MainActor
+    func select(start: Int) {
+        guard let idx = visibleItems().firstIndex(where: { $0.start == start }) else { return }
+        _ = idx
+        render()
+        if let row = listStack.arrangedSubviews.compactMap({ $0 as? NSStackView })
+            .first(where: { v in v.arrangedSubviews.contains { $0.tag == start } }) {
+            listScroll.contentView.scroll(to: row.convert(row.bounds.origin, to: listScroll.documentView))
+            listScroll.reflectScrolledClipView(listScroll.contentView)
+            if let hover = row as? HoverRow { hover.flash() }
+        }
+    }
+
     @objc private func acceptAllTapped() {
         onAcceptAll?()
         render()
@@ -317,7 +331,9 @@ final class Sidebar: NSPanel {
         row.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         row.wantsLayer = true
         row.layer?.cornerRadius = 8
-        row.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.03).cgColor
+        row.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+        row.layer?.borderWidth = 1
+        row.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.6).cgColor
 
         let dot = NSView()
         dot.wantsLayer = true
@@ -345,7 +361,7 @@ final class Sidebar: NSPanel {
         acceptBtn.bezelStyle = .rounded
         acceptBtn.controlSize = .small
         acceptBtn.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        acceptBtn.contentTintColor = .controlAccentColor
+        acceptBtn.bezelColor = .controlAccentColor
         acceptBtn.tag = it.start
 
         let dismissBtn = NSButton(title: "忽略", target: self, action: #selector(dismissRow(_:)))
@@ -429,10 +445,9 @@ final class Sidebar: NSPanel {
 
     private func color(for type: String) -> NSColor {
         switch type {
-        case "spelling": return .systemRed
-        case "grammar": return .systemOrange
-        case "clarity": return .systemBlue
-        default: return .systemPurple
+        case "spelling", "grammar": return NSColor(srgbRed: 0xEE/255.0, green: 0x14/255.0, blue: 0x37/255.0, alpha: 1)
+        case "clarity": return NSColor(srgbRed: 0x4A/255.0, green: 0x6E/255.0, blue: 0xDE/255.0, alpha: 1)
+        default: return NSColor(srgbRed: 0x9B/255.0, green: 0x51/255.0, blue: 0xD2/255.0, alpha: 1)
         }
     }
 
@@ -522,6 +537,14 @@ final class ScoreBar: NSView {
 
 /// 建议行容器：hover 给淡背景（Grammarly 那种「这行可以点」的暗示）
 final class HoverRow: NSStackView {
+    /// 联动闪示：淡粉底 0.9 秒（配合正文侧的高亮）
+    func flash() {
+        layer?.backgroundColor = NSColor(srgbRed: 1.0, green: 0xE3/255.0, blue: 0xEC/255.0, alpha: 1).cgColor
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+            self?.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+        }
+    }
+
     private var tracking: NSTrackingArea?
 
     override func updateTrackingAreas() {

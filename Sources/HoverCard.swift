@@ -47,7 +47,7 @@ final class HoverCardView: NSView {
     var onPrev: (() -> Void)?
     var onNext: (() -> Void)?
 
-    private let width: CGFloat = 320
+    private let width: CGFloat = 210
     private let pad: CGFloat = 14
     private var height: CGFloat = 120
 
