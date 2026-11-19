@@ -193,6 +193,12 @@ final class UnderlineOverlay: NSPanel {
         }
     }
 
+    /// 只登记命中区域、不上屏（试用窗口自己的编辑器用原生属性画线，
+    /// 但点击命中测试和卡片仍走同一条 overlay 通道，避免两套逻辑）
+    func adoptSpecsForHitTest(_ newSpecs: [UnderlineSpec]) {
+        specs = newSpecs
+    }
+
     /// 闪示一个位置：黄底 2 秒后自动消失（不改宿主文本、不抢焦点）
     /// 高亮一个位置：挂着直到 clearHighlight()/重新 render（用户处理完才消失）
     func highlight(_ rect: CGRect) {

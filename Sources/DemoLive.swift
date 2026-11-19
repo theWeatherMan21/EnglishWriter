@@ -87,6 +87,12 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         tv.isVerticallyResizable = true
         tv.autoresizingMask = [.width]
         tv.allowsUndo = true
+        // 屏幕上只许有一套管方下划线：关掉系统自带的拼写/语法/自动纠正
+        tv.isContinuousSpellCheckingEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.isGrammarCheckingEnabled = false
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.delegate = self
         tv.string = sample
         let click = NSClickGestureRecognizer(target: self, action: #selector(textClicked(_:)))
@@ -138,8 +144,14 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         root.addSubview(listScroll)
 
         w.contentView = root
-        NSApp.activate(ignoringOtherApps: true)
-        w.makeKeyAndOrderFront(nil)
+        // --demo-offscreen：窗口放屏幕外跑检查，不抢焦点不起屏（静默取证用）
+        if ProcessInfo.processInfo.arguments.contains("--demo-offscreen") {
+            w.setFrameOrigin(NSPoint(x: -6000, y: -6000))
+            w.orderBack(nil)
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            w.makeKeyAndOrderFront(nil)
+        }
         scheduleCheck()
     }
 
@@ -303,10 +315,18 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard let tv = textView else { return }
         let p = tv.convert(g.location(in: tv), from: nil)
         let idx = tv.characterIndexForInsertion(at: p)
-        if let hit = items.first(where: { idx >= $0.start && idx < $0.start + max(1, $0.length) }) {
-            Sidebar.shared.select(start: hit.start)
-            focusItem(hit)
-        }
+        let hit = items.first(where: { idx >= $0.start && idx < $0.start + max(1, $0.length) })
+        let hitIdx = hit.flatMap { h in items.firstIndex(where: { (it: DiffItem) -> Bool in it.start == h.start }) }
+        CheckLog.append(.init(kind: hit == nil ? "click-miss" : "click-hit",
+                              pid: ProcessInfo.processInfo.processIdentifier,
+                              app: "英文写作助手", role: "NSTextView",
+                              textLen: (textView.string as NSString).length, sentenceLen: 0,
+                              itemCount: hitIdx ?? -1,
+                              rectCount: items.count, elapsed: "-", err: "-", at: Date()))
+        guard let hit else { return }
+        Sidebar.shared.select(start: hit.start)
+        focusItem(hit)
+        showCardPreview(hit)
     }
 
     private func scheduleCheck() {
@@ -340,6 +360,30 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // 评分（P2 纯本地）
             self.lastScore = Scorer.score(text: text, items: items, formality: GoalsStore.load().formality)
             self.lastScoreText = text
+            // 把每条建议的屏幕矩形登记给 overlay：点击命中测试与卡片用的就是这一份
+            var hitSpecs: [UnderlineSpec] = []
+            for (i, it) in items.enumerated() {
+                let r = NSRange(location: it.start, length: it.length)
+                guard let win = self.window else { break }
+                let inView = self.textView.firstRect(forCharacterRange: r, actualRange: nil)
+                if inView.isEmpty { continue }
+                let inWin = self.textView.convert(inView, to: nil)
+                let scr = win.convertToScreen(inWin)
+                let q = CGRect(x: scr.minX, y: (NSScreen.screens.first?.frame.height ?? 900) - scr.maxY,
+                               width: max(4, scr.width), height: max(8, scr.height))
+                let kind: UnderlineKind = it.type == "spelling" ? .spelling
+                    : (it.type == "grammar" ? .grammar : (it.type == "clarity" ? .clarity : .style))
+                hitSpecs.append(UnderlineSpec(rect: q, kind: kind, itemID: i))
+            }
+            InlineController.shared.overlay.adoptSpecsForHitTest(hitSpecs)
+
+            CheckLog.append(.init(kind: "demo-check",
+                                  pid: ProcessInfo.processInfo.processIdentifier,
+                                  app: "英文写作助手", role: "NSTextView",
+                                  textLen: (text as NSString).length, sentenceLen: res.sentenceCount,
+                                  itemCount: items.count, rectCount: hitSpecs.count,
+                                  elapsed: "\(Int(Date().timeIntervalSince(t0) * 1000))ms",
+                                  err: "-", at: Date()))
             let langSkipped = res.skippedCJK + counter.langSkipped
             if ProcessInfo.processInfo.arguments.contains("--card-demo"), !self.didAutoOpenSidebar, !items.isEmpty {
                 self.didAutoOpenSidebar = true
