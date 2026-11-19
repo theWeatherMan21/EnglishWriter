@@ -550,7 +550,7 @@ enum SelfTest {
         }
 
         // 7) 卡片 DOM：类别色标 / 原句 / 建议 / 一句中文理由 / 接受·忽略
-        let cardHTML = (try? String(contentsOfFile: "web/card/index.html", encoding: .utf8)) ?? ""
+        let cardHTML = SelfTest.webFile("card/index.html") ?? ""
         let needNodes = ["id=\"dot\"", "id=\"sent\"", "id=\"sugg\"", "id=\"reason\"", "id=\"accept\"", "id=\"ignore\""]
         let missingNodes = needNodes.filter { !cardHTML.contains($0) }
         if missingNodes.isEmpty {
@@ -558,7 +558,7 @@ enum SelfTest {
         } else {
             bad("M3·卡片结构", "缺 \(missingNodes)")
         }
-        let cardJS = (try? String(contentsOfFile: "web/card/card.js", encoding: .utf8)) ?? ""
+        let cardJS = SelfTest.webFile("card/card.js") ?? ""
         if cardJS.contains("'accept'") && cardJS.contains("reason") {
             ok("M3·卡片脚本", "accept 动作 + reason 渲染都在")
         } else {
@@ -1531,16 +1531,46 @@ extension SelfTest {
 
 // MARK: 一套 UI 两处跑（web 资源唯一来源）
 extension SelfTest {
+    /// web 资源根：优先 App 包内 `Resources/web`，回落当前工作目录（仓库根）。
+    /// 为什么：打包后的 App 里资源在 Contents/Resources，用相对路径的断言在装机 App / 下载来的
+    /// Release 包里一跑就全红（明明卡片渲染正常），只有仓库里跑才对。
+    static func webRoot() -> URL? {
+        let fm = FileManager.default
+        if let r = Bundle.main.resourceURL?.appendingPathComponent("web"),
+           fm.fileExists(atPath: r.path) { return r }
+        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("web")
+        return fm.fileExists(atPath: cwd.path) ? cwd : nil
+    }
+
+    /// 读 web 下的文件（`card/index.html` 这类相对 web/ 的路径）
+    static func webFile(_ rel: String) -> String? {
+        guard let root = webRoot() else { return nil }
+        return try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)
+    }
+
     static func webReuseTests() {
         let fm = FileManager.default
         let repo = URL(fileURLWithPath: fm.currentDirectoryPath)
-        let need = ["web/sidebar/index.html", "web/sidebar/sidebar.css", "web/sidebar/tokens.css",
-                    "web/sidebar/sidebar.js", "web/card/index.html", "web/card/card.css", "web/card/card.js"]
+        // web/ 资源：包内优先（App 装好也能自测）
+        let need = ["card/index.html", "card/card.css", "card/card.js",
+                    "sidebar/index.html", "sidebar/sidebar.css", "sidebar/tokens.css", "sidebar/sidebar.js"]
+        let webR = webRoot()
         var missing: [String] = []
-        for f in need where !fm.fileExists(atPath: repo.appendingPathComponent(f).path) { missing.append(f) }
-        if missing.isEmpty { SelfTest.ok("web: 资源文件齐全（7 个）") }
+        for f in need where webR == nil || !fm.fileExists(atPath: webR!.appendingPathComponent(f).path) {
+            missing.append("web/\(f)")
+        }
+        if missing.isEmpty { SelfTest.ok("web: 资源文件齐全（7 个）", "根=\(webR?.path ?? "?")") }
         else { SelfTest.bad("web: 资源文件缺失", missing.joined(separator: ", ")) }
 
+        // 下面几条是「源码仓一致性」（扩展目录、manifest、逐字节同步），只在有源码树的目录里成立。
+        // 装好的 App / 下载的 Release 包里没有 extension/，判 SKIP 而不是 FAIL。
+        guard fm.fileExists(atPath: repo.appendingPathComponent("extension/manifest.json").path) else {
+            for n in ["web: manifest 引用了 ui/sidebar.css", "web: 扩展侧有 card.css",
+                      "web: manifest 引用了 ui/card.css", "web: 两边一致"] {
+                skip(n, "当前目录无 extension/（App 包内跑自测），源码仓一致性不适用")
+            }
+            return
+        }
         // manifest 必须引用同一份 CSS
         if let d = try? Data(contentsOf: repo.appendingPathComponent("extension/manifest.json")),
            let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
@@ -1591,6 +1621,12 @@ extension SelfTest {
         let root = URL(fileURLWithPath: fm.currentDirectoryPath)
         let dir = root.appendingPathComponent("Sources")
 
+        // 这条查的是「仓库里的源码有没有开发痕迹」，只在源码树里成立。
+        // 装好的 App / 下载的 Release 包里没有 Sources/ 与 qa/，判 SKIP 而不是 FAIL。
+        guard fm.fileExists(atPath: dir.path) else {
+            skip("ui: Sources 无开发痕迹", "当前目录无 Sources/（App 包内跑自测），源码检查不适用")
+            return
+        }
         guard let data = try? Data(contentsOf: root.appendingPathComponent("qa/forbidden-strings.json")),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let forbidden = obj["strings"] as? [String], !forbidden.isEmpty else {

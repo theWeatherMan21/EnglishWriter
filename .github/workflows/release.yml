@@ -67,7 +67,8 @@ jobs:
           mkdir -p dist
           ZIP="dist/EnglishWriter-${V}-macos.zip"
           ditto -c -k --keepParent "build/英文写作助手.app" "$ZIP"
-          shasum -a 256 "$ZIP" | tee "dist/SHA256SUMS.txt"
+          # 校验和文件里只写文件名（不带 dist/ 前缀），用户下载后可直接 shasum -a 256 -c
+          (cd dist && shasum -a 256 "$(basename "$ZIP")" | tee SHA256SUMS.txt)
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
       - name: Upload to Release
