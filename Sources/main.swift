@@ -94,8 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(NSMenuItem(title: "清掉下划线", action: #selector(clearAction), keyEquivalent: ""))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "跑探针（验 Mail 可读/可写）", action: #selector(probeAction), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "行内渲染自测…", action: #selector(demoAction), keyEquivalent: ""))
+        // 面向用户：点一下就能看见整套效果（不依赖 Mail/Word 能不能读文本）
+        menu.addItem(NSMenuItem(title: "演示…", action: #selector(demoLiveAction), keyEquivalent: "e"))
+        // ★ 调试控件（探针 / 行内渲染自测）release 不出现，只有 EW_DEBUG=1 才挂菜单——
+        //   读者是我，不是用户（11-18 红线）。
+        if SettingsView.debugUI {
+            menu.addItem(NSMenuItem(title: "跑探针（验 Mail 可读/可写）", action: #selector(probeAction), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "行内渲染自测…", action: #selector(demoAction), keyEquivalent: ""))
+        }
         // ★ 2026-11-18 爹地红线：诊断窗口能力保留，但 release 常驻 UI 不出现入口。
         //   只有 EW_DEBUG=1 才挂菜单项（排障走命令行/日志，不给用户按钮）。
         if SettingsView.debugUI {
@@ -139,6 +145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingsWindowController.shared.show(model: model)
         }
 
+        if realShotArgs == nil, ProcessInfo.processInfo.arguments.contains("--demo-live") {
+            Task { @MainActor in DemoLive.shared.show() }
+        }
+
         // 真机验收器（Mail 下划线截图）：必须由 App 自己跑，才有辅助功能授权
         if let args = realShotArgs {
             if args.contains("--axcheck") || args.contains("--axwatch") || args.contains("--axaccept")
@@ -159,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func checkNowAction() { InlineController.shared.checkNow() }
+    @MainActor @objc private func demoLiveAction() { DemoLive.shared.show() }
 
     /// 改写选中段落：选中才亮（没选区就提示），模型没配时菜单项根本不出现
     @MainActor @objc private func rewriteAction() {

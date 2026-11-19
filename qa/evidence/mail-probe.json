@@ -1,33 +1,33 @@
 {
   "bundle" : "com.apple.mail",
   "composePresent" : false,
-  "pid" : 87655,
+  "pid" : 1343,
   "windowCount" : 1,
   "windows" : [
     {
       "badRects" : [
 
       ],
-      "blocks" : 0,
-      "chars" : 0,
-      "englishBlocks" : 0,
+      "blocks" : 410,
+      "chars" : 2617,
+      "englishBlocks" : 55,
       "itemCount" : 0,
       "items" : [
 
       ],
       "kind" : "reading",
-      "langSkippedBlocks" : 0,
-      "note" : "这个窗口里没有 AXWebArea \/ AXTextArea",
-      "offscreenBlocks" : 0,
+      "langSkippedBlocks" : 13,
+      "note" : "可见 77 块 \/ 屏幕外 333 块；其中中文块 0（0 字，按设计跳过）、英文块 55 → 本次命中 0",
+      "offscreenBlocks" : 333,
       "rectsInsideWindow" : true,
       "skippedCjkBlocks" : 0,
       "skippedCjkChars" : 0,
-      "staticTexts" : 2268,
-      "textAreas" : 2,
-      "title" : "Poland – Network Management – 3,147 messages, 1 unread",
-      "totalChars" : 0,
-      "visibleBlocks" : 0,
-      "webAreaFound" : false,
+      "staticTexts" : 2180,
+      "textAreas" : 5,
+      "title" : "Poland – Network Management – 3,156 messages, 10 unread",
+      "totalChars" : 16101,
+      "visibleBlocks" : 77,
+      "webAreaFound" : true,
       "windowRect" : [
         61,
         30,
