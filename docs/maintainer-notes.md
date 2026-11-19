@@ -95,3 +95,16 @@ CI 的 Release 产物用 ad-hoc 签名（runner 上没有本机证书）。用�
 ```sh
 "/Applications/Selfmade/英文写作助手.app/Contents/MacOS/英文写作助手" --probe-mail --all-visible --out qa/evidence/mail-probe.json
 ```
+
+## AX 读不到别家窗口时，先看「屏幕是不是黑的」
+
+11-19 18:4x 实测：TextEdit 有 2 个文档、Mail 有窗口，但 `AXWindows` 里塞的是 **AXApplication 占位元素**
+（role=AXApplication、children 全是菜单栏），`AXWindows = 0` 也出现过；同一台机器 17:2x 还能正常读到
+`staticText=16000 / blocks=410`。`AXIsProcessTrusted = true`，权限没问题。
+
+规律：**屏幕休眠/锁屏/长时间无交互后，其他 App 的 AX 树会退化成骨架**。
+所以：
+
+- 看到 `AXWindows` 全是 AXApplication、或 `窗口数=0`，先敲一下键/动鼠标让屏幕醒，再重跑探针
+- 别在这一刻改选择逻辑——代码是好的，是系统没给数据
+- `--axcheck --spawn` / `--axaccept --spawn` 失败时，先看这条再怀疑代码

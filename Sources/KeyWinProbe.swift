@@ -15,6 +15,7 @@ enum KeyWinProbe {
         }
         let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?"
         print("--- key window 可编辑元素探针（只读）--- App=\(name) pid=\(pid)")
+        print("AXIsProcessTrusted = \(AXIsProcessTrusted())")
         let appEl = AXUIElementCreateApplication(pid)
         let wins = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
         print("AXWindows = \(wins.count)")
