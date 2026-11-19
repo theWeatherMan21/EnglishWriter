@@ -45,10 +45,12 @@ def main():
 
     drive.evaluate(ws, "(() => { const t=document.querySelector('textarea');"
                        " t.focus(); t.value=''; t.setSelectionRange(0,0); return 1; })()")
-    t0 = time.time()
     for ch in SENTENCE:
         ws.send("Input.insertText", {"text": ch})
         time.sleep(0.006)
+    # 从「最后一次击键」开始计时 —— 「停笔后多久出线」才是真指标
+    # （CDP 逐字输入本身要几秒，从第一次击键算会把输入耗时算进延迟）
+    t0 = time.time()
 
     # 等到 120ms（含 800ms 去抖，这次从「去抖结束」开始算：先等到有第一波线为止）
     snapA, msA = [], None

@@ -13,7 +13,8 @@
   window.__EW_LOADED__ = true;
 
   const API = 'http://127.0.0.1:17817';
-  const DEBOUNCE = 800;
+  const DEBOUNCE = 800;        // 模型检查（贵，慢一点）
+  const FAST_DEBOUNCE = 150;   // 本地即时检查（要快）
   let token = null;
   let host = null, root = null, layer = null, card = null;
   // 划线与建议的对应关系（键盘 ←/→ 切换要用同一份，不能靠再查一遍 DOM）
@@ -446,13 +447,30 @@
   }
 
   // ---------- 主流程 ----------
-  let timer = null;
+  // 两档去抖：本地快检 150ms 就出线（Grammarly 的「停笔即有」），模型检查 800ms 后跟上。
+  let fastTimer = null;
+  let modelTimer = null;
+  let lastInputAt = 0;
   function onEdit(ev) {
     const el = editable(ev.target);
     if (!el) return;
     lastTarget = el;
-    clearTimeout(timer);
-    timer = setTimeout(() => runCheck(false), DEBOUNCE);
+    lastInputAt = performance.now();
+    clearTimeout(fastTimer);
+    clearTimeout(modelTimer);
+    fastTimer = setTimeout(() => {
+      const seq = ++runSeq;
+      runLocalFast(false, seq);
+    }, FAST_DEBOUNCE);
+    modelTimer = setTimeout(() => {
+      if (modelBusy) { rerunWanted = true; return; }
+      modelBusy = true;
+      const seq = ++runSeq;
+      runModel(false, seq).finally(() => {
+        modelBusy = false;
+        if (rerunWanted) { rerunWanted = false; onEdit({ target: lastTarget }); }
+      });
+    }, DEBOUNCE);
   }
 
   document.addEventListener('input', onEdit, true);
@@ -475,34 +493,35 @@
 
   // 同一时刻只跑一个检查：打字期间连续触发会排队，导致最后一个结果 10 秒后才回来
   let runSeq = 0;
-  let running = false;
+  let modelBusy = false;
   let rerunWanted = false;
 
   async function runCheck(force) {
-    if (running) { rerunWanted = true; return; }
-    running = true;
+    // 只对「模型请求」排队：本地即时段不排队，否则会被上一条模型请求（可能 3 秒）挡住，
+    // 表现就是「有时候 35ms 出线，有时候 3.5 秒」——11-19 夜里抓到的真因。
     const mySeq = ++runSeq;
+    await runLocalFast(force, mySeq);
+    if (modelBusy) { rerunWanted = true; return; }
+    modelBusy = true;
     try {
-      await runCheckInner(force, mySeq);
+      await runModel(force, mySeq);
     } finally {
-      running = false;
+      modelBusy = false;
       if (rerunWanted) { rerunWanted = false; runCheck(true); }
     }
   }
 
-  async function runCheckInner(force, mySeq) {
+    // 解析当前目标与检查范围（两段共用）
+  async function prepare(force, mySeq) {
     const el = lastTarget;
-    if (force) window.__EW_DEBUG.notes.push('run target=' + (el ? el.tagName + (el.id ? '#' + el.id : '') : 'null'));
-    if (!el) return;
-    if (!token) {                       // 每次检查前补读一次，别让"后填 token"变成必须刷新页面
+    if (!el) return null;
+    if (!token) {
       token = await new Promise((r) => chrome.storage.local.get(['token'], (v) => r(v.token || null)));
     }
-    if (!token) { window.__EW_DEBUG.notes.push('skip: no token'); return; }
+    if (!token) { window.__EW_DEBUG.notes.push('skip: no token'); return null; }
     const text = textOf(el);
-    if (!text || text.length > 5000) return;
+    if (!text || text.length > 5000) return null;
     const caret = caretOf(el);
-    // Grammarly 是整篇检查，不是只看光标所在句。短文档（≤2000 字）整篇送检，
-    // 长文档退回当前句（性能与成本），并记 scope 便于排查。
     let scopeText, scopeStart, scope;
     if (text.length <= 2000) {
       scopeText = text; scopeStart = 0; scope = 'document';
@@ -511,51 +530,121 @@
       scopeText = sent.text; scopeStart = sent.start; scope = 'sentence';
     }
     window.__EW_DEBUG.scope = scope;
-    if (force) window.__EW_DEBUG.notes.push('text=' + text.length + ' scope=' + scope + ' len=' + scopeText.trim().length);
-    if (scopeText.trim().length < 3) { clearUnderlines(); return; }
-    const post = async (payload) => {
-      const res = await fetch(API + '/v1/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
-        body: JSON.stringify(payload)
-      });
-      return res;
-    };
-    // 两段式：先要本地即时结果（毫秒级，线立刻出来），再要完整结果（含模型）覆盖。
-    // Grammarly 的体感就是「一停笔就有线」，不是等 6 秒。
-    const draw = (j) => {
-      let edits = (j.edits || []).filter(e => {
-        const k = e.original + '→' + e.replacement;
-        return !ignoreList.has(k) && !ignoredOnce.has(k);
-      });
-      window.__EW_DEBUG.lastEdits = edits;
-      window.__EW_DEBUG.engine = j.engine || '';
-      window.__EW_DEBUG.elapsedMs = j.elapsedMs || 0;
-      window.__EW_DEBUG.sentStart = scopeStart;
-      window.__EW_DEBUG.sentText = scopeText;
-      if (!edits.length) { clearUnderlines(); return; }
-      drawUnderlines(el, edits, scopeStart);
-    };
-    try {
-      // 第一段：本地即时（服务端 mode:"local"，~40ms）→ 线立刻出现
-      try {
-        const fr = await post({ text: scopeText, language: 'en-GB', mode: 'local' });
-        if (fr.ok) {
-          const fj = await fr.json();
-          if (mySeq === runSeq) draw(fj);
-        }
-      } catch (fe) {
-        window.__EW_DEBUG.notes.push('fast err=' + fe.message);
+    if (scopeText.trim().length < 3) { clearUnderlines(); return null; }
+    return { el, scopeText, scopeStart, scope };
+  }
+
+  const drawWith = (ctx, j) => {
+    let edits = (j.edits || []).filter(e => {
+      const k = e.original + '→' + e.replacement;
+      return !ignoreList.has(k) && !ignoredOnce.has(k);
+    });
+    window.__EW_DEBUG.lastEdits = edits;
+    window.__EW_DEBUG.engine = j.engine || '';
+    window.__EW_DEBUG.elapsedMs = j.elapsedMs || 0;
+    window.__EW_DEBUG.sentStart = ctx.scopeStart;
+    window.__EW_DEBUG.sentText = ctx.scopeText;
+    // 「停笔 → 出线」的真实延迟（页面内部计时，比探针轮询准）
+    if (lastInputAt) window.__EW_DEBUG.lastLatencyMs = Math.round(performance.now() - lastInputAt);
+    if (!edits.length) { clearUnderlines(); return; }
+    drawUnderlines(ctx.el, edits, ctx.scopeStart);
+  };
+
+  async function postCheck(payload) {
+    return fetch(API + '/v1/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  // ---------- 页内即时规则（零请求，Grammarly 体感的来源）----------
+  // 服务端 mode:"local" 要 40ms + 往返，且受 content script 调度影响；
+  // 这里直接在页面里跑最小规则集，停笔后立刻有线，随后模型结果覆盖。
+  const FAST_SPELL = {
+    immediatly: 'immediately', recieve: 'receive', seperate: 'separate',
+    occured: 'occurred', definately: 'definitely', accomodate: 'accommodate',
+    adress: 'address', untill: 'until', wich: 'which', thier: 'their',
+    becuase: 'because', buisness: 'business', enviroment: 'environment',
+    sucess: 'success', propably: 'probably', wierd: 'weird', tommorow: 'tomorrow'
+  };
+  const FAST_RULES = [
+    { re: /\b(there) (is)(?=\s+(many|several|numerous|few|lots of|two|three|four|five))\b/gi,
+      fix: (m, a, b) => a + ' are', why: '主谓一致：there is + 复数 → there are' },
+    { re: /\b(we|they|you) (was)\b/gi, fix: (m, a) => a + ' were', why: '主谓一致：we/they/you 配 were' },
+    { re: /\b(he|she|it) (were)\b/gi, fix: (m, a) => a + ' was', why: '主谓一致：he/she/it 配 was' },
+    { re: /\b(advise|inform|notify) (us|me|them|him|her) (the|your|our|this|that)\b/gi,
+      fix: (m, a, b, c) => a + ' ' + b + ' of ' + c, why: '动词缺介词：advise sb of sth' },
+    { re: /\b(have|has|had) (send|go|come|take|make|do|see|write|speak|break|choose|drive|eat|give|know)\b/gi,
+      fix: (m, aux, v) => aux + ' ' + ({ send:'sent', go:'gone', come:'come', take:'taken', make:'made',
+        do:'done', see:'seen', write:'written', speak:'spoken', break:'broken', choose:'chosen',
+        drive:'driven', eat:'eaten', give:'given', know:'known' }[v.toLowerCase()] || v),
+      why: '完成时用过去分词' },
+    { re: /\b(was|were|is|are|been) (load|ship|pack|book|deliver|receive|confirm|inspect|discharge|release|issue)\b/gi,
+      fix: (m, be, v) => be + ' ' + ({ load:'loaded', ship:'shipped', pack:'packed', book:'booked',
+        deliver:'delivered', receive:'received', confirm:'confirmed', inspect:'inspected',
+        discharge:'discharged', release:'released', issue:'issued' }[v.toLowerCase()] || v),
+      why: '被动语态用过去分词' },
+    { re: /\b(look(?:ing)? forward to) (hear|receive|meet|see|work|talk)\b/gi,
+      fix: (m, a, v) => a + ' ' + ({ hear:'hearing', receive:'receiving', meet:'meeting',
+        see:'seeing', work:'working', talk:'talking' }[v.toLowerCase()] || v),
+      why: 'look forward to 后接动名词' },
+    { re: /\b(will|would|shall|should|can|could|may|might|must) ([a-z]+ing)\b/gi,
+      fix: (m, m1, v) => m1 + ' ' + v.replace(/ing$/i, '').replace(/([bdgklmnprt])\1$/i, '$1'),
+      why: '情态动词后接动词原形' },
+    { re: /\b(shipment|cargo|vessel|invoice|payment|order|container|document|report|booking|schedule) (have)\b/gi,
+      fix: (m, n) => n + ' has', why: '主谓一致：单数主语配 has' },
+    { re: /\b([A-Za-z]{2,}) \1\b/g, fix: (m, w) => w, why: '重复词' }
+  ];
+
+  function localFastEdits(text) {
+    const out = [];
+    for (const r of FAST_RULES) {
+      r.re.lastIndex = 0;
+      let m;
+      while ((m = r.re.exec(text)) !== null) {
+        const rep = r.fix.apply(null, m);
+        if (!rep || rep === m[0]) continue;
+        out.push({ start: m.index, length: m[0].length, original: m[0],
+                   replacement: rep, type: 'grammar', reason: r.why });
       }
-      const res = await fetch(API + '/v1/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
-        body: JSON.stringify({ text: scopeText, language: 'en-GB' })
-      });
+    }
+    const re = /\b([A-Za-z]{4,})\b/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const fix = FAST_SPELL[m[1].toLowerCase()];
+      if (!fix) continue;
+      out.push({ start: m.index, length: m[1].length, original: m[1],
+                 replacement: fix, type: 'spelling', reason: '拼写：' + m[1] + ' → ' + fix });
+    }
+    return out;
+  }
+
+  // 第一段：本地即时（不排队、不等模型）
+  async function runLocalFast(force, mySeq) {
+    const ctx = await prepare(force, mySeq);
+    if (!ctx) return;
+    try {
+      const edits = localFastEdits(ctx.scopeText);   // 纯页内，零请求
+      if (mySeq === runSeq) {
+        drawWith(ctx, { edits, engine: 'page-local', elapsedMs: 0 });
+        if (lastInputAt) window.__EW_DEBUG.fastLatencyMs = Math.round(performance.now() - lastInputAt);
+      }
+    } catch (e) {
+      window.__EW_DEBUG.notes.push('fast err=' + e.message);
+    }
+  }
+
+  // 第二段：完整检查（含模型），排队执行，过期结果丢弃
+  async function runModel(force, mySeq) {
+    const ctx = await prepare(force, mySeq);
+    if (!ctx) return;
+    try {
+      const res = await postCheck({ text: ctx.scopeText, language: 'en-GB' });
       if (res.status === 401) { window.__EW_DEBUG.notes.push('401 bad token'); return; }
       const j = await res.json();
-      if (mySeq !== runSeq) return;      // 过期结果直接丢，别覆盖更新的线
-      draw(j);
+      if (mySeq !== runSeq) return;
+      drawWith(ctx, j);
     } catch (e) {
       window.__EW_DEBUG.notes.push('fetch fail: ' + e.message);
     }
