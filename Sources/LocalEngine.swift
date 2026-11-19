@@ -22,6 +22,19 @@ enum SpanGuard {
             (#"\b\d{1,3}([,. ]\d{3})*(\.\d{1,4})?\b"#, []),   // 金额 / 数字
             (#"\b(T/T|L/C|D/P|D/A|FOB|CIF|CFR|FCA|EXW|DDP|DAP|CPT|CIP)\b"#, []),
         ]
+        // 行业术语（多词）：模型常把 free time 改成 free time allowed、把 demurrage 当拼写错。
+        // 这些是业务口径，不是语法错，一律保护起来（11-19 深度检查实测抓到 1 条误报）。
+        let terms = ["free time", "demurrage", "detention", "bill of lading", "delivery order",
+                     "letter of credit", "packing list", "shipping instruction", "booking note",
+                     "arrival notice", "certificate of origin", "port of discharge", "port of loading",
+                     "container yard", "container freight station", "telex release", "switch b/l",
+                     "master bill of lading", "house bill of lading"]
+        let termPattern = "\\b(" + terms.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|") + ")\\b"
+        if let re = try? NSRegularExpression(pattern: termPattern, options: [.caseInsensitive]) {
+            for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                out.append(m.range)
+            }
+        }
         for (p, o) in patterns {
             if let re = try? NSRegularExpression(pattern: p, options: o) {
                 for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {

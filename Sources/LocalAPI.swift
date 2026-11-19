@@ -217,10 +217,36 @@ final class LocalAPI {
         }
         if ltOn && ltOK {
             // 走本地 LT（下面继续）
+        } else if SettingsStore.load().isComplete {
+            // LT 关但模型配了：用模型跑语法（与桌面端同一条 Diff.review），
+            // 本地再补拼写/语法规则/清晰度/风格 —— 浏览器里的检查质量不该比桌面端低
+            let cfg = SettingsStore.load()
+            do {
+                let out = try await InlineEngine.review(text: text, config: cfg)
+                let merged = CategoryPrefs.filterForDisplay(
+                    DiffSanitize.consolidate(out.items + SpellCheck.items(in: text)
+                                             + LocalGrammar.apply(to: text) + StyleRules.apply(to: text), in: text))
+                let edits = merged.map { it -> [String: Any] in
+                    ["start": it.start, "length": it.length, "original": it.original,
+                     "replacement": it.replacement, "type": it.type, "reason": it.reason]
+                }
+                return ["edits": edits, "engine": "model", "elapsedMs": Int(Date().timeIntervalSince(t0) * 1000)]
+            } catch {
+                // 模型失败就老实地退到本地，并在 engine 里说明，不假装
+                let items = CategoryPrefs.filterForDisplay(
+                    DiffSanitize.consolidate(SpellCheck.items(in: text) + LocalGrammar.apply(to: text)
+                                             + StyleRules.apply(to: text), in: text))
+                return ["edits": items.map { ["start": $0.start, "length": $0.length,
+                                               "original": $0.original, "replacement": $0.replacement,
+                                               "type": $0.type, "reason": $0.reason] },
+                        "engine": "local-fallback(model failed)", "error": "\(error)",
+                        "elapsedMs": Int(Date().timeIntervalSince(t0) * 1000)]
+            }
         } else {
-            // 没开 LT：只返回零进程能做的（拼写 + 清晰度/风格），并如实标注
+            // LT 关、模型也没配：只返回零进程能做的（拼写 + 本地语法/清晰度/风格），并如实标注
             let items = CategoryPrefs.filterForDisplay(
-                DiffSanitize.consolidate(SpellCheck.items(in: text) + StyleRules.apply(to: text), in: text))
+                DiffSanitize.consolidate(SpellCheck.items(in: text) + LocalGrammar.apply(to: text)
+                                         + StyleRules.apply(to: text), in: text))
             return ["edits": items.map { ["start": $0.start, "length": $0.length, "original": $0.original,
                                           "replacement": $0.replacement, "type": $0.type, "reason": $0.reason] },
                     "engine": ltOn ? "lt-offline" : "local-only",
