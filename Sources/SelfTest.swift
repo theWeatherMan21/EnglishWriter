@@ -59,7 +59,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1894,6 +1894,30 @@ extension SelfTest {
             } else {
                 SelfTest.bad("coord: 命中 · \(name)", "\(centerQ)")
             }
+        }
+    }
+}
+
+// MARK: 点击归属（线自己记 owner；前台用最前面正常窗口，不读 frontmostApplication）
+extension SelfTest {
+    static func ownerAttrTests() {
+        let r = CGRect(x: 200, y: 150, width: 80, height: 14)
+        let sp = UnderlineSpec(rect: r, kind: .grammar, itemID: 3, ownerPid: 4242)
+        let hit = HoverCoordinator.hitTest([sp], at: CGPoint(x: r.midX, y: r.midY))
+        if hit?.ownerPid == 4242 {
+            SelfTest.ok("owner: 命中返回线自己的归属", "pid=4242")
+        } else {
+            SelfTest.bad("owner: 归属丢失", String(hit?.ownerPid ?? -1))
+        }
+        let miss = HoverCoordinator.hitTest([sp], at: CGPoint(x: r.maxX + 200, y: r.maxY + 200))
+        if miss == nil { SelfTest.ok("owner: 偏离不命中", "nil") }
+        else { SelfTest.bad("owner: 误命中", "\(miss!.itemID)") }
+
+        let front = ScreenGeom.frontmostWindowPID(excluding: getpid())
+        if front != getpid() {
+            SelfTest.ok("front: 取到的是别人的窗口", "pid=\(front) (\(appName(front)))")
+        } else {
+            SelfTest.bad("front: 取到了自己", "pid=\(front)")
         }
     }
 }

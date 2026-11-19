@@ -72,6 +72,8 @@ struct UnderlineSpec: Equatable {
     var rect: CGRect
     var kind: UnderlineKind
     var itemID: Int = -1
+    /// 这条线是给哪个 App 画的。归属在画线时就确定，点击时绝不靠「当前焦点」反查（会反查到别的 App）
+    var ownerPid: pid_t = 0
     /// 最后一次被检查确认的时间。超过 2s 没被确认 → 自动隐藏，屏幕上不留没人管的线
     var stamp: Date = Date()
 

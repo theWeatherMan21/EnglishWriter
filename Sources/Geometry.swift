@@ -57,3 +57,24 @@ enum ScreenGeom {
         return out
     }
 }
+
+extension ScreenGeom {
+    /// 当前最前面那层**正常窗口**的宿主 App（跳过我们自己的窗口与高于 normal 的浮层）。
+    /// 为什么不用 NSWorkspace.frontmostApplication：我们的 overlay / 卡片会成为 key，
+    /// 回调里读它常常拿到旧值或我们自己（11-19 实测：点 TextEdit 的线却报 front=WeChat）。
+    static func frontmostWindowPID(excluding selfPid: pid_t = getpid()) -> pid_t {
+        guard let list = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+        }
+        for w in list {
+            guard let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid != selfPid else { continue }
+            let layer = w[kCGWindowLayer as String] as? Int ?? 0
+            guard layer == 0 else { continue }                 // 只认 normal 层，跳过菜单栏/浮层
+            let alpha = w[kCGWindowAlpha as String] as? Double ?? 1
+            guard alpha > 0.01 else { continue }
+            return pid
+        }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+    }
+}

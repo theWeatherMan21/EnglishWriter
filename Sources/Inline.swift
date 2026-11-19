@@ -1110,7 +1110,7 @@ final class InlineController {
             let id = kept.count
             kept.append(it)
             keptMap.append(bi)
-            for r in rects { specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: id)) }
+            for r in rects { specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: id, ownerPid: pid)) }
         }
         items = kept
         itemBlock = keptMap
@@ -1337,7 +1337,7 @@ final class InlineController {
             var rects = AXInline.lineRects(for: it.utf16Range, in: el)
             if rects.isEmpty, elFrame.width > 0, elFrame.height > 0 { rects = [elFrame] }
             for r in rects {
-                specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: idx))
+                specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: idx, ownerPid: pid))
             }
         }
         items = cleaned

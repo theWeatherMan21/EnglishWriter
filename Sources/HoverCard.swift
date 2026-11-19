@@ -427,8 +427,11 @@ final class HoverCoordinator {
         let hit = HoverCoordinator.hitTest(specs, at: mouseQuartz)
         // miss 必须能自证差在哪：点坐标（两种口径）、最近一条线、以及「谁画的线 vs 现在前台是谁」。
         // 只有 rectCount 时，看不出是坐标偏了、还是点在别的 App 上（那是正常 miss）。
-        let ownerPid = InlineController.shared.currentPid
-        let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+        // owner：命中的那条线自己记的归属（画线时确定）；没命中才退回当前检查的 pid
+        let ownerPid = hit?.ownerPid ?? InlineController.shared.currentPid
+        // front：取最前面那层正常窗口的宿主，不用 frontmostApplication（我们的浮层会让它给错值）
+        let frontPid = ScreenGeom.frontmostWindowPID(excluding: getpid())
+        let frontSource = "cgwindow"
         var nearest = Double.greatestFiniteMagnitude
         var nearestRect = CGRect.null
         for sp in specs {
@@ -438,10 +441,10 @@ final class HoverCoordinator {
             if d < nearest { nearest = d; nearestRect = sp.rect }
         }
         let diag = String(
-            format: "x=%.1f y=%.1f | owner=%@(%d) front=%@(%d) | nearest=%.1f rect=[%.0f,%.0f,%.0f,%.0f]",
+            format: "x=%.1f y=%.1f | owner=%@(%d) front=%@(%d) src=%@ | nearest=%.1f rect=[%.0f,%.0f,%.0f,%.0f]",
             mouseQuartz.x, mouseQuartz.y,
             appName(ownerPid) as NSString, ownerPid,
-            appName(frontPid) as NSString, frontPid,
+            appName(frontPid) as NSString, frontPid, frontSource as NSString,
             nearest == .greatestFiniteMagnitude ? -1 : nearest,
             nearestRect.isNull ? 0 : nearestRect.minX, nearestRect.isNull ? 0 : nearestRect.minY,
             nearestRect.isNull ? 0 : nearestRect.width, nearestRect.isNull ? 0 : nearestRect.height)
