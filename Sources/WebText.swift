@@ -78,7 +78,24 @@ enum WebText {
 
     /// 块内 range → 屏幕矩形（块自己的 AXBoundsForRange）
     static func lineRects(for ns: NSRange, in block: Block) -> [CGRect] {
-        AXInline.lineRects(for: ns, in: block.element)
+        let rects = AXInline.lineRects(for: ns, in: block.element).filter { !$0.isEmpty }
+        if !rects.isEmpty { return rects }
+        // 兜底：AXBoundsForRange 给不出矩形时（WebKit 常见），退回元素自身的 AXFrame；
+        // 再读不到就往上找一层非零尺寸的祖先。没有这一步，Mail 里就是「有建议、rect=0」。
+        let own = frame(block.element)
+        if own.width > 0, own.height > 0 { return [own] }
+        var cur: AXUIElement? = block.element
+        for _ in 0..<4 {
+            guard let c = cur else { break }
+            var raw: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(c, kAXParentAttribute as CFString, &raw) == .success,
+                  let parent = raw, CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+            let p = parent as! AXUIElement
+            let f = frame(p)
+            if f.width > 0, f.height > 0, f.width < 4000, f.height < 3000 { return [f] }
+            cur = p
+        }
+        return []
     }
 
     /// 替换计划（纯函数，不碰 AX）：越界/空替换一律拒绝，返回替换后的块文本。

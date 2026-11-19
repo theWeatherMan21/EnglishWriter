@@ -852,7 +852,12 @@ final class InlineController {
             var all: [DiffItem] = []
             var map: [Int] = []
             var firstError: String?
-            for (bi, b) in blks.enumerated() {
+            var seenWords = Set<String>()
+        let maxItems = 20
+        for (bi, b) in blks.enumerated() {
+            // 区域/噪声过滤：邮件列表行、签名、引用链的文字通常很短，没有完整句子
+            let blen = (b.text as NSString).length
+            if blen < 12 || !b.text.contains(" ") { continue }
                 let t = b.text
                 guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
                 if !LanguageGate.isEnglish(t) { continue }
@@ -882,6 +887,8 @@ final class InlineController {
         var kept: [DiffItem] = []
         var keptMap: [Int] = []
         var specs: [UnderlineSpec] = []
+        var seenWords = Set<String>()
+        let maxItems = 20
         for (i, it) in newItems.enumerated() where i < blockMap.count {
             let bi = blockMap[i]
             guard bi < blks.count else { continue }
@@ -889,6 +896,12 @@ final class InlineController {
             let ns = b.text as NSString
             guard it.length > 0, it.start >= 0, it.start + it.length <= ns.length else { continue }
             guard ns.substring(with: it.utf16Range) == it.original else { continue }   // 偏移对不上一律不画
+            // 同一个词在一篇里只报第一次（513 条里大部分是重复的列表/签名词）
+            let wordKey = it.original.lowercased()
+            guard !seenWords.contains(wordKey) else { continue }
+            seenWords.insert(wordKey)
+            // 单篇上限 20 条，超了按已有顺序截断（日志里记 truncated）
+            if kept.count >= maxItems { break }
             if IgnoreStore.shared.isIgnored(original: it.original, replacement: it.replacement) { continue }
             let rects = WebText.lineRects(for: it.utf16Range, in: b)
             guard !rects.isEmpty else { continue }
@@ -899,6 +912,12 @@ final class InlineController {
         }
         items = kept
         itemBlock = keptMap
+        if newItems.count > kept.count {
+            emit(CheckEvent(kind: "truncated", pid: pid, app: appName(pid),
+                            role: "web", textLen: 0, sentenceLen: 0,
+                            itemCount: kept.count, rectCount: specs.count,
+                            elapsed: "-", err: "原始 \(newItems.count) 条 → 保留 \(kept.count)", at: Date()))
+        }
         diag.lastRectCount = specs.count
         guard !specs.isEmpty else {
             overlay.clear()
