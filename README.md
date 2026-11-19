@@ -44,7 +44,7 @@
 
 ## 安装（用 Release 里的 .app）
 
-1. 到 [Releases](https://github.com/theWeatherMan21/EnglishWriter/releases) 下载最新的 `EnglishWriter-<版本>-macos.zip`。
+1. 到 [Releases](https://github.com/theWeatherMan21/EnglishWriter/releases) 下载最新的 `EnglishWriter-<版本>-macos.zip`。产物是**通用二进制（Universal 2）**，Apple Silicon 与 Intel 都能跑（macOS 13+）。
 2. 解压，把 `英文写作助手.app` 拖进 `/Applications`。
 3. 双击打开。**首次会被 Gatekeeper 拦**（本项目没有 Apple 开发者 ID / 公证），在「系统设置 → 隐私与安全性」点「仍要打开」，或先执行
    `xattr -dr com.apple.quarantine /Applications/英文写作助手.app`。
@@ -110,7 +110,8 @@ curl -s http://127.0.0.1:8081/v2/languages | head -c 120   # 应返回 JSON 语�
 ## 构建与自测
 
 ```bash
-bash scripts/build.sh            # 产物 build/英文写作助手.app
+bash scripts/build.sh            # 产物 build/英文写作助手.app（本机架构，迭代快）
+BUILD_ARCH=universal bash scripts/build.sh   # arm64 + x86_64 通用二进制（发布用，慢一倍）
 open build/英文写作助手.app       # 常驻菜单栏；首次需授辅助功能权限
 ```
 

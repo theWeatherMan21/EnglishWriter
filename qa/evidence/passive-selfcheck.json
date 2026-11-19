@@ -20,7 +20,7 @@
     "pasteboard(AXTarget|Inline)",
     "window: UnderlineOverlay\/CardPanel\/HoverCardPanel\/Settings\/Demo"
   ],
-  "logPath" : "\/Users\/russospencer\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl",
+  "logPath" : "\/Users\/you\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl",
   "note" : "A 段正控后已 reset；B 段所有计数都是 reset 之后的实测值。覆盖窗口对象在进程启动时分配、从不 orderFront，所以「创建对象数」按启动前基线比对、上屏计数单独统计。",
   "pass" : true,
   "pid" : 62691,
@@ -70,7 +70,7 @@
       "pass" : true
     },
     {
-      "detail" : "\/Users\/russospencer\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl 共 1 行",
+      "detail" : "\/Users\/you\/dev\/EnglishWriter\/qa\/evidence\/passive-selfcheck.jsonl 共 1 行",
       "name" : "日志·有落盘行",
       "pass" : true
     },

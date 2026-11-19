@@ -46,17 +46,30 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "V=$V"
 
-      - name: Build app（ad-hoc signed）
+      - name: Build app（ad-hoc signed, universal）
         env:
           SIGN_ID: "-"
           RELEASE_VERSION: ${{ steps.ver.outputs.version }}
+          BUILD_ARCH: universal
         run: bash scripts/build.sh
 
-      - name: Verify signature + smoke
+      - name: Verify signature + arch + smoke
         run: |
           APP="build/英文写作助手.app"
+          BIN="$APP/Contents/MacOS/英文写作助手"
           codesign --verify --deep --strict "$APP"
           codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "Identifier=|Signature=|TeamIdentifier=" || true
+          ARCHS="$(lipo -archs "$BIN")"
+          echo "架构：$ARCHS"
+          # 发布产物必须是通用二进制，否则 Intel Mac 下载下来打不开
+          case "$ARCHS" in
+            *arm64*) ;;
+            *) echo "缺 arm64 切片"; exit 1 ;;
+          esac
+          case "$ARCHS" in
+            *x86_64*) ;;
+            *) echo "缺 x86_64 切片"; exit 1 ;;
+          esac
           ./build/英文写作助手 --selftest --m3 --settings
           ./build/英文写作助手 --demo-selfcheck
 
@@ -80,6 +93,9 @@ jobs:
           TAG="v$V"
           NOTES="$(cat <<'EOF'
           macOS 版英文写作助手（Grammarly 开源替代）。
+
+          ## 架构
+          通用二进制（Universal 2）：Apple Silicon 与 Intel Mac 都能直接运行（macOS 13+）。
 
           ## 安装
           1. 下载 `EnglishWriter-<版本>-macos.zip`，解压。

@@ -101,7 +101,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-19T07:34:27Z",
+  "generatedAt" : "2026-11-19T08:05:01Z",
   "netStub" : {
     "emptyConfigHits" : 0,
     "how" : "URLProtocol 打桩计数（CountingProtocol）",
@@ -109,7 +109,7 @@
   },
   "note" : "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。",
   "pass" : true,
-  "plistPath" : "\/Users\/russospencer\/Library\/Preferences\/com.wanyi.englishwriter.plist",
+  "plistPath" : "\/Users\/you\/Library\/Preferences\/com.wanyi.englishwriter.plist",
   "savedValues" : {
     "exclude.apps" : [
       "com.apple.mail",

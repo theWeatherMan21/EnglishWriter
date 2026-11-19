@@ -1,4 +1,4 @@
-证据：/Users/russospencer/dev/EnglishWriter/qa/evidence/settings-selftest.json
+证据：/Users/you/dev/EnglishWriter/qa/evidence/settings-selftest.json
 
 --- 逐条 diff 真接口（--live-diff，走 EW_BASE_URL/EW_API_KEY/EW_MODEL）---
 PASS  live-diff·#1 3 条 3.74s 术语OK  — grammar:is→are | grammar:sent→send | spelling:immediatly→immediately

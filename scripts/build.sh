@@ -7,12 +7,26 @@ NAME="英文写作助手"
 BUNDLE_ID="com.wanyi.englishwriter"
 SIGN_ID="${SIGN_ID:-SOALedger Dev}"
 VERSION="${RELEASE_VERSION:-0.2.0}"
+# native（默认，本机开发迭代快）| universal（发布用：arm64 + x86_64，Intel Mac 也能直接跑）
+BUILD_ARCH="${BUILD_ARCH:-native}"
 
 rm -rf build
 mkdir -p build
 
-swiftc -O -swift-version 5 Sources/*.swift -o "build/$NAME" \
-    -framework AppKit -framework SwiftUI -framework ApplicationServices -framework NaturalLanguage
+SWIFT_FLAGS=(-O -swift-version 5 Sources/*.swift
+    -framework AppKit -framework SwiftUI -framework ApplicationServices -framework NaturalLanguage)
+
+if [ "$BUILD_ARCH" = "universal" ]; then
+    echo "== 编译 arm64 =="
+    swiftc "${SWIFT_FLAGS[@]}" -target arm64-apple-macos13.0  -o "build/$NAME.arm64"
+    echo "== 编译 x86_64（Rosetta / Intel）=="
+    swiftc "${SWIFT_FLAGS[@]}" -target x86_64-apple-macos13.0 -o "build/$NAME.x86_64"
+    lipo -create "build/$NAME.arm64" "build/$NAME.x86_64" -o "build/$NAME"
+    rm -f "build/$NAME.arm64" "build/$NAME.x86_64"
+    echo "架构：$(lipo -archs "build/$NAME")"
+else
+    swiftc "${SWIFT_FLAGS[@]}" -o "build/$NAME"
+fi
 
 APP="build/$NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
