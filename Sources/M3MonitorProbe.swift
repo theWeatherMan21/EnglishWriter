@@ -25,10 +25,16 @@ enum M3MonitorProbe {
             lines.append(s)
         }
 
-        var received: (x: CGFloat, y: CGFloat)?
+        // 记录全部收到的 mouseMoved：首条 + 最近一条 + 条数
+        //（只记最新一条会被「取证期间人手移动鼠标」覆盖成别的坐标，看起来像合成失败）
+        var first: (x: CGFloat, y: CGFloat)?
+        var latest: (x: CGFloat, y: CGFloat)?
+        var count = 0
         _ = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { e in
             let q = ScreenGeom.toQuartz(NSRect(origin: e.locationInWindow, size: .zero)).origin
-            received = (q.x, q.y)
+            if first == nil { first = (q.x, q.y) }
+            latest = (q.x, q.y)
+            count += 1
         }
 
         MainActor.assumeIsolated { HoverCoordinator.shared.start() }
@@ -53,18 +59,19 @@ enum M3MonitorProbe {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
             CGWarpMouseCursorPosition(hereQ)                       // 还原光标
             MainActor.assumeIsolated { HoverCoordinator.shared.stop() }
-            if let m = received {
-                emit("EVENT mouseMoved received at (\(Int(m.x)),\(Int(m.y)))（合成点 \(Int(target.x)),\(Int(target.y))；光标可能被人手同时移动）")
+            if let f = first, let l = latest {
+                let hitSynth = abs(f.x - target.x) <= 2 && abs(f.y - target.y) <= 2
+                emit("EVENT mouseMoved 收到 \(count) 条；首条=(\(Int(f.x)),\(Int(f.y))) 最近=(\(Int(l.x)),\(Int(l.y))) 合成点=(\(Int(target.x)),\(Int(target.y))) 首条命中合成点=\(hitSynth)")
             } else {
                 emit("EVENT mouseMoved 未收到（本进程无输入监控授权，或系统丢弃合成事件）")
             }
-            AppLog.info("m3", "monitors probe productHover=\(productHover) productClick=\(productClick) rawEvent=\(received != nil) axTrusted=\(trusted) canPost=\(canPost)")
-            let ok = productHover && productClick && received != nil
+            AppLog.info("m3", "monitors probe productHover=\(productHover) productClick=\(productClick) rawEvent=\(first != nil) axTrusted=\(trusted) canPost=\(canPost)")
+            let ok = productHover && productClick && first != nil
             emit(ok ? "=== M3 监听取证：PASS ===" : "=== M3 监听取证：FAIL ===")
             try? (lines.joined(separator: "\n") + "\n").write(toFile: logPath, atomically: true, encoding: .utf8)
             NSApp.terminate(nil)
         }
         app.run()
-        return received != nil && productHover && productClick ? 0 : 1
+        return first != nil && productHover && productClick ? 0 : 1
     }
 }
