@@ -461,7 +461,7 @@ final class HoverCoordinator {
                       },
                       onIgnore: { [weak self] in
                           self?.panel.dismiss()
-                          ctrl.ignore(itemID: itemID)
+                          ctrl.ignorePermanent(itemID: itemID)
                       },
                       onAddDict: { [weak self] in
                           self?.panel.dismiss()
@@ -528,7 +528,8 @@ final class HoverCoordinator {
                             before: before, original: item.original, replacement: item.replacement, after: after,
                             anchor: rect, allowDict: true,
                             onAccept: { _ = ctrl.accept(itemID: itemID) },
-                            onIgnore: { ctrl.dropItem(start: item.start, length: item.length) },
+                            onIgnore: { ctrl.ignorePermanent(itemID: itemID) },
+                            onIgnoreSession: { ctrl.ignoreSession(itemID: itemID) },
                             onDict: { ctrl.addToDictionary(itemID: itemID) },
                             onRewrite: { RewriteFlow.start(tone: false) },
                             onTone: { RewriteFlow.start(tone: true) })

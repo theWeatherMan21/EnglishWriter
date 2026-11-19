@@ -177,7 +177,11 @@ final class AppModel: ObservableObject {
 enum SettingsStore {
     /// 设置域钉死成 bundle id：.app 与命令行裸二进制读写同一份，验收能直接 defaults read
     static let bundleId = "com.wanyi.englishwriter"
-    static var store: UserDefaults { UserDefaults(suiteName: bundleId) ?? .standard }
+
+    /// 只给离屏快照 / 自测用的隔离域（`--settings-snapshot` 用它，绝不碰用户真实配置）
+    static var override: UserDefaults?
+
+    static var store: UserDefaults { override ?? UserDefaults(suiteName: bundleId) ?? .standard }
 
     static let kBase = "llm.baseURL"
     static let kKey = "llm.apiKey"

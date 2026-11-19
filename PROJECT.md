@@ -14,7 +14,7 @@
 | M2 输入即检查 | **真机已验（TextEdit）** | `--axcheck --spawn --notify` 3/3：AXObserver 自发触发 → 800ms 去抖 → rects=3（62/49/147ms）；`--selftest --lt` 56/0 |
 | M3 悬停卡片 + 接受/忽略/撤销 + 词典 | **已交付（待真机复核）** | `--selftest --m3` → **PASS 53/0**；卡片离线渲染 `out/m3-card.png`（320×147）；commit `2a30293` |
 | M3.3 三类命中合并去重 | **已交付** | `--selftest --m3` 合并不变量 PASS（重复/重叠/相接/越界/升序/端到端） |
-| M4 #8 设置面板 | **已交付（UI 手点留给爹地）** | `bash scripts/settings-selftest.sh` → PASS 10 项：零预设、独立进程 `defaults read` 冷读六项一致、词典过滤 1→0、App 排除命中/不误伤。证据 `qa/evidence/settings-selftest.json` |
+| M4 #8 设置面板 | **已交付（2026-11-19 完成本轮硬化）** | `bash scripts/settings-selftest.sh` → **PASS 140 / FAIL 0** + 3 条静态不变量：零预设、独立进程 `defaults read` 冷读六项、**空配置远端三条通道 0 次网络请求（URLProtocol 打桩计数）+ 正控 1 次**、方言换档请求参数真的变、词典两条通道都过滤、本次/永久忽略分家、App 排除闸门 3 个入口。证据 `qa/evidence/settings-selftest.json` + 面板截图 `qa/evidence/settings-panel.png` |
 | M4 Chromium contenteditable 矩形 | **已打通（扩展侧）** | `bash scripts/ext-real-probe.sh` → PASS：`#ce` 真焦点、3 命中 / 3 矩形（rect_source=`range`）、强制兜底 `child-union` 也出矩形、接受/撤销读回一致；证据 `qa/evidence/ext-real-probe.json` |
 | `--passive` 仪器自证 | **R1** | `bash scripts/passive-selfcheck.sh` → 9/9 PASS（正控活 + 只读写回 0 + 上屏 0 + 日志七字段）；证据 `qa/evidence/passive-selfcheck.json` |
 | M4 开源发布 | 等爹地点头 | README 补完安装/三件套/LanguageTool 三段；CI 远端已真跑绿（run 见 `out/parity.md` #15）；public 化不动 |
@@ -101,3 +101,51 @@ TCC 无法程序代勾；勾完我自行重启并出真机截图（Mail + TextEd
 1. 悬停命中：全局 `mouseMoved` 监听 + `UnderlineOverlay.currentRects()` 命中测试（覆盖窗口不收事件）。
 2. 卡片改逐条：类别 / 原句 / 建议 / 一句中文理由 / 接受 · 忽略。
 3. 接受 → `applyEdits(items, to:, only:)` 逐条写回；撤销 → 原文快照还原；忽略 → 本会话黑名单。
+
+---
+
+## 7. M4 设置面板 · 交付说明（2026-11-19）
+
+**一句话**：模型三件套 / 引擎地址 / 方言 / App 排除 / 个人词典 / 忽略规则全部在 App 内配完，改完即时生效（模型三件套下一次请求生效）。
+
+### UserDefaults 结构与键名（域固定 `com.wanyi.englishwriter`）
+
+| key | 类型 | 空值语义 | 说明 |
+|---|---|---|---|
+| `llm.baseURL` | String | **空 = 远端通道不启用**（零预设，绝不回退内置地址） | 手填，如 `https://host/v1`（OpenAI 兼容，`/chat/completions` 自动拼） |
+| `llm.apiKey` | String | 空 = 不启用 | 只存本机；拼进 `Authorization: Bearer` |
+| `llm.model` | String | 空 = 不启用 | 请求体 `model` 字段 |
+| `lt.baseURL` | String | 空 = `http://127.0.0.1:8081` | 本地 LanguageTool 地址；留空不落盘默认值，随时可换成别人的 LT |
+| `lt.enabled` | Bool | false = 不起 JVM | 本地 LT 开关（LT 常驻约 370MB） |
+| `lt.language` | String | 空 = `en-GB` | 可选 `en-US`/`en-AU`/`en-CA`/`en-NZ`，也可手填 |
+| `exclude.apps` | [String] | 空 = 不排除任何 App | 填 bundle id 或应用名（忽略大小写）；命中 = 不挂 AXObserver、不检查、不画线 |
+| `dict.words` | [String] | 空 = 没有预设词 | 个人词典；本地 LT 与远端 diff **两条通道都过滤**（按命中区间判，不靠字符串相等） |
+| `ignore.rules` | [[String]] | 空 = 没有规则 | 永久忽略，元素是 `[原词, 建议]` 二元组；**本次忽略只在内存，绝不写这个键** |
+
+三件套「空 = 不启用」的证明不是注释，是断言：`--selftest --settings` 用 URLProtocol 打桩计数，
+空配置下 `InlineEngine.review` / `Engine.review` / `Rewrite.suggest` 三条通道全部 `notConfigured` 且计数 **0**；
+同一打桩在配置齐全时必须发出 **1** 次（正控，防计数器变死代码）。
+
+### 热生效边界
+
+| 配置 | 何时生效 | 机制 |
+|---|---|---|
+| 引擎地址 / 方言 | 下一次检查 | 每次检查现读 `EnginePrefs.ltBaseURL()` / `EnginePrefs.language()`，无缓存 |
+| 个人词典 / 忽略规则 | 下一次检查 | `PersonalFilter` 每次现读 `DictStore.words` / `IgnoreStore` |
+| App 排除 | 下一次焦点切换 / 检查 | `excludeGate` 在挂 observer 与检查两个入口都判 |
+| 模型三件套 | 下一次请求 | `checkNow` 内 `SettingsStore.load()` |
+
+### 忽略的两种语义
+
+- **本次忽略**（卡片「本次忽略」）：只进内存，本次运行内不再提示；重启 App 恢复提示。
+- **不再提示**（卡片「不再提示」= 永久）：写 `ignore.rules`，跨重启有效；设置面板「清空永久」可整体撤销。
+
+### 复跑命令
+
+```bash
+bash scripts/settings-selftest.sh        # 断言 + 静态不变量 + 面板截图，一条命令
+./build/英文写作助手 --selftest --settings   # 只跑断言（PASS 140 / FAIL 0）
+./build/英文写作助手 --settings-snapshot out/settings-panel.png   # 只出面板图（隔离域，不碰真实配置）
+```
+
+面板截图为离屏合成（窗口坐标 -6000, -6000，不 orderFront、不 screencapture），固定浅色外观。

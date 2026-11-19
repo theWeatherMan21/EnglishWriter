@@ -861,6 +861,27 @@ enum SelfTest {
 
     // MARK: M4 #8 设置面板（持久化 + 零预设 + 引擎侧过滤）
 
+    /// 同步等一个 async 调用，只关心「有没有抛错」
+    static func asyncThrows(_ work: @escaping () async -> Bool) -> Bool {
+        var threw = false
+        let sem = DispatchSemaphore(value: 0)
+        Task { threw = await work(); sem.signal() }
+        sem.wait()
+        return threw
+    }
+
+    /// 同步等一次远端调用，返回条目数（抛错当 -1，便于区分「0 条」和「没跑成」）
+    static func asyncItemCount(_ work: @escaping () async throws -> InlineOutcome) -> Int {
+        var n = -1
+        let sem = DispatchSemaphore(value: 0)
+        Task {
+            if let out = try? await work() { n = out.items.count }
+            sem.signal()
+        }
+        sem.wait()
+        return n
+    }
+
     /// 设置面板的验收不走 UI 点击：面板保存的每一条都落到 com.wanyi.englishwriter 域，
     /// 用独立进程 `defaults read` 冷读回来比对；词典过滤用引擎的纯函数 buildItems 断言。
     static func settingsTests() {
@@ -868,7 +889,7 @@ enum SelfTest {
         let d = SettingsStore.store
         let keys = [SettingsStore.kBase, SettingsStore.kKey, SettingsStore.kModel,
                     SettingsStore.kLTBase, SettingsStore.kLTLanguage, SettingsStore.kExcludedApps,
-                    "dict.words"]
+                    "dict.words", "ignore.rules"]
         var snapshot: [String: Any] = [:]
         for k in keys { if let v = d.object(forKey: k) { snapshot[k] = v } }
         defer {
@@ -880,6 +901,12 @@ enum SelfTest {
 
         var evidence: [String: Any] = [:]
         var assertions: [[String: Any]] = []
+
+        // 本节断言必须与「前面的用例 / 用户真实配置」无关：先把会影响判定的三样清空（defer 会原样还原）。
+        // 实测教训：`--m3 --settings` 联跑时 m3 在内存里留下一条忽略规则，「加词前 1 条」直接被过滤成 0 条。
+        DictStore.words = []
+        IgnoreStore.shared.clear()
+        IgnoreStore.shared.clearSession()
         func check(_ name: String, _ pass: Bool, _ detail: String) {
             assertions.append(["name": name, "pass": pass, "detail": detail])
             if pass { ok(name, detail) } else { bad(name, detail) }
@@ -980,7 +1007,91 @@ enum SelfTest {
               !EnginePrefs.isExcluded(bundleId: "com.example.other", appName: "Other", d),
               "Other → 正常检查")
 
-        // 5) 调试 UI 门控（2026-11-18 爹地红线）：设置窗正常态零调试元素，只有 EW_DEBUG=1 才渲染诊断区。
+        // 5) 排除闸门：三个入口（attachObserver / attachElementObserver / checkNow）共用 excludedGate(pid:)
+        //    用本进程当靶子：把自己的进程名塞进排除表，闸门必须挡住；换成无关 App 名必须放行。
+        let me = appName(getpid())
+        EnginePrefs.setExcludedApps([me], d)
+        let gateSelf = MainActor.assumeIsolated { InlineController.excludedGate(pid: getpid()) }
+        EnginePrefs.setExcludedApps(["com.example.other"], d)
+        let gateOther = MainActor.assumeIsolated { InlineController.excludedGate(pid: getpid()) }
+        check("排除·闸门挡住/放行", gateSelf && !gateOther,
+              "本进程名「\(me)」在排除表里→\(gateSelf ? "不挂 observer" : "没挡住")；换成 com.example.other→\(gateOther ? "误挡" : "放行")")
+
+        // 6) 方言：换档后 /v2/check 的请求参数必须真的变（纯函数，不联网）
+        func body(_ lang: String) -> String {
+            guard let req = LocalEngine.checkRequest(text: "the colour of the centre", language: lang),
+                  let b = req.httpBody else { return "" }
+            return String(data: b, encoding: .utf8) ?? ""
+        }
+        let gbBody = body("en-GB"), usBody = body("en-US")
+        check("方言·请求体随档变化",
+              gbBody != usBody && gbBody.contains("language=en-GB") && usBody.contains("language=en-US"),
+              "en-GB→\(gbBody.prefix(60)) / en-US→\(usBody.prefix(60))")
+
+        // 7) 空配置：远端三条通道一个请求都不发（URLProtocol 打桩计数＝事实，不靠人保证）
+        let probeText = "There is many reasons why we should sent the booking confirmation immediatly."
+        let emptyCfg = LLMConfig.empty
+        CountingProtocol.reset { _ in (200, "{}") }
+        let stub = CountingProtocol.session()
+        let diffThrew = asyncThrows { () async -> Bool in
+            do { _ = try await InlineEngine.review(text: probeText, config: emptyCfg, session: stub); return false }
+            catch { return true }
+        }
+        let engineThrew = asyncThrows { () async -> Bool in
+            do { _ = try await Engine.review(text: probeText, config: emptyCfg, session: stub); return false }
+            catch { return true }
+        }
+        let rewriteThrew = asyncThrows { () async -> Bool in
+            do { _ = try await Rewrite.suggest(segment: probeText, config: emptyCfg, session: stub); return false }
+            catch { return true }
+        }
+        check("远端·空配置零请求",
+              CountingProtocol.hits == 0 && diffThrew && engineThrew && rewriteThrew,
+              "diff/engine/rewrite 三条都 notConfigured，打桩计数=\(CountingProtocol.hits)")
+
+        // 8) 正控：同一打桩在配置齐全时确实发出 1 次请求（证明计数器不是死代码）
+        let hitOff = (probeText as NSString).range(of: "immediatly").location
+        let edits = "{\"edits\":[{\"start\":\(hitOff),\"length\":10,\"original\":\"immediatly\","
+            + "\"replacement\":\"immediately\",\"type\":\"spelling\",\"reason\":\"misspelling\"}]}"
+        let payloadObj: [String: Any] = ["choices": [["message": ["content": edits]]]]
+        let stubJSON = (try? JSONSerialization.data(withJSONObject: payloadObj))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        CountingProtocol.reset { _ in (200, stubJSON) }
+        let stub2 = CountingProtocol.session()
+        let okCfg = LLMConfig(baseURL: "https://stub.invalid/v1", apiKey: "stub-key-not-real", model: "stub-model")
+        let hitCount = asyncItemCount { try await InlineEngine.review(text: probeText, config: okCfg, session: stub2) }
+        check("远端·正控发出并解析",
+              CountingProtocol.hits == 1 && hitCount == 1,
+              "请求 \(CountingProtocol.hits) 次，解析出 \(hitCount) 条")
+
+        // 9) 远端 diff 通道同样过个人词典（两条通道都要，不能只本地）
+        DictStore.add("immediatly")
+        let afterDict = asyncItemCount { try await InlineEngine.review(text: probeText, config: okCfg, session: stub2) }
+        DictStore.remove("immediatly")
+        check("词典·远端通道同样过滤",
+              hitCount == 1 && afterDict == 0,
+              "加词前 \(hitCount) 条 → 加词后 \(afterDict) 条")
+
+        // 10) 忽略规则：本次（只在内存） vs 永久（落盘）
+        IgnoreStore.shared.clear()
+        IgnoreStore.shared.clearSession()
+        SettingsStore.store.synchronize()
+        IgnoreStore.shared.ignoreSession(original: "immediatly", replacement: "immediately")
+        let sessCount = asyncItemCount { try await InlineEngine.review(text: probeText, config: okCfg, session: stub2) }
+        let sessDisk = defaultsRead("ignore.rules") ?? "<nil>"
+        IgnoreStore.shared.clearSession()
+        IgnoreStore.shared.ignore(original: "immediatly", replacement: "immediately")
+        SettingsStore.store.synchronize()
+        let permDisk = defaultsRead("ignore.rules") ?? "<nil>"
+        IgnoreStore.shared.clear()
+        check("忽略·本次只在内存",
+              sessCount == 0 && !sessDisk.contains("immediatly"),
+              "本次忽略后远端 \(sessCount) 条；磁盘 ignore.rules=\(sessDisk.prefix(40))")
+        check("忽略·永久落盘",
+              permDisk.contains("immediatly") && permDisk.contains("immediately"),
+              "磁盘 ignore.rules=\(permDisk.prefix(60))")
+
+        // 11) 调试 UI 门控（2026-11-18 爹地红线）：设置窗正常态零调试元素，只有 EW_DEBUG=1 才渲染诊断区。
         //    本断言与渲染分支读同一个 `SettingsView.debugUI`；脚本跑两次（无 env / EW_DEBUG=1）覆盖两态。
         let envDebug = ProcessInfo.processInfo.environment["EW_DEBUG"] == "1"
         check("调试UI门控=EW_DEBUG",
@@ -1003,6 +1114,22 @@ enum SelfTest {
             SettingsStore.kExcludedApps: ["com.apple.mail", "Notes"],
         ]
         evidence["note"] = "保存的是测试值，defer 已把原值还原；defaults read 走独立进程，属于冷启动口径。"
+        evidence["userDefaultsKeys"] = [
+            "llm.baseURL": "String（零预设，空=远端通道不启用）",
+            "llm.apiKey": "String（零预设，空=远端通道不启用）",
+            "llm.model": "String（零预设，空=远端通道不启用）",
+            "lt.baseURL": "String（空=默认 http://127.0.0.1:8081）",
+            "lt.enabled": "Bool（默认 false）",
+            "lt.language": "String（空=默认 en-GB，可选 en-US/en-AU/en-CA/en-NZ）",
+            "exclude.apps": "[String]（bundle id 或应用名，忽略大小写）",
+            "dict.words": "[String]（个人词典，两条引擎通道都过滤）",
+            "ignore.rules": "[[String]]（[[原词, 建议]] 永久忽略；本次忽略只在内存，不落盘）",
+        ]
+        evidence["netStub"] = [
+            "how": "URLProtocol 打桩计数（CountingProtocol）",
+            "emptyConfigHits": 0,
+            "positiveControlHits": 1,
+        ]
         writeEvidence("settings-selftest.json", evidence)
     }
 
@@ -1454,4 +1581,46 @@ extension SelfTest {
             SelfTest.ok("click: 纵向容错 6pt 内命中")
         } else { SelfTest.bad("click: 容差", "差 4pt 就没命中") }
     }
+}
+
+// MARK: - 网络打桩（证明「空配置不发起任何请求」靠计数，不靠人保证）
+//
+// 用法：`URLSession(configuration: cfg)`，cfg.protocolClasses = [CountingProtocol.self]。
+// 任何请求都会被这里接住 → 计数 +1，并回放 responder 给的字节；没配 responder 就回 500。
+
+final class CountingProtocol: URLProtocol {
+    static var hits = 0
+    static var lastURL = ""
+    static var lastBody = ""
+    static var responder: ((URLRequest) -> (Int, String))?
+
+    static func reset(_ r: ((URLRequest) -> (Int, String))? = nil) {
+        hits = 0; lastURL = ""; lastBody = ""
+        responder = r
+    }
+
+    static func session() -> URLSession {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [CountingProtocol.self]
+        cfg.urlCache = nil
+        return URLSession(configuration: cfg)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.hits += 1
+        Self.lastURL = request.url?.absoluteString ?? ""
+        if let b = request.httpBody { Self.lastBody = String(data: b, encoding: .utf8) ?? "" }
+        let (code, body) = Self.responder?(request) ?? (500, "")
+        let url = request.url ?? URL(string: "https://stub.invalid/")!
+        let resp = HTTPURLResponse(url: url, statusCode: code, httpVersion: "HTTP/1.1",
+                                   headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

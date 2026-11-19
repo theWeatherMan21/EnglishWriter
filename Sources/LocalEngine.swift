@@ -181,9 +181,11 @@ enum LocalEngine {
     }
 
     /// 一句 → 逐条 diff（UTF-16 偏移，和 AX / NSString 口径一致）
-    static func review(text: String, language: String = "en-GB",
-                       session: URLSession = .shared) async throws -> InlineOutcome {
-        guard let url = URL(string: baseURLString + "/v2/check") else { throw ReviewFailure.notConfigured }
+    /// 构造 /v2/check 请求。抽成纯函数是为了能断言「换了方言，请求参数真的变」——
+    /// 这条以前只能靠真人切完看结果，坏没坏看不出来。
+    static func checkRequest(text: String, language: String,
+                             base: String = baseURLString) -> URLRequest? {
+        guard let url = URL(string: base + "/v2/check") else { return nil }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 6
@@ -195,6 +197,14 @@ enum LocalEngine {
             .init(name: "level", value: "picky"),
         ]
         req.httpBody = comps.percentEncodedQuery?.data(using: .utf8)
+        return req
+    }
+
+    static func review(text: String, language: String = "en-GB",
+                       session: URLSession = .shared) async throws -> InlineOutcome {
+        guard let req = checkRequest(text: text, language: language), let url = req.url else {
+            throw ReviewFailure.notConfigured
+        }
 
         touch()
         let t0 = Date()
@@ -229,7 +239,7 @@ enum LocalEngine {
         let ns = text as NSString
         let guarded = SpanGuard.guardedRanges(in: text)
         let sigStart = SpanGuard.signatureStart(in: text)
-        return matches.compactMap { m in
+        let raw = matches.compactMap { m -> DiffItem? in
             let r = NSRange(location: m.offset, length: m.length)
             if let s = sigStart, r.location >= s { return nil }
             if guarded.contains(where: { SpanGuard.intersects($0, r) }) { return nil }
@@ -237,13 +247,13 @@ enum LocalEngine {
             guard r.location >= 0, r.location + r.length <= ns.length else { return nil }
             let original = ns.substring(with: r)
             if original == repl { return nil }
-            if DictStore.contains(original) { return nil }   // 个人词典：用户加过的词不再报
-            if DictStore.hit(in: original) { return nil }
             return DiffItem(start: r.location, length: r.length,
                             original: original, replacement: repl,
                             type: kindFor(m).rawValue,
                             reason: m.message)
         }
+        // 个人词典 / 忽略规则：与远端 diff 通道共用同一份实现（PersonalFilter），别在这里重写一份
+        return PersonalFilter.apply(raw, in: text)
     }
 
     private static func kindFor(_ m: LTMatch) -> UnderlineKind {

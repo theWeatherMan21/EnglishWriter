@@ -10,6 +10,7 @@ body { margin:0; background:transparent; font: var(--f-secondary)/1.45 -apple-sy
 .old { color:#fff; background:var(--correctness); text-decoration:line-through; border-radius:3px; padding:0 3px; }
 .new { color:#fff; background:var(--engagement); font-weight:600; border-radius:3px; padding:0 3px; }
 .hr { height:1px; background:var(--border); margin: 2px 0; }
-.acts { display:flex; gap: var(--s1); justify-content:flex-end; }
+.acts { display:flex; gap: var(--s1); justify-content:flex-end; flex-wrap:wrap; }
 .btn { font-size: var(--f-caption); border:1px solid var(--border); background:var(--bg);
        border-radius: var(--r-control); padding:3px 8px; cursor:pointer; color:var(--text); }
+.btn:hover { background: var(--hover, rgba(0,0,0,.04)); }

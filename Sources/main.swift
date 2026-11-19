@@ -289,6 +289,12 @@ if argv.contains("--ax-elements") {
     exit(code)
 }
 
+if argv.contains("--settings-snapshot") {
+    var code: Int32 = 0
+    MainActor.assumeIsolated { code = SettingsSnapshot.run(argv) }
+    exit(code)
+}
+
 if argv.contains("--ball-snapshot") {
     let out = argv.firstIndex(of: "--ball-snapshot").flatMap { $0 + 1 < argv.count ? argv[$0 + 1] : nil }
         ?? (ProcessInfo.processInfo.environment["EW_OUT"].map { $0 + "/ball-states.png" })

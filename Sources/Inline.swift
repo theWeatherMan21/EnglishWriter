@@ -507,8 +507,22 @@ final class InlineController {
 
     // MARK: observer
 
+    /// App 排除闸门（唯一判定点）：命中的 App 一个 AXObserver 都不挂、不检查、不画线。
+    /// 三个入口（attachObserver / attachElementObserver / checkNow）全部先过这里，别在别处复制判定。
+    static func excludedGate(pid: pid_t) -> Bool {
+        EnginePrefs.isExcluded(bundleId: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+                               appName: appName(pid))
+    }
+
     private func attachObserver(pid: pid_t) {
         guard pid > 0, AXPermission.granted() else { return }
+        if Self.excludedGate(pid: pid) {
+            detachObserver()
+            emit(CheckEvent(kind: "skip-excluded-attach", pid: pid, app: appName(pid), role: "-", textLen: 0,
+                            sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-",
+                            err: "App 在排除列表里：不挂 observer", at: Date()))
+            return
+        }
         detachObserver()
         var obs: AXObserver?
         let cb: AXObserverCallback = { _, element, notif, refcon in
@@ -536,6 +550,7 @@ final class InlineController {
 
     private func attachElementObserver(pid: pid_t) {
         guard let observer else { return }
+        if Self.excludedGate(pid: pid) { return }        // 排除的 App 不挂元素观察者
         // 焦点可能落在窗口/工具栏（AXWindow）上而不是文本区：那样 valueChanged 永远不会来。
         // 真机实测（TextEdit）：刚激活时 focusedElement 就是 AXWindow → 必须改挂窗口里最大的可读 AXTextArea。
         if var cand = AXInline.focusedElement(pid: pid) {
@@ -614,8 +629,7 @@ final class InlineController {
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
         guard pid > 0 else { return }
         // App 排除：命中的 App 一个请求都不发（只记一条 skip，便于事后核「确实没查」）
-        if EnginePrefs.isExcluded(bundleId: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
-                                  appName: appName(pid)) {
+        if Self.excludedGate(pid: pid) {
             emit(CheckEvent(kind: "skip-excluded", pid: pid, app: appName(pid), role: "",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "-", at: Date()))
@@ -957,13 +971,22 @@ final class InlineController {
         return ok
     }
 
-    /// 忽略这一条：同「原词→建议」以后不再提示
-    func ignore(itemID id: Int) {
+    /// 忽略（本次）：本次运行内不再提示，不落盘 —— 用户「这一版稿子不想看」用它
+    func ignoreSession(itemID id: Int) {
+        guard id >= 0, id < items.count else { return }
+        let it = items[id]
+        IgnoreStore.shared.ignoreSession(original: it.original, replacement: it.replacement)
+        diag.lastError = "本次忽略：\(it.original) → \(it.replacement)（重启后恢复）"
+        dropItem(start: it.start, length: it.length)
+    }
+
+    /// 忽略（永久）：同一对「原词→建议」以后都不再提示，落盘跨重启有效
+    func ignorePermanent(itemID id: Int) {
         guard id >= 0, id < items.count else { return }
         let it = items[id]
         IgnoreStore.shared.ignore(original: it.original, replacement: it.replacement)
-        diag.lastError = "已忽略：\(it.original) → \(it.replacement)"
-        refresh()
+        diag.lastError = "已永久忽略：\(it.original) → \(it.replacement)"
+        dropItem(start: it.start, length: it.length)
     }
 
     /// 加入个人词典：这个词以后一律不报

@@ -14,7 +14,7 @@ const EWCard = {
     document.getElementById('dict').style.display = d.allowDict ? '' : 'none';
     this.report();
   },
-  more() { this.post({ action: this.canRewrite ? 'rewrite' : 'ignore' }); },
+  more() { this.post({ action: this.canRewrite ? 'rewrite' : 'ignoreSession' }); },
   report() {
     requestAnimationFrame(() => {
       const h = document.getElementById('card').getBoundingClientRect().height + 8;

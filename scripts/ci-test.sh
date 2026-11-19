@@ -18,6 +18,10 @@ EW_OUT="$PWD/out" "$BIN" --selftest --m3 --settings
 echo "== 本地规则：清晰度/风格 + 语法兜底（含反例，防误报回潮）=="
 EW_OUT="$PWD/out" "$BIN" --selftest --style || { echo "本地规则断言失败"; exit 1; }
 
+echo "== 设置面板截图（离屏合成，用户配置零接触）=="
+"$BIN" --settings-snapshot "$PWD/qa/evidence/settings-panel.png" \
+    && [ -s "$PWD/qa/evidence/settings-panel.png" ] || { echo "设置面板截图失败"; exit 1; }
+
 echo "== 浮动球三态（灰=不知道 / 绿=没问题 / 数字=N 条）=="
 EW_OUT="$PWD/out" "$BIN" --ball-snapshot "$PWD/qa/evidence/ball-states.png" \
     && [ -s "$PWD/qa/evidence/ball-states.png" ] || { echo "球态快照失败"; exit 1; }

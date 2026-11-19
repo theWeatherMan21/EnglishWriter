@@ -15,14 +15,17 @@ final class CardWeb: NSPanel {
 
     private var web: WKWebView!
     private var onAccept: (() -> Void)?
-    private var onIgnore: (() -> Void)?
+    private var onIgnore: (() -> Void)?          // 永久忽略
+    private var onIgnoreSession: (() -> Void)?   // 本次忽略
     private var onDict: (() -> Void)?
     private var onRewrite: (() -> Void)?
     private var onTone: (() -> Void)?
     private var anchor: CGRect = .zero
+    /// 卡片宽度：四个动作（加入词典 / 本次忽略 / 不再提示 / ···）一行放得下
+    static let cardWidth: CGFloat = 240
 
     init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 192, height: 140),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: CardWeb.cardWidth, height: 140),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
@@ -35,7 +38,7 @@ final class CardWeb: NSPanel {
 
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(self, name: "bridge")
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 192, height: 140), configuration: cfg)
+        web = WKWebView(frame: NSRect(x: 0, y: 0, width: CardWeb.cardWidth, height: 140), configuration: cfg)
         web.setValue(false, forKey: "drawsBackground")
         if let dir = Self.cardDir() {
             web.loadFileURL(dir.appendingPathComponent("index.html"), allowingReadAccessTo: dir)
@@ -50,10 +53,12 @@ final class CardWeb: NSPanel {
               replacement: String, after: String, anchor: CGRect,
               allowDict: Bool,
               onAccept: @escaping () -> Void, onIgnore: @escaping () -> Void,
+              onIgnoreSession: (() -> Void)? = nil,
               onDict: (() -> Void)?, onRewrite: (() -> Void)?, onTone: (() -> Void)?) {
         guard !Self.globallySilent else { return }
         self.onAccept = onAccept
         self.onIgnore = onIgnore
+        self.onIgnoreSession = onIgnoreSession
         self.onDict = onDict
         self.onRewrite = onRewrite
         self.onTone = onTone
@@ -68,8 +73,8 @@ final class CardWeb: NSPanel {
            let s = String(data: d, encoding: .utf8) {
             web.evaluateJavaScript("EWCard.card(\(s))", completionHandler: nil)
         }
-        // 尺寸由内容决定，先按宽 192 放，HTML 回传实际高度后再定位置
-        setContentSize(NSSize(width: 192, height: frame.height))
+        // 尺寸由内容决定，先按宽 210 放，HTML 回传实际高度后再定位置
+        setContentSize(NSSize(width: Self.cardWidth, height: frame.height))
         place()
         orderFrontRegardless()
     }
@@ -77,7 +82,7 @@ final class CardWeb: NSPanel {
     /// HTML 回传内容高度 → 重新定位（贴词下方，允许盖住下一行）
     func resizeTo(height: CGFloat) {
         guard height > 20 else { return }
-        setContentSize(NSSize(width: 192, height: height))
+        setContentSize(NSSize(width: Self.cardWidth, height: height))
         place()
     }
 
@@ -85,7 +90,7 @@ final class CardWeb: NSPanel {
         let h = NSScreen.screens.first?.frame.height ?? 900
         let x = anchor.minX
         let yTop = anchor.maxY + 6
-        setFrame(NSRect(x: x, y: h - yTop - frame.height, width: 192, height: frame.height), display: false)
+        setFrame(NSRect(x: x, y: h - yTop - frame.height, width: Self.cardWidth, height: frame.height), display: false)
     }
 
     func dismiss() { orderOut(nil) }
@@ -105,6 +110,7 @@ extension CardWeb: WKScriptMessageHandler {
         switch a {
         case "accept": onAccept?(); dismiss()
         case "ignore": onIgnore?(); dismiss()
+        case "ignoreSession": onIgnoreSession?(); dismiss()
         case "dict": onDict?(); dismiss()
         case "rewrite": onRewrite?(); dismiss()
         case "tone": onTone?(); dismiss()
@@ -140,7 +146,8 @@ extension CardWeb {
           <div class="hr"></div>
           <div class="acts">
             <button class="btn" id="dict" onclick="EW.post({action:'dict'})">加入词典</button>
-            <button class="btn" onclick="EW.post({action:'ignore'})">忽略</button>
+            <button class="btn" onclick="EW.post({action:'ignoreSession'})">本次忽略</button>
+            <button class="btn" onclick="EW.post({action:'ignore'})">不再提示</button>
             <button class="btn" id="more" onclick="EW.more()">···</button>
           </div>
         </div>
@@ -159,8 +166,8 @@ extension CardWeb {
             this.report();
           },
           more() {
-            // 「···」= 改写 / 语气（模型可用时才有）
-            if (!this.canRewrite) { EW.post({action:'ignore'}); return; }
+            // 「···」= 改写 / 语气（模型可用时才有）；没有模型时等同于「本次忽略」
+            if (!this.canRewrite) { EW.post({action:'ignoreSession'}); return; }
             EW.post({action:'rewrite'});
           },
           report() { requestAnimationFrame(() => {

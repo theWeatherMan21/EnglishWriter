@@ -246,7 +246,9 @@ enum InlineEngine {
            let msg = choices.first?["message"] as? [String: Any],
            let c = msg["content"] as? String { content = c }
         guard let items = DiffParse.parse(content) else { throw ReviewFailure.badJSON(content) }
-        return InlineOutcome(items: DiffSanitize.clean(items, in: text),
+        // 远端通道同样过个人词典 / 忽略规则（与本地 LanguageTool 共用 PersonalFilter）
+        let kept = PersonalFilter.apply(items, in: text)
+        return InlineOutcome(items: DiffSanitize.clean(kept, in: text),
                              endpoint: url.absoluteString,
                              model: config.model,
                              elapsed: elapsed)

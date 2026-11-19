@@ -39,8 +39,24 @@ struct SettingsView: View {
     @ObservedObject var badge = SaveBadge()
     @ObservedObject var prefs = PrefsModel.shared
 
+    /// 离屏快照模式：不套 ScrollView、高度自适应（一张图看全；只给 `--settings-snapshot` 用）
+    var snapshot = false
+
+    init(model: AppModel, snapshot: Bool = false) {
+        self.model = model
+        self.snapshot = snapshot
+        _ = PrefsModel.shared.reload()      // 快照必须读当前域（可能刚切到隔离域）
+    }
+
     var body: some View {
-        ScrollView {
+        if snapshot {
+            content.padding(18).frame(width: 560)
+        } else {
+            ScrollView { content.padding(18) }.frame(width: 560, height: 640)
+        }
+    }
+
+    private var content: some View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("模型接口（三项手填，无预设默认值）").font(.system(size: 13, weight: .semibold))
                 field("Base URL", text: $model.config.baseURL, hint: "例：https://api.example.com/v1（OpenAI 兼容）")
@@ -159,10 +175,14 @@ struct SettingsView: View {
                 Divider()
                 Text("忽略规则（同一条「原词→建议」不再提示）").font(.system(size: 13, weight: .semibold))
                 HStack(spacing: 8) {
-                    Text("已忽略 \(prefs.ignoreCount) 条").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("本次忽略 \(prefs.sessionIgnoreCount) 条 · 永久 \(prefs.ignoreCount) 条")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                     Spacer()
-                    Button("全部清空") { prefs.clearIgnores() }.disabled(prefs.ignoreCount == 0)
+                    Button("清空本次") { prefs.clearSessionIgnores() }.disabled(prefs.sessionIgnoreCount == 0)
+                    Button("清空永久") { prefs.clearIgnores() }.disabled(prefs.ignoreCount == 0)
                 }
+                Text("本次忽略只在这次运行里生效（退出 App 即恢复提示）；永久忽略写入本机配置，跨重启有效。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
 
                 Divider()
                 Text("辅助功能权限").font(.system(size: 13, weight: .semibold))
@@ -194,9 +214,6 @@ struct SettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            .padding(18)
-        }
-        .frame(width: 560, height: 640)
     }
 
     private func label(_ t: String) -> String {
@@ -245,6 +262,7 @@ final class PrefsModel: ObservableObject {
     static let shared = PrefsModel()
     @Published var words: [String] = DictStore.words
     @Published var ignoreCount: Int = IgnoreStore.shared.count
+    @Published var sessionIgnoreCount: Int = IgnoreStore.shared.sessionCount
     @Published var newWord: String = ""
     // 引擎地址 / 方言 / App 排除（都存在 com.wanyi.englishwriter 域里）
     @Published var ltBase: String = (SettingsStore.store.string(forKey: SettingsStore.kLTBase) ?? "")
@@ -268,6 +286,11 @@ final class PrefsModel: ObservableObject {
         reload()
     }
 
+    func clearSessionIgnores() {
+        IgnoreStore.shared.clearSession()
+        reload()
+    }
+
     func saveLT() {
         EnginePrefs.setLTBaseURL(ltBase)
     }
@@ -288,9 +311,15 @@ final class PrefsModel: ObservableObject {
         reload()
     }
 
-    func reload() {
+    @discardableResult
+    func reload() -> Bool {
         words = DictStore.words
+        IgnoreStore.shared.reloadForTesting()
         ignoreCount = IgnoreStore.shared.count
+        sessionIgnoreCount = IgnoreStore.shared.sessionCount
         exclusions = EnginePrefs.excludedApps()
+        ltBase = (SettingsStore.store.string(forKey: SettingsStore.kLTBase) ?? "")
+        language = EnginePrefs.language()
+        return true
     }
 }
