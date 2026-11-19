@@ -6,4 +6,5 @@ cd "$(dirname "$0")/.."
 mkdir -p extension/ui
 cp web/sidebar/sidebar.css extension/ui/sidebar.css
 cp web/sidebar/tokens.css extension/ui/tokens.css
-echo "synced -> extension/ui/{sidebar.css,tokens.css}"
+cp web/card/card.css extension/ui/card.css
+echo "synced -> extension/ui/{sidebar.css,tokens.css,card.css}"

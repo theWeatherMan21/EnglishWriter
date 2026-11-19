@@ -21,7 +21,8 @@
       "run_at": "document_idle",
       "all_frames": true,
       "css": [
-        "ui/sidebar.css"
+        "ui/sidebar.css",
+        "ui/card.css"
       ]
     }
   ],

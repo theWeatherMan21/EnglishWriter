@@ -41,10 +41,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     In order to save time, we must make a decision today. Due to the fact that the vessel was delayed, the customer asked for an update.
 
-    这段是中文：我们有一个 11/27 号的 CMA 舱位，等国外确认。
+    我们有一个 11/27 号的 CMA 舱位，等国外确认后再报给客户。
 
     Pozdrawiam / Best Regards, Spedytor / Forwarding Agent
-    Agencji Celnych ostatnie zmiany danych oraz Terramar
     """
 
     @MainActor
@@ -60,7 +59,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let w = NSWindow(contentRect: rect,
                          styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
-        w.title = "英文写作助手 · 演示（随便改，改完看线）"
+        w.title = "英文写作助手 · 试用"
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false
         w.delegate = self
@@ -108,18 +107,18 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         bar.addSubview(label)
         status = label
 
-        let clearBtn = NSButton(title: "重填示例", target: self, action: #selector(refill))
+        let clearBtn = NSButton(title: "重新载入示例", target: self, action: #selector(refill))
         clearBtn.bezelStyle = .rounded
         clearBtn.frame = NSRect(x: bar.bounds.width - 96, y: 2, width: 96, height: 26)
         bar.addSubview(clearBtn)
 
-        let deepBtn = NSButton(title: "深度检查（模型）", target: self, action: #selector(deepCheck))
+        let deepBtn = NSButton(title: "深度检查", target: self, action: #selector(deepCheck))
         deepBtn.bezelStyle = .rounded
         deepBtn.frame = NSRect(x: bar.bounds.width - 348, y: 2, width: 122, height: 26)
         deepBtn.isHidden = !Rewrite.isAvailable() || !SettingsStore.load().isComplete
         if !deepBtn.isHidden { bar.addSubview(deepBtn) }
 
-        let sideBtn = NSButton(title: "看侧栏（评分）", target: self, action: #selector(openSidebar))
+        let sideBtn = NSButton(title: "打开建议面板", target: self, action: #selector(openSidebar))
         sideBtn.bezelStyle = .rounded
         sideBtn.frame = NSRect(x: bar.bounds.width - 220, y: 2, width: 118, height: 26)
         bar.addSubview(sideBtn)

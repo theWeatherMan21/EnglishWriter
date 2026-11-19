@@ -49,7 +49,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1272,6 +1272,21 @@ extension SelfTest {
             SelfTest.bad("web: manifest 未引用 ui/sidebar.css", "")
         }
 
+        // 卡片 CSS 与侧栏同源：扩展也要有一份，且逐字节相同
+        if fm.fileExists(atPath: repo.appendingPathComponent("extension/ui/card.css").path) {
+            SelfTest.ok("web: 扩展侧有 card.css")
+        } else {
+            SelfTest.bad("web: 扩展侧缺 card.css", "先跑 scripts/sync-web.sh")
+        }
+        if let d = try? Data(contentsOf: repo.appendingPathComponent("extension/manifest.json")),
+           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let cs = obj["content_scripts"] as? [[String: Any]],
+           let css = cs.first?["css"] as? [String], css.contains("ui/card.css") {
+            SelfTest.ok("web: manifest 引用了 ui/card.css")
+        } else {
+            SelfTest.bad("web: manifest 未引用 ui/card.css", "")
+        }
+
         // 逐字节相同：只改一边测试立刻红
         func sha(_ p: String) -> String {
             let u = repo.appendingPathComponent(p)
@@ -1279,10 +1294,32 @@ extension SelfTest {
             return d.map { String(format: "%02x", $0) }.joined()
         }
         for pair in [("web/sidebar/sidebar.css", "extension/ui/sidebar.css"),
-                     ("web/sidebar/tokens.css", "extension/ui/tokens.css")] {
+                     ("web/sidebar/tokens.css", "extension/ui/tokens.css"),
+                     ("web/card/card.css", "extension/ui/card.css")] {
             let a = sha(pair.0), b = sha(pair.1)
             if !a.isEmpty, a == b { SelfTest.ok("web: 两边一致 \(pair.0)") }
             else { SelfTest.bad("web: 两边不一致（先跑 scripts/sync-web.sh）", "\(pair.0)") }
         }
+    }
+}
+
+// MARK: 开发痕迹（release 不许出现自解释/调试文案）
+extension SelfTest {
+    static func noDevTracesTests() {
+        let fm = FileManager.default
+        let dir = URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("Sources")
+        let forbidden = ["随便改", "改完看线", "这段是中文", "TODO", "FIXME"]
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            SelfTest.bad("ui: 扫描 Sources 失败", dir.path); return
+        }
+        var hits: [String] = []
+        for f in files where f.pathExtension == "swift" {
+            guard let text = try? String(contentsOf: f, encoding: .utf8) else { continue }
+            // 断言本身要含这些词，跳过本文件
+            if f.lastPathComponent == "SelfTest.swift" { continue }
+            for w in forbidden where text.contains(w) { hits.append("\(f.lastPathComponent):\(w)") }
+        }
+        if hits.isEmpty { SelfTest.ok("ui: Sources 无开发痕迹（随便改/改完看线/这段是中文/TODO/FIXME）") }
+        else { SelfTest.bad("ui: 仍有开发痕迹", hits.joined(separator: ", ")) }
     }
 }
