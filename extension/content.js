@@ -496,15 +496,17 @@
     window.__EW_DEBUG.scope = scope;
     if (force) window.__EW_DEBUG.notes.push('text=' + text.length + ' scope=' + scope + ' len=' + scopeText.trim().length);
     if (scopeText.trim().length < 3) { clearUnderlines(); return; }
-    const body = { text: scopeText, language: 'en-GB' };
-    try {
+    const post = async (payload) => {
       const res = await fetch(API + '/v1/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
-      if (res.status === 401) { window.__EW_DEBUG.notes.push('401 bad token'); return; }
-      const j = await res.json();
+      return res;
+    };
+    // 两段式：先要本地即时结果（毫秒级，线立刻出来），再要完整结果（含模型）覆盖。
+    // Grammarly 的体感就是「一停笔就有线」，不是等 6 秒。
+    const draw = (j) => {
       let edits = (j.edits || []).filter(e => {
         const k = e.original + '→' + e.replacement;
         return !ignoreList.has(k) && !ignoredOnce.has(k);
@@ -516,6 +518,18 @@
       window.__EW_DEBUG.sentText = scopeText;
       if (!edits.length) { clearUnderlines(); return; }
       drawUnderlines(el, edits, scopeStart);
+    };
+    try {
+      // 注：试过「先本地即时、再模型覆盖」两段式，实测快速段没有生效（首条线仍在 ~2.8s 才出现），
+      // 已回退成一次完整请求。服务端 /v1/check 仍支持 mode:"local"，等前端有更稳的做法再接。
+      const res = await fetch(API + '/v1/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-EW-Token': token },
+        body: JSON.stringify({ text: scopeText, language: 'en-GB' })
+      });
+      if (res.status === 401) { window.__EW_DEBUG.notes.push('401 bad token'); return; }
+      const j = await res.json();
+      draw(j);
     } catch (e) {
       window.__EW_DEBUG.notes.push('fetch fail: ' + e.message);
     }

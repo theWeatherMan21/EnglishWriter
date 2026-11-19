@@ -155,8 +155,9 @@ final class LocalAPI {
                 return
             }
             let language = obj["language"] as? String ?? "en-GB"
+            let mode = obj["mode"] as? String ?? "full"      // "local" = 只要本地即时结果
             Task { [weak self] in
-                let payload = await LocalAPI.check(text: text, language: language)
+                let payload = await LocalAPI.check(text: text, language: language, mode: mode)
                 self?.send(conn, status: 200, json: payload, origin: req.origin)
             }
         case ("POST", "/v1/rewrite"):
@@ -200,7 +201,7 @@ final class LocalAPI {
         }
     }
 
-    static func check(text: String, language: String) async -> [String: Any] {
+    static func check(text: String, language: String, mode: String = "full") async -> [String: Any] {
         // 中文零干扰：CJK 占比 > 0.40 直接不查（和原生完全同一口径）
         let cjk = text.unicodeScalars.filter { $0.value >= 0x4E00 && $0.value <= 0x9FFF }.count
         let ratio = text.isEmpty ? 0 : Double(cjk) / Double(text.unicodeScalars.count)
@@ -217,6 +218,15 @@ final class LocalAPI {
         }
         if ltOn && ltOK {
             // 走本地 LT（下面继续）
+        } else if mode == "local" {
+            // 即时通道：只用本地规则（毫秒级），让界面先有线，模型结果随后覆盖
+            let items = CategoryPrefs.filterForDisplay(
+                DiffSanitize.consolidate(SpellCheck.items(in: text) + LocalGrammar.apply(to: text)
+                                         + StyleRules.apply(to: text), in: text))
+            return ["edits": items.map { ["start": $0.start, "length": $0.length,
+                                           "original": $0.original, "replacement": $0.replacement,
+                                           "type": $0.type, "reason": $0.reason] },
+                    "engine": "local-instant", "elapsedMs": Int(Date().timeIntervalSince(t0) * 1000)]
         } else if SettingsStore.load().isComplete {
             // LT 关但模型配了：用模型跑语法（与桌面端同一条 Diff.review），
             // 本地再补拼写/语法规则/清晰度/风格 —— 浏览器里的检查质量不该比桌面端低

@@ -60,16 +60,18 @@ def main():
     ws.send("Runtime.enable")
     ws.send("Page.enable")
 
-    # 1) 在 textarea 里插入一句带错的话
+    # 1) 在 textarea 里插入一句带错的话（同时计时：本地即时 vs 模型最终）
     drive.evaluate(ws, "(() => { const t = document.querySelector('textarea'); t.focus(); t.value=''; t.setSelectionRange(0,0); return true; })()")
+    t0 = time.time()
     for ch in "I have send the immediatly report.":
         ws.send("Input.insertText", {"text": ch})
         time.sleep(0.01)
 
     # 2) 等扩展画出线（800ms 去抖 + 检查耗时）
     rects = None
-    for _ in range(40):
-        time.sleep(0.25)
+    t_first = None
+    for _ in range(80):
+        time.sleep(0.15)
         rects = drive.evaluate(
             ws,
             "(() => { const h = document.getElementById('__ew_host__');"
@@ -78,13 +80,18 @@ def main():
             " return us.map(u => { const b = u.getBoundingClientRect();"
             " return {x: b.x + b.width/2, y: b.y + b.height/2, w: b.width, h: b.height}; }); })()")
         if rects:
-            break
+            if t_first is None:
+                t_first = time.time() - t0
+            # 本地即时线（1–2 条）先到；等它稳定成最终结果再继续
+            if len(rects) >= 2:
+                break
 
     if not rects:
         print("FAIL: 没有画出任何下划线（.u 节点数为 0）")
         return 3
 
-    print(f"OK  下划线 {len(rects)} 条")
+    print("OK  下划线 %d 条（首条 %.2fs，最终 %.2fs）" % (
+        len(rects), t_first or -1, time.time() - t0))
 
     # 3) 在第一条线的中心真实点击
     r = dict(rects[0])
