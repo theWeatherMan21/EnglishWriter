@@ -16,6 +16,9 @@
   const DEBOUNCE = 800;
   let token = null;
   let host = null, root = null, layer = null, card = null;
+  // 划线与建议的对应关系（键盘 ←/→ 切换要用同一份，不能靠再查一遍 DOM）
+  let anchors = [];
+  let activeIndex = -1;
   let lastTarget = null;
   let lastAccept = null;
   let ignoreList = new Set();
@@ -249,7 +252,9 @@
       textLen: textOf(el).length
     };
     const rects = [];
-    edits.forEach((e) => {
+    anchors = [];
+    activeIndex = -1;
+    edits.forEach((e, ei) => {
       const rs = rectsFor(el, sentStart + e.start, e.length);
       const cls = e.type === 'spelling' ? 'spell' : (e.type === 'clarity' ? 'clar' : (e.type === 'style' ? 'style' : 'gram'));
       rs.forEach((r) => {
@@ -261,8 +266,9 @@
         d.style.height = r.h + 'px';
         const line = document.createElement('i');
         d.appendChild(line);
+        anchors.push({ el: d, edit: e });
         // 单击划线处 → 直接弹卡片（爹地 11-19：悬停那套是复杂化，点了才出才是他要的）
-        d.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); showCard(e, d); };
+        d.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); showCard(e, d, ei); };
         layer.appendChild(d);
         rects.push({ ...r, type: e.type });
       });
@@ -276,7 +282,8 @@
     card = null;
   }
 
-  function showCard(edit, anchor) {
+  function showCard(edit, anchor, index) {
+    if (typeof index === 'number') activeIndex = index;
     ensureLayer();
     hideCard();
     card = document.createElement('div');
@@ -383,7 +390,19 @@
   document.addEventListener('input', onEdit, true);
   document.addEventListener('focusin', (e) => { const el = editable(e.target); if (el) lastTarget = el; }, true);
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) { if (undo()) e.preventDefault(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) { if (undo()) e.preventDefault(); return; }
+    if (!card) return;                       // 卡片没开，键盘只处理撤销
+    if (e.key === 'Escape') { hideCard(); e.preventDefault(); return; }
+    // ←/→ 在建议之间切换（Grammarly 同款：不用回到正文找下一条）
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      if (!anchors.length) return;
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      const cur = activeIndex < 0 ? 0 : activeIndex;
+      const next = (cur + step + anchors.length) % anchors.length;
+      const a = anchors[next];
+      if (a) { a.el.scrollIntoView({ block: 'nearest' }); showCard(a.edit, a.el, next); }
+      e.preventDefault();
+    }
   }, true);
 
   async function runCheck(force) {

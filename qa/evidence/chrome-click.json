@@ -1,10 +1,10 @@
 {
-  "rects": 1,
+  "rects": 2,
   "mode": "cdp-mouse",
   "card": {
     "visible": true,
-    "orig": "immediatly",
-    "rep": "immediately",
+    "orig": "send",
+    "rep": "sent",
     "buttons": [
       "接受",
       "忽略此类",
@@ -12,6 +12,6 @@
     ]
   },
   "before": "I have send the immediatly report.",
-  "after": "I have send the immediately report.",
-  "at": "2026-11-19T16:07:28"
+  "after": "I have sent the immediatly report.",
+  "at": "2026-11-19T18:21:02"
 }
