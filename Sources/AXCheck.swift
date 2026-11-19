@@ -55,7 +55,10 @@ enum AXCheck {
         var st = Status()
         st.timestamp = ISO8601DateFormatter().string(from: Date())
 
-        let outDir = value(argv, "--axcheck") ?? (NSHomeDirectory() + "/dev/EnglishWriter/out")
+        // 输出目录：--axcheck <dir> / --out <dir> / --json <dir> 都认（--json 以前会被当成目录名，
+        // 于是仓库里出现一个叫 "--json/" 的垃圾目录 —— 这里统一收口）
+        let outDir = value(argv, "--axcheck") ?? value(argv, "--out") ?? value(argv, "--json")
+            ?? (NSHomeDirectory() + "/dev/EnglishWriter/out")
         let bundle = value(argv, "--bundle") ?? "com.apple.TextEdit"
         var text = defaultText
         if let f = value(argv, "--text-file"), let s = try? String(contentsOfFile: f, encoding: .utf8) {

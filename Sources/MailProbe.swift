@@ -58,6 +58,10 @@ enum MailProbe {
         if let i = argv.firstIndex(of: "--timeout"), i + 1 < argv.count, let v = Double(argv[i + 1]) { timeout = v }
         var outPath = NSHomeDirectory() + "/dev/EnglishWriter/qa/evidence/mail-probe.json"
         if let i = argv.firstIndex(of: "--out"), i + 1 < argv.count { outPath = argv[i + 1] }
+        // 别名：--json <path>（有人手滑把它当目录名用，会建出 "--json/" 这种垃圾目录）
+        if let i = argv.firstIndex(of: "--json"), i + 1 < argv.count, !argv[i + 1].hasPrefix("--") {
+            outPath = argv[i + 1]
+        }
 
         print("\n--- 守候：等屏幕上出现英文邮件（每 30 秒查一次，超时 \(Int(timeout/60)) 分钟）---")
         let start = Date()
@@ -103,6 +107,10 @@ enum MailProbe {
     static func run(_ argv: [String]) async -> Bool {
         var outPath = NSHomeDirectory() + "/dev/EnglishWriter/qa/evidence/mail-probe.json"
         if let i = argv.firstIndex(of: "--out"), i + 1 < argv.count { outPath = argv[i + 1] }
+        // 别名：--json <path>（有人手滑把它当目录名用，会建出 "--json/" 这种垃圾目录）
+        if let i = argv.firstIndex(of: "--json"), i + 1 < argv.count, !argv[i + 1].hasPrefix("--") {
+            outPath = argv[i + 1]
+        }
         var bundle = "com.apple.mail"
         if let i = argv.firstIndex(of: "--bundle"), i + 1 < argv.count { bundle = argv[i + 1] }
 

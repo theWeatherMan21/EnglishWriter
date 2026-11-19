@@ -19,8 +19,9 @@ final class FloatBall: NSPanel {
 
     static let shared = FloatBall()
 
-    /// 三态。unknown 是显式状态，不是「隐藏」：
-    /// 隐藏时用户看不见任何信号，等于「插件死了」，和「我不知道」不是一回事。
+    /// 三态，但 **unknown 不再上屏**（11-19 爹地反馈：一个问号在屏幕上到处飘是纯噪音）。
+    /// unknown 仍保留为内部状态，用于日志与诊断（「读不到文本」和「检查过 0 命中」必须能区分），
+    /// 但 UI 层直接 hide()：Grammarly 在不支持的 App 里也不显示球。
     enum Phase {
         case unknown            // 没取到文本
         case clear              // 检查过、0 命中

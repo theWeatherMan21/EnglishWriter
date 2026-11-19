@@ -5,3 +5,6 @@ out/
 .tools/
 dist/
 qa/evidence/passive-live.jsonl
+
+# 探针参数误用可能建出的伪目录（--json 被当成目录名）
+--json/

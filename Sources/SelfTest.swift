@@ -20,6 +20,7 @@ struct Fixture: Decodable {
 enum SelfTest {
     static var pass = 0
     static var fail = 0
+    static var skipped = 0
     static var lines: [String] = []
 
     static func ok(_ name: String, _ detail: String = "") {
@@ -31,6 +32,13 @@ enum SelfTest {
     static func bad(_ name: String, _ detail: String) {
         fail += 1
         let line = "FAIL  \(name)  — \(detail)"
+        print(line); lines.append(line)
+    }
+
+    /// 环境不具备时不判对错，但必须留下原因（不许静默当通过）。
+    static func skip(_ name: String, _ detail: String) {
+        skipped += 1
+        let line = "SKIP  \(name)  — \(detail)"
         print(line); lines.append(line)
     }
 
@@ -60,7 +68,7 @@ enum SelfTest {
         if argv.contains("--lt") { ltTests() }
         if argv.contains("--web") { _ = MainActor.assumeIsolated { WebSelfTest.run(argv) } }
 
-        print("\n=== 汇总：PASS \(pass) / FAIL \(fail) ===")
+        print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         if let dir = ProcessInfo.processInfo.environment["EW_SELFTEST_OUT"] {
             try? lines.joined(separator: "\n").write(toFile: dir, atomically: true, encoding: .utf8)
         }
@@ -702,6 +710,16 @@ enum SelfTest {
     // MARK: 系统拼写通道（NSSpellChecker，零进程）
     static func spellCheckTests() {
         print("\n--- 拼写通道（系统 NSSpellChecker）---")
+        // 环境门控：干净系统 / CI runner 上系统拼写词典可能未就绪（checkSpelling 对任何词都
+        // 返回 NSNotFound = 「都对」）。这时四条断言既不能算通过（会掩盖真 bug）也不能算失败
+        // （不是代码问题），标 SKIP 并写明原因。
+        if !SpellCheck.dictionaryUsable(language: "en") {
+            let why = "本机系统英文拼写词典不可用（对乱码 zzqqxx 也不报错），拼写通道本条无法判定"
+            for n in ["拼写·抓出错词", "拼写·正确句子零误报", "拼写·保护区间零误报", "拼写·缩写与编号不误报"] {
+                skip(n, why)
+            }
+            return
+        }
         let wrongSentence = "We should sent it immediatly tomorrow."
         let t0 = Date()
         let items = SpellCheck.items(in: wrongSentence)

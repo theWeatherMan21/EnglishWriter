@@ -13,8 +13,33 @@ import AppKit
 
 enum SpellCheck {
 
+    /// 最近一次 `items(in:)` 是否因系统词典不可用而空转。
+    /// 用途：区分「文本真没错误」与「这台机器查不了拼写」——两者都返回 0 条，但结论相反。
+    static var lastDictionaryUnavailable = false
+
+    /// 系统词典是否真的在判别（而不是「语言包没装」）。
+    /// 为什么必须探测：词典缺失时 `checkSpelling` 对任何词都返回 NSNotFound，
+    /// 语义上等于「这个词是对的」——不探测就会把整条拼写通道静默变成 0 命中，
+    /// 看起来像「全文没有拼写错误」。干净系统 / CI runner 上就是这个状态。
+    /// 判据两条都成立才算可用：已知正确词不报 + 已知乱码必须报。
+    static func dictionaryUsable(language: String = "en") -> Bool {
+        let checker = NSSpellChecker.shared
+        var n = 0
+        let good = checker.checkSpelling(of: "the", startingAt: 0, language: language,
+                                        wrap: false, inSpellDocumentWithTag: 0, wordCount: &n)
+        n = 0
+        let junk = checker.checkSpelling(of: "zzqqxx", startingAt: 0, language: language,
+                                        wrap: false, inSpellDocumentWithTag: 0, wordCount: &n)
+        return good.location == NSNotFound && junk.location != NSNotFound
+    }
+
     /// 一段英文 → 拼写类 DiffItem（UTF-16 偏移相对传入文本）
     static func items(in text: String, language: String = "en") -> [DiffItem] {
+        lastDictionaryUnavailable = false
+        guard dictionaryUsable(language: language) else {
+            lastDictionaryUnavailable = true
+            return []
+        }
         let ns = text as NSString
         guard ns.length > 0 else { return [] }
         let guarded = SpanGuard.guardedRanges(in: text)
@@ -60,10 +85,12 @@ enum SpellCheck {
     }
 
     /// 在常见非英文语言里查这个词：任一语言认为它正确 → 丢弃（本地词典，零网络）
+    /// 只查「这台机器真有该语言词典」的语言：词典缺失时 checkSpelling 恒返回 NSNotFound，
+    /// 会被误读成「该语言认得这个词」→ 英文错词全被放行。
     static func isValidInOtherLanguage(_ word: String) -> Bool {
         let langs = ["pl", "de", "fr", "es", "it", "nl", "pt", "sv", "da"]
         let checker = NSSpellChecker.shared
-        for lang in langs {
+        for lang in langs where dictionaryUsable(language: lang) {
             var wordLen = 0
             let r = checker.checkSpelling(of: word, startingAt: 0, language: lang,
                                          wrap: false, inSpellDocumentWithTag: 0, wordCount: &wordLen)
