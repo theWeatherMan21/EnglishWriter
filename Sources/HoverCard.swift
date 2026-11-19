@@ -390,12 +390,24 @@ final class HoverCoordinator {
     func tickForAudit() { onClick() }
 
     /// 单击：命中某条下划线 → 打开该条卡片；没命中 → 关掉当前卡片
+    /// 纯函数：给定一批下划线矩形和一个点，返回命中的那条（±3/±6 的容错）
+    /// 抽出来是为了能断言——点划线这条不能只靠真人试才知道对不对
+    nonisolated static func hitTest(_ specs: [UnderlineSpec], at p: CGPoint) -> UnderlineSpec? {
+        specs.first { $0.rect.insetBy(dx: -3, dy: -6).contains(p) }
+    }
+
     private func onClick() {
         if UnderlineOverlay.globallySilent { return }
         let mouseQuartz = ScreenGeom.toQuartz(NSRect(origin: NSEvent.mouseLocation, size: .zero)).origin
         if CardWeb.shared.frame.contains(NSEvent.mouseLocation) { return }   // 点在卡片上
         let specs = InlineController.shared.overlay.currentRects()
-        let hit = specs.first { $0.rect.insetBy(dx: -3, dy: -6).contains(mouseQuartz) }
+        let hit = HoverCoordinator.hitTest(specs, at: mouseQuartz)
+        CheckLog.append(.init(kind: hit == nil ? "click-miss" : "click-hit",
+                              pid: InlineController.shared.currentPid,
+                              app: appName(InlineController.shared.currentPid),
+                              role: "-", textLen: 0, sentenceLen: 0,
+                              itemCount: hit?.itemID ?? -1, rectCount: specs.count,
+                              elapsed: "-", err: "-", at: Date()))
         guard let h = hit else { CardWeb.shared.dismiss(); return }
         open(itemID: h.itemID, rect: h.rect)
     }

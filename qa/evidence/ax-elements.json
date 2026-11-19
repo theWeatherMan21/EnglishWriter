@@ -1,0 +1,39 @@
+{
+  "apps" : {
+    "Mail" : {
+      "count" : 1,
+      "elements" : [
+        {
+          "description" : "",
+          "identifier" : "_SC_SEARCH_FIELD",
+          "role" : "AXTextField",
+          "title" : ""
+        }
+      ],
+      "pid" : 1343,
+      "status" : "probed"
+    },
+    "Notes" : {
+      "status" : "not-running"
+    },
+    "Outlook" : {
+      "status" : "not-running"
+    },
+    "Safari" : {
+      "count" : 0,
+      "elements" : [
+
+      ],
+      "pid" : 32192,
+      "status" : "probed"
+    },
+    "TextEdit" : {
+      "status" : "not-running"
+    },
+    "Word" : {
+      "status" : "not-running"
+    }
+  },
+  "at" : "2026-11-19T05:49:20Z",
+  "note" : "只读探测：不激活、不建窗、不写宿主；空 identifier 表示该元素没有暴露标识"
+}

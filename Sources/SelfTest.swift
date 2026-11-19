@@ -50,7 +50,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1359,5 +1359,26 @@ extension SelfTest {
         } else {
             SelfTest.bad("integration: Mail 配置", "")
         }
+    }
+}
+
+// MARK: 点划线命中（纯函数，静默可断言）
+extension SelfTest {
+    static func hitTestTests() {
+        let specs = [UnderlineSpec(rect: CGRect(x: 100, y: 200, width: 40, height: 12), kind: .spelling, itemID: 0),
+                     UnderlineSpec(rect: CGRect(x: 300, y: 200, width: 40, height: 12), kind: .clarity, itemID: 1)]
+        if HoverCoordinator.hitTest(specs, at: CGPoint(x: 120, y: 206))?.itemID == 0 {
+            SelfTest.ok("click: 命中第一条")
+        } else { SelfTest.bad("click: 命中第一条", "未命中") }
+        if HoverCoordinator.hitTest(specs, at: CGPoint(x: 320, y: 206))?.itemID == 1 {
+            SelfTest.ok("click: 命中第二条")
+        } else { SelfTest.bad("click: 命中第二条", "未命中") }
+        if HoverCoordinator.hitTest(specs, at: CGPoint(x: 200, y: 206)) == nil {
+            SelfTest.ok("click: 空白处不命中（应关卡片）")
+        } else { SelfTest.bad("click: 空白处", "误命中") }
+        // 容错：下划线下方 4pt 内仍算命中（±6pt）
+        if HoverCoordinator.hitTest(specs, at: CGPoint(x: 120, y: 216))?.itemID == 0 {
+            SelfTest.ok("click: 纵向容错 6pt 内命中")
+        } else { SelfTest.bad("click: 容差", "差 4pt 就没命中") }
     }
 }

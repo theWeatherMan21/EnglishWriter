@@ -278,6 +278,17 @@ if argv.contains("--docscan-file") {
     exit(ok ? 0 : 1)
 }
 
+if argv.contains("--ax-elements") {
+    var code: Int32 = 0
+    let sem = DispatchSemaphore(value: 0)
+    Task { @MainActor in
+        code = AXElementsProbe.run(argv)
+        sem.signal()
+    }
+    while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    exit(code)
+}
+
 if argv.contains("--webui") {
     exit(WebUISelfTest.run(argv))
 }
