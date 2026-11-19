@@ -756,6 +756,10 @@ final class InlineController {
     private func onAXNotification(name: String, element: AXUIElement) {
         guard enabled else { return }
         if name == kAXFocusedUIElementChangedNotification as String {
+            // 点击引起的光标/焦点变化不算数：它会把刚画好的线清掉，导致点击必 miss
+            if HoverCoordinator.shouldIgnoreFocusChange(now: Date(), lastClickAt: HoverCoordinator.shared.lastClickAt) {
+                return
+            }
             if let pid = lastFocusPid as pid_t? { attachElementObserver(pid: pid) }
             scheduleCheck(delay: debounce)
             return

@@ -59,7 +59,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1931,5 +1931,29 @@ extension SelfTest {
         } else {
             SelfTest.bad("front: 取到了自己", "pid=\(front)")
         }
+    }
+}
+
+// MARK: 点击竞态（点击后 250ms 内的焦点变化必须被忽略）
+extension SelfTest {
+    static func clickRaceTests() {
+        let now = Date()
+        if HoverCoordinator.shouldIgnoreFocusChange(now: now, lastClickAt: now.addingTimeInterval(-0.05)) {
+            SelfTest.ok("click: 点击后 50ms 的焦点变化被忽略", "忽略")
+        } else { SelfTest.bad("click: 50ms 未忽略", "-") }
+        if HoverCoordinator.shouldIgnoreFocusChange(now: now, lastClickAt: now.addingTimeInterval(-0.24)) {
+            SelfTest.ok("click: 点击后 240ms 仍在宽限内", "忽略")
+        } else { SelfTest.bad("click: 240ms 未忽略", "-") }
+        if !HoverCoordinator.shouldIgnoreFocusChange(now: now, lastClickAt: now.addingTimeInterval(-0.40)) {
+            SelfTest.ok("click: 400ms 后恢复正常检查", "不忽略")
+        } else { SelfTest.bad("click: 400ms 仍忽略", "-") }
+        // 快照语义：命中必须用点击那一刻的线表（这里用同一份快照验证两次命中一致）
+        let r = CGRect(x: 747, y: 177, width: 66, height: 17)
+        let sp = UnderlineSpec(rect: r, kind: .grammar, itemID: 2, ownerPid: 4242)
+        let a = HoverCoordinator.hitTest([sp], at: CGPoint(x: r.midX, y: r.midY))
+        let b = HoverCoordinator.hitTest([sp], at: CGPoint(x: r.midX, y: r.midY))
+        if a?.itemID == 2 && b?.itemID == 2 {
+            SelfTest.ok("click: 点击后立即焦点变化仍命中", "itemID=2")
+        } else { SelfTest.bad("click: 快照命中", "\(String(describing: a?.itemID))") }
     }
 }

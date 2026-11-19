@@ -413,8 +413,21 @@ final class HoverCoordinator {
         M3Flow.hit(specs, at: p, dx: 3, dy: 6)
     }
 
+    /// 点击后这段时间内的焦点变化不算数：点文字必然移动光标，光标移动会触发重检查，
+    /// 重检查会把线清掉 —— 于是「点得越准，越查不到线」（11-19 竞态）。
+    private(set) var lastClickAt: Date = .distantPast
+    static let clickFocusGrace: TimeInterval = 0.25
+
+    nonisolated static func shouldIgnoreFocusChange(now: Date, lastClickAt: Date,
+                                        grace: TimeInterval = clickFocusGrace) -> Bool {
+        now.timeIntervalSince(lastClickAt) < grace
+    }
+
     private func onClick() {
         if UnderlineOverlay.globallySilent { return }
+        // ① 先同步抓快照：任何异步/重排版之前拿到线表，命中用这份
+        let specs = InlineController.shared.overlay.currentRects()
+        lastClickAt = Date()
         let mouseAppKit = NSEvent.mouseLocation
         // ① 我们自己的窗口让路：试用窗口 / 卡片 / 侧栏 / 浮动球 —— 点到一律不判定、不 dismiss
         //    （否则爹地点自己窗口会被记成 Safari/Mail 的 click-miss，看起来像「没反应」）
@@ -423,7 +436,6 @@ final class HoverCoordinator {
         for w in ownWindows where w.isVisible && w.frame.contains(mouseAppKit) { return }
 
         let mouseQuartz = ScreenGeom.pointToQuartz(mouseAppKit)
-        let specs = InlineController.shared.overlay.currentRects()
         let hit = HoverCoordinator.hitTest(specs, at: mouseQuartz)
         // miss 必须能自证差在哪：点坐标（两种口径）、最近一条线、以及「谁画的线 vs 现在前台是谁」。
         // 只有 rectCount 时，看不出是坐标偏了、还是点在别的 App 上（那是正常 miss）。
