@@ -360,6 +360,20 @@ final class InlineController {
         guard focusObserver == nil else { return }
         HoverCoordinator.shared.start()      // 悬停卡片（全局 mouseMoved + 200ms 停留）
         overlay.startTTLWatchdog()           // 线超过 2s 没被确认就自灭，屏幕上不留残影
+        // 滚动一起手就清线，80ms 后按新位置重画 —— 不用等 1s 复验（知澜给的全局滚动事件方案）
+        scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
+            Task { @MainActor in
+                self?.overlay.clear()
+                self?.scheduleQuickCheck(after: 0.08)
+            }
+        }
+        scrollMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+            Task { @MainActor in
+                self?.overlay.clear()
+                self?.scheduleQuickCheck(after: 0.08)
+            }
+            return e
+        }
         focusObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
@@ -1323,6 +1337,8 @@ final class InlineController {
     /// 清线之后的补偿检查：宁可闪一下重画，也不许留残影
     private var quickCheckTask: Task<Void, Never>?
     private var recheckTimer: Timer?
+    private var scrollMonitor: Any?
+    private var scrollMonitorLocal: Any?
 
     private func scheduleQuickCheck(after delay: TimeInterval) {
         quickCheckTask?.cancel()
