@@ -143,12 +143,19 @@ def main():
                        " if (!c) return null; c.querySelector('.card');"
                        " const b = c.querySelector('[data-a=rewrite]');"
                        " if (!b) return 'NO-BTN'; b.click(); return 'clicked'; })()")
-    time.sleep(1.5)
-    rw = drive.evaluate(ws, "(() => { const h = document.getElementById('__ew_host__');"
-                            " const c = h.shadowRoot.querySelector('.card');"
-                            " if (!c) return 'NO-CARD';"
-                            " const b = c.querySelector('.rw');"
-                            " return b ? (b.textContent || '').slice(0, 40) : 'NO-BOX'; })()")
+    # 改写要发真请求（模型已配置时 3–8 秒）：轮询到出候选或出错误文案为止
+    rw = None
+    for _ in range(30):                     # 最多 15 秒
+        time.sleep(0.5)
+        rw = drive.evaluate(ws, "(() => { const h = document.getElementById('__ew_host__');"
+                                " const c = h.shadowRoot.querySelector('.card');"
+                                " if (!c) return 'NO-CARD';"
+                                " const box = c.querySelector('.rw');"
+                                " if (!box) return 'NO-BOX';"
+                                " const items = box.querySelectorAll('.rwi').length;"
+                                " return items ? ('候选' + items + '条') : (box.textContent || '').slice(0, 40); })()")
+        if rw and rw not in ('正在改写…', 'NO-CARD', 'NO-BOX', '') and '正在改写' not in rw:
+            break
     print(f"OK  改写入口  「{rw}」")
     card = dict(card); card["rewrite"] = rw
 

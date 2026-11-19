@@ -26,6 +26,11 @@
       "pass" : true
     },
     {
+      "detail" : "6 个键全部未变",
+      "name" : "测试不碰真实域",
+      "pass" : true
+    },
+    {
       "detail" : "加词前 1 条 → 加词后 0 条",
       "name" : "词典·加词后同词 0 条",
       "pass" : true
@@ -51,7 +56,7 @@
       "pass" : true
     },
     {
-      "detail" : "本进程名「?」在排除表里→不挂 observer；换成 com.example.other→放行",
+      "detail" : "本进程名「英文写作助手」在排除表里→不挂 observer；换成 com.example.other→放行",
       "name" : "排除·闸门挡住\/放行",
       "pass" : true
     },
@@ -101,7 +106,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-19T10:44:45Z",
+  "generatedAt" : "2026-11-19T10:51:30Z",
   "netStub" : {
     "emptyConfigHits" : 0,
     "how" : "URLProtocol 打桩计数（CountingProtocol）",

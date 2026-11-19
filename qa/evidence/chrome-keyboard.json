@@ -1,15 +1,15 @@
 {
   "first": {
-    "orig": "send",
-    "rep": "sent"
+    "orig": "have send",
+    "rep": "have sent"
   },
   "second": {
     "orig": "immediatly",
     "rep": "immediately"
   },
   "back": {
-    "orig": "send",
-    "rep": "sent"
+    "orig": "have send",
+    "rep": "have sent"
   },
-  "at": "2026-11-19T18:31:17"
+  "at": "2026-11-19T18:47:37"
 }

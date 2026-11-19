@@ -964,7 +964,24 @@ enum SelfTest {
     /// 用独立进程 `defaults read` 冷读回来比对；词典过滤用引擎的纯函数 buildItems 断言。
     static func settingsTests() {
         print("\n--- 设置面板（M4 #8：三件套 / 引擎地址 / 方言 / App 排除 / 词典）---")
-        let d = SettingsStore.store
+        // 11-19 事故：测试直接写真实域 com.wanyi.englishwriter，进程被中途 kill 时 defer 没跑，
+        // 用户的三个模型键就整片消失（实测被抹过一次）。现在测试全程在独立 suite 里，
+        // 真实域一个键都不碰；冷读也用 defaults read <suite>。
+        let suite = "\(SettingsStore.bundleId).selftest.\(getpid())"
+        let iso = UserDefaults(suiteName: suite) ?? .standard
+        iso.removePersistentDomain(forName: suite)
+        SettingsStore.override = iso
+        defer {
+            SettingsStore.override = nil
+            iso.removePersistentDomain(forName: suite)
+        }
+        let d = iso
+        // 真实域快照：跑完逐键比对，变了就 FAIL（防止再次误写用户配置）
+        let real = UserDefaults(suiteName: SettingsStore.bundleId) ?? .standard
+        let realKeys = [SettingsStore.kBase, SettingsStore.kKey, SettingsStore.kModel,
+                        SettingsStore.kLTBase, SettingsStore.kLTLanguage, SettingsStore.kExcludedApps]
+        var realBefore: [String: String] = [:]
+        for k in realKeys { realBefore[k] = real.string(forKey: k) ?? "<nil>" }
         let keys = [SettingsStore.kBase, SettingsStore.kKey, SettingsStore.kModel,
                     SettingsStore.kLTBase, SettingsStore.kLTLanguage, SettingsStore.kExcludedApps,
                     "dict.words", "ignore.rules"]
@@ -1026,12 +1043,12 @@ enum SelfTest {
 
         // 冷启动口径：另起一个进程读同一个域（defaults read），不是本进程缓存
         let reads: [String: String] = [
-            SettingsStore.kBase: defaultsRead(SettingsStore.kBase) ?? "<nil>",
-            SettingsStore.kKey: defaultsRead(SettingsStore.kKey) ?? "<nil>",
-            SettingsStore.kModel: defaultsRead(SettingsStore.kModel) ?? "<nil>",
-            SettingsStore.kLTBase: defaultsRead(SettingsStore.kLTBase) ?? "<nil>",
-            SettingsStore.kLTLanguage: defaultsRead(SettingsStore.kLTLanguage) ?? "<nil>",
-            SettingsStore.kExcludedApps: defaultsRead(SettingsStore.kExcludedApps) ?? "<nil>",
+            SettingsStore.kBase: defaultsRead(SettingsStore.kBase, domain: suite) ?? "<nil>",
+            SettingsStore.kKey: defaultsRead(SettingsStore.kKey, domain: suite) ?? "<nil>",
+            SettingsStore.kModel: defaultsRead(SettingsStore.kModel, domain: suite) ?? "<nil>",
+            SettingsStore.kLTBase: defaultsRead(SettingsStore.kLTBase, domain: suite) ?? "<nil>",
+            SettingsStore.kLTLanguage: defaultsRead(SettingsStore.kLTLanguage, domain: suite) ?? "<nil>",
+            SettingsStore.kExcludedApps: defaultsRead(SettingsStore.kExcludedApps, domain: suite) ?? "<nil>",
         ]
         evidence["defaultsRead"] = reads
         let need: [(String, String)] = [
@@ -1051,6 +1068,13 @@ enum SelfTest {
         }
         check("冷读·defaults read 六项齐全", missing.isEmpty,
               missing.isEmpty ? "独立进程读到 \(need.count + 1) 项，值与保存一致" : "不一致/缺失：\(missing)")
+
+        // 真实域护栏：测试绝不能改动用户配置（11-19 被抹过一次）
+        var realAfter: [String: String] = [:]
+        for k in realKeys { realAfter[k] = real.string(forKey: k) ?? "<nil>" }
+        let realChanged = realKeys.filter { realBefore[$0] != realAfter[$0] }
+        check("测试不碰真实域", realChanged.isEmpty,
+              realChanged.isEmpty ? "6 个键全部未变" : "被改动：\(realChanged)")
 
         // 3) 个人词典 → 引擎侧过滤（纯函数，不依赖 LanguageTool 在线）
         let text = "There is many reasons why we should sent the booking confirmation immediatly."
@@ -1156,11 +1180,11 @@ enum SelfTest {
         SettingsStore.store.synchronize()
         IgnoreStore.shared.ignoreSession(original: "immediatly", replacement: "immediately")
         let sessCount = asyncItemCount { try await InlineEngine.review(text: probeText, config: okCfg, session: stub2) }
-        let sessDisk = defaultsRead("ignore.rules") ?? "<nil>"
+        let sessDisk = defaultsRead("ignore.rules", domain: suite) ?? "<nil>"
         IgnoreStore.shared.clearSession()
         IgnoreStore.shared.ignore(original: "immediatly", replacement: "immediately")
         SettingsStore.store.synchronize()
-        let permDisk = defaultsRead("ignore.rules") ?? "<nil>"
+        let permDisk = defaultsRead("ignore.rules", domain: suite) ?? "<nil>"
         IgnoreStore.shared.clear()
         check("忽略·本次只在内存",
               sessCount == 0 && !sessDisk.contains("immediatly"),
@@ -1212,10 +1236,10 @@ enum SelfTest {
     }
 
     /// 独立进程读设置域（真正的「冷启动读回」）
-    static func defaultsRead(_ key: String) -> String? {
+    static func defaultsRead(_ key: String, domain: String? = nil) -> String? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        p.arguments = ["read", SettingsStore.bundleId, key]
+        p.arguments = ["read", domain ?? SettingsStore.bundleId, key]
         let out = Pipe()
         p.standardOutput = out
         p.standardError = Pipe()
