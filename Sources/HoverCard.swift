@@ -60,6 +60,7 @@ final class HoverCardView: NSView {
     private let dictBtn = CardButton(title: "加入词典")
     private let rewriteBtn = CardButton(title: "改写")
     private let toneBtn = CardButton(title: "语气")
+    private let moreBtn = CardButton(title: "···")
     private let prevBtn = CardButton(title: "◀")
     private let nextBtn = CardButton(title: "▶")
 
@@ -89,12 +90,13 @@ final class HoverCardView: NSView {
         acceptBtn.onClick = { [weak self] in self?.onAccept?() }
         ignoreBtn.onClick = { [weak self] in self?.onIgnore?() }
         dictBtn.onClick = { [weak self] in self?.onAddDict?() }
+        moreBtn.onClick = { [weak self] in self?.showMoreMenu() }
         rewriteBtn.onClick = { [weak self] in self?.onRewrite?() }
         prevBtn.onClick = { [weak self] in self?.onPrev?() }
         nextBtn.onClick = { [weak self] in self?.onNext?() }
         toneBtn.onClick = { [weak self] in self?.onTone?() }
 
-        for v in [kindLabel, sentenceField, diffField, reasonField, acceptBtn, ignoreBtn, dictBtn, rewriteBtn, toneBtn, prevBtn, nextBtn] as [NSView] {
+        for v in [kindLabel, sentenceField, diffField, reasonField, acceptBtn, ignoreBtn, dictBtn, rewriteBtn, toneBtn, prevBtn, nextBtn, moreBtn] as [NSView] {
             addSubview(v)
         }
     }
@@ -143,12 +145,34 @@ final class HoverCardView: NSView {
         dictBtn.isHidden = !allowDict
         // 只有模型配置齐全时才给改写/语气入口（不给死按钮）
         let canRewrite = Rewrite.isAvailable()
-        rewriteBtn.isHidden = !canRewrite
-        toneBtn.isHidden = !canRewrite
+        rewriteBtn.isHidden = true      // 收进「···」菜单，卡片只留主操作
+        toneBtn.isHidden = true
+        moreBtn.isHidden = false
         height = layoutSubviewsManually()
     }
 
     @objc private func sentenceTapped() { onAccept?() }
+
+    /// 「···」更多：把次要操作收进来（加入词典 / 改写 / 语气）
+    private func showMoreMenu() {
+        let menu = NSMenu()
+        if !dictBtn.isHidden {
+            let i = NSMenuItem(title: "加入词典", action: #selector(menuDict), keyEquivalent: "")
+            i.target = self; menu.addItem(i)
+        }
+        if Rewrite.isAvailable() {
+            let r = NSMenuItem(title: "改写这段…", action: #selector(menuRewrite), keyEquivalent: "")
+            r.target = self; menu.addItem(r)
+            let t = NSMenuItem(title: "改语气…", action: #selector(menuTone), keyEquivalent: "")
+            t.target = self; menu.addItem(t)
+        }
+        if menu.items.isEmpty { menu.addItem(withTitle: "没有更多操作", action: nil, keyEquivalent: "") }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @objc private func menuDict() { onAddDict?() }
+    @objc private func menuRewrite() { onRewrite?() }
+    @objc private func menuTone() { onTone?() }
 
     /// 上下文句子：前 5 词 + 旧词（红删除线）+ 新词（绿粗）+ 后 5 词
     static func contextSentence(sentence: String, errorRange: NSRange,
@@ -206,7 +230,7 @@ final class HoverCardView: NSView {
         let btnW: CGFloat = 62
         let navW: CGFloat = 26
         var x = textW + pad - btnW
-        for b in [dictBtn, ignoreBtn, acceptBtn] {
+        for b in [moreBtn, ignoreBtn, acceptBtn] {
             if b.isHidden { continue }
             b.frame = NSRect(x: x, y: y, width: btnW, height: btnH)
             x -= btnW + 6

@@ -34,6 +34,7 @@ final class Sidebar: NSPanel {
     private let dimsBox = NSStackView()
     private let listScroll = NSScrollView()
     private let listStack = NSStackView()
+    private let savedLabel = NSTextField(labelWithString: "已保存")
     private let toneLabel = NSTextField(labelWithString: "")   // 没结果就不显示，不许出现「未接/占位」字样
     /// 分类 tab：全部 / 语法 / 清晰度 / 表达；每个顶部 3pt 类别色条 + 灰色计数气泡
     private var selectedType: String? = nil      // nil = 全部
@@ -79,6 +80,13 @@ final class Sidebar: NSPanel {
         bigScore.frame = NSRect(x: 18, y: 424, width: 84, height: 30)
         root.addSubview(bigScore)
         let scoreCaption = NSTextField(labelWithString: "总评分")
+        savedLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        savedLabel.textColor = .systemGreen
+        savedLabel.alignment = .right
+        savedLabel.isHidden = true
+        savedLabel.frame = NSRect(x: width - 120, y: 480, width: 96, height: 16)
+        root.addSubview(savedLabel)
+
         bandLabel.font = NSFont.systemFont(ofSize: 14, weight: .heavy)
         bandLabel.alignment = .center
         bandLabel.frame = NSRect(x: 6, y: 396, width: 108, height: 18)
@@ -188,6 +196,42 @@ final class Sidebar: NSPanel {
 
     // MARK: 渲染
 
+    /// 接受后顶部闪一句「已保存」1.5 秒（Grammarly 就是这个反馈）
+    @MainActor
+    func showSaved() {
+        savedLabel.isHidden = false
+        savedLabel.frame = NSRect(x: width - 120, y: frame.height - 40, width: 96, height: 16)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            savedLabel.isHidden = true
+        }
+    }
+
+    // G: 键盘 ← → 翻条、Esc 关闭
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 123: step(-1)      // ←
+        case 124: step(1)       // →
+        case 53:  orderOut(nil) // Esc
+        default:  super.keyDown(with: event)
+        }
+    }
+
+    private func step(_ d: Int) {
+        let live = visibleItems()
+        guard !live.isEmpty else { return }
+        if currentRow < 0 { currentRow = 0 } else { currentRow = (currentRow + d + live.count) % live.count }
+        let it = live[currentRow]
+        onJump?(it)
+        if let row = listStack.arrangedSubviews.compactMap({ $0 as? NSStackView })
+            .first(where: { v in v.arrangedSubviews.contains { $0.tag == it.start } }) as? HoverRow {
+            row.flash()
+            listScroll.contentView.scroll(to: row.convert(row.bounds.origin, to: listScroll.documentView))
+        }
+    }
+
+    private var currentRow = -1
+
     @objc private func closePanel() { orderOut(nil); onAcceptAll = nil }
 
     /// 从正文点词过来：把这条对应的卡片滚到可见并闪一下行背景（双向联动）
@@ -207,6 +251,7 @@ final class Sidebar: NSPanel {
     @objc private func acceptAllTapped() {
         onAcceptAll?()
         render()
+        showSaved()
     }
 
     @objc private func tabTapped(_ sender: NSButton) {
@@ -504,6 +549,7 @@ final class Sidebar: NSPanel {
         onAccept?(it)
         dismissed.insert(key(it))
         render()
+        showSaved()
     }
 
     @objc private func dismissRow(_ sender: NSButton) {
