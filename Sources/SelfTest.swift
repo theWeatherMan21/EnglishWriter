@@ -48,6 +48,7 @@ enum SelfTest {
         if wantAll || argv.contains("--score") { scoreTests() }
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
+        if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -1193,6 +1194,36 @@ extension SelfTest {
             SelfTest.ok("replace: 已大写不重复处理")
         } else {
             SelfTest.bad("replace: 已大写", cap.replacementRespectingSentenceCase(in: text))
+        }
+    }
+}
+
+// MARK: 逐字母差异高亮
+extension SelfTest {
+    static func spellingDiffTests() {
+        let p = SpellingDiff.parts(original: "immediatly", replacement: "immediately")
+        // immediatly → immediately：少的那个 'e' 是插入，所以旧侧为空、新侧为 e
+        if p.prefix == "immediat" && p.oldMid.isEmpty && p.newMid == "e" {
+            SelfTest.ok("diffhl: immediatly/immediately 差异段切对", "共前缀=\(p.prefix) 旧=\(p.oldMid) 新=\(p.newMid)")
+        } else {
+            SelfTest.bad("diffhl: 差异段切分", "prefix=\(p.prefix) old=\(p.oldMid) new=\(p.newMid)")
+        }
+        let att = SpellingDiff.attributed(original: "immediatly", replacement: "immediately")
+        let str = att.string
+        // 差异字母在拼接串里的位置：prefix + oldMid 之后
+        var differs = false
+        att.enumerateAttributes(in: NSRange(location: 0, length: att.length)) { attrs, range, _ in
+            let seg = (str as NSString).substring(with: range)
+            if seg == "e", (attrs[.foregroundColor] as? NSColor) == NSColor.systemGreen { differs = true }
+        }
+        if differs { SelfTest.ok("diffhl: 插入的字母用绿色加粗标出") }
+        else { SelfTest.bad("diffhl: 差异字母属性", "没找到红色删除线段") }
+
+        let same = SpellingDiff.parts(original: "decide", replacement: "decide")
+        if same.oldMid.isEmpty && same.newMid.isEmpty {
+            SelfTest.ok("diffhl: 完全相同的词无差异段")
+        } else {
+            SelfTest.bad("diffhl: 同词", "old=\(same.oldMid) new=\(same.newMid)")
         }
     }
 }

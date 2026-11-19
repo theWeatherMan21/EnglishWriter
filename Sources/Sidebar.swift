@@ -37,6 +37,8 @@ final class Sidebar: NSPanel {
     private let filter = NSSegmentedControl(labels: ["重要建议", "全部建议"], trackingMode: .selectOne, target: nil, action: nil)
 
     private let width: CGFloat = 360
+    // 视觉节奏：4 的倍数，标题 13/正文 11/说明 10，行高 30，卡片圆角 10
+    private let m: CGFloat = 8
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 360, height: 520),
@@ -261,6 +263,9 @@ final class Sidebar: NSPanel {
         for t in order {
             let group = live.filter { $0.type == t }
             guard !group.isEmpty else { continue }
+            let gap = NSView()
+            gap.heightAnchor.constraint(equalToConstant: t == order.first ? 2 : 10).isActive = true
+            listStack.addArrangedSubview(gap)
             let h = NSTextField(labelWithString: "\(titles[t] ?? t)（\(group.count)）")
             h.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
             h.textColor = .secondaryLabelColor
@@ -273,10 +278,12 @@ final class Sidebar: NSPanel {
     }
 
     private func rowView(for it: DiffItem) -> NSView {
-        let row = NSStackView()
+        let row = HoverRow()
         row.orientation = .horizontal
         row.spacing = 6
-        row.edgeInsets = NSEdgeInsets(top: 2, left: 6, bottom: 2, right: 6)
+        row.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        row.wantsLayer = true
+        row.layer?.cornerRadius = 8
 
         let dot = NSView()
         dot.wantsLayer = true
@@ -327,7 +334,7 @@ final class Sidebar: NSPanel {
         col.orientation = .vertical
         col.alignment = .leading
         col.spacing = 1
-        col.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 4, right: 0)
+        col.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 6, right: 4)
         return col
     }
 
@@ -339,6 +346,10 @@ final class Sidebar: NSPanel {
 
     /// 拼写类：把「真正变的字母」加粗下划线，别让 immediatly→immediately 看着像一样
     private func diffText(_ it: DiffItem) -> NSAttributedString {
+        return SpellingDiff.attributed(original: it.original, replacement: it.replacement)
+    }
+
+    private func diffTextLegacy(_ it: DiffItem) -> NSAttributedString {
         let a = it.original, b = it.replacement
         let ca = Array(a), cb = Array(b)
         var pre = 0
@@ -469,5 +480,33 @@ final class ScoreBar: NSView {
                                 xRadius: h / 2, yRadius: h / 2)
         color.setFill()
         fill.fill()
+    }
+}
+
+/// 建议行容器：hover 给淡背景（Grammarly 那种「这行可以点」的暗示）
+final class HoverRow: NSStackView {
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
     }
 }
