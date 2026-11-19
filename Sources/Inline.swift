@@ -103,6 +103,33 @@ enum AXInline {
         return findEditableAncestor(el) ?? el
     }
 
+    /// key window 里第一个**可编辑**元素（不是「最大的文本框」，不跨窗口、不比较大小、不猜）。
+    /// 场景：窗口在、可编辑框在，但 kAXFocusedUIElementAttribute 这一轮返回空
+    /// （窗口非 key 前的一瞬 / AX 短暂沉默 / overlay 抢过 key）。
+    /// 仍然过 editable 门槛：只读正文照样不碰。
+    static func keyWindowEditable(pid: pid_t) -> AXUIElement? {
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 0.25)
+        var win: AXUIElement?
+        for key in [kAXFocusedWindowAttribute as String, kAXMainWindowAttribute as String] {
+            if let v = attr(appEl, key) {
+                win = (v as! AXUIElement)
+                break
+            }
+        }
+        guard let w = win else { return nil }
+        var queue: [AXUIElement] = [w]
+        var steps = 0
+        while !queue.isEmpty, steps < 600 {
+            let cur = queue.removeFirst()
+            steps += 1
+            if cur !== w, isEditable(cur) { return cur }
+            let kids = (attr(cur, kAXChildrenAttribute as String) as? [AXUIElement]) ?? []
+            queue.append(contentsOf: kids)
+        }
+        return nil
+    }
+
     // MARK: Web 正文与 Chromium 无障碍（真机 2026-11-19 实测的两处断点）
 
     /// Chromium 系（Chrome / Edge / Brave / Electron）：不显式置这两个属性，AX 树里永远没有 AXWebArea，
@@ -709,7 +736,12 @@ final class InlineController {
                                 textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                                 elapsed: "-", err: "焦点不可读 → 改挂前台窗口正文", at: Date()))
             }
-            // 不再回落到「窗口里最大的 AXTextArea」：那是在猜，猜中的永远是正文段落（爹地 11-19）
+            // 不再回落到「窗口里最大的 AXTextArea」（跨窗口比较大小 = 猜，猜中的永远是正文段落）。
+            // 换成确定性替代：当前 key window 里第一个可编辑元素。
+            if cand == nil, let kw = AXInline.keyWindowEditable(pid: pid) {
+                cand = kw
+                role = attrString(kw, kAXRoleAttribute as String) ?? ""
+            }
         }
         guard let el = cand else {
             emit(CheckEvent(kind: "attach-el-fail", pid: pid, app: appName(pid), role: "-", textLen: 0,
@@ -801,6 +833,13 @@ final class InlineController {
         } else if let wb = AXInline.frontWindowBody(pid: pid) {
             el = wb                       // 没有焦点元素（Chromium 冷启）：直接接前台窗口正文
             diag.fallbackTextArea += 1
+        } else if let kw = AXInline.keyWindowEditable(pid: pid) {
+            el = kw
+            diag.lastPath = "keywindow-editable"
+            emit(CheckEvent(kind: "fallback-keywindow", pid: pid, app: appName(pid),
+                            role: attrString(el, kAXRoleAttribute as String) ?? "?",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "没有焦点元素 → 当前 key window 里第一个可编辑元素", at: Date()))
         } else {
             diag.lastError = "没有焦点文本框"; return
         }

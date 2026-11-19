@@ -150,6 +150,15 @@ enum AXCheck {
         }
         if spawnedTemp != nil, let w = found.window ?? windows(st.pid).first { setMinimized(w, true) }
         let el = found.element
+        // 顺带验「无焦点时的确定性回退」：key window 里第一个可编辑元素必须找得到
+        if let kw = AXInline.keyWindowEditable(pid: st.pid) {
+            let r = attrString(kw, kAXRoleAttribute as String) ?? "?"
+            print("[keywin] 找到可编辑元素 role=\(r) editable=\(AXInline.isEditable(kw))")
+            st.notes.append("key-window 可编辑回退：role=\(r)")
+        } else {
+            print("[keywin] 未找到 key window 内可编辑元素")
+            st.notes.append("key-window 可编辑回退：未找到")
+        }
         st.bodyRole = attrString(el, kAXRoleAttribute as String) ?? "?"
         st.bodyRectQuartz = rects(frameOf(el))
         st.windowTitle = found.window.flatMap { attrString($0, kAXTitleAttribute as String) } ?? ""

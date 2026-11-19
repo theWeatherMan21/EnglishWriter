@@ -285,6 +285,11 @@ if argv.contains("--mail-selftest") {
     exit(MailSelfTest.run(argv))
 }
 
+// key window 可编辑元素（无焦点时的确定性回退路径）
+if argv.contains("--keywin") {
+    exit(KeyWinProbe.run(argv))
+}
+
 // 画线率 KPI（rectCount / 有建议次数），按 App 汇总 check-log
 if argv.contains("--kpi") {
     exit(KPI.run(argv))
@@ -400,7 +405,7 @@ if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--
 // MARK: 单实例 & 模式判定
 // 两个实例同时跑 = 两个全局点击监听抢同一批点击（11-19 实测：第一次被空 specs 的实例接住，
 // 第二次谁都没接到）。所以：常驻模式用一个文件锁，抢不到锁就退出。
-let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--realshot", "--axdump", "--axprobe",
+let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--keywin", "--realshot", "--axdump", "--axprobe",
                 "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome"]
 let isCLIMode = argv.contains { cliFlags.contains($0) }
 if !isCLIMode {
