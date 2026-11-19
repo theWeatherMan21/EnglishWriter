@@ -234,7 +234,7 @@ enum Engine {
         req.setValue("Bearer \(config.apiKey.trimmed)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": config.model.trimmed,
             "temperature": 0,
             "response_format": ["type": "json_object"],
@@ -243,7 +243,18 @@ enum Engine {
                 ["role": "user", "content": userPrompt(text)],
             ],
         ]
+        // 快速模式：关推理链。11-19 实测同一句 12 句文本，带推理 19.2s（推理吃满 1200 token、输出被截断），
+        // 不传则 74s；传 reasoning_effort:none 后 10.6s、推理 token=0。
+        let fast = CategoryPrefs.fastMode()
+        if fast { body["reasoning_effort"] = "none" }
+        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 4000 }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        // 请求体摘要进日志：下次一眼看出到底是「没传 reasoning_effort」还是「传了没生效」
+        let sentences = Scorer.splitSentences(text).count
+        RequestLog.append(model: config.model.trimmed,
+                          reasoning: fast ? "none" : "(默认·带推理)",
+                          maxTokens: (body["max_tokens"] as? Int) ?? 0,
+                          sentences: sentences, chars: n)
 
         let t0 = Date()
         let data: Data

@@ -1,0 +1,44 @@
+{
+  "chars" : 373,
+  "edits" : 4,
+  "elapsedMs" : 38,
+  "engine" : "spell+rules",
+  "file" : "\/tmp\/demo-sample.txt",
+  "items" : [
+    {
+      "length" : 10,
+      "original" : "immediatly",
+      "reason" : "拼写：immediatly → immediately（系统词典）",
+      "replacement" : "immediately",
+      "start" : 82,
+      "type" : "spelling"
+    },
+    {
+      "length" : 11,
+      "original" : "In order to",
+      "reason" : "啰嗦：in order to → to",
+      "replacement" : "to",
+      "start" : 95,
+      "type" : "clarity"
+    },
+    {
+      "length" : 15,
+      "original" : "make a decision",
+      "reason" : "啰嗦：make a decision → decide",
+      "replacement" : "decide",
+      "start" : 126,
+      "type" : "clarity"
+    },
+    {
+      "length" : 20,
+      "original" : "Due to the fact that",
+      "reason" : "啰嗦：due to the fact that → because",
+      "replacement" : "because",
+      "start" : 149,
+      "type" : "clarity"
+    }
+  ],
+  "modelItems" : 0,
+  "sentences" : 12,
+  "skippedCJK" : 1
+}

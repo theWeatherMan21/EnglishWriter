@@ -190,7 +190,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 self.lastScore = Scorer.score(text: text, items: merged, formality: nil)
                 self.lastScoreText = text
                 let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                self.status.stringValue = "\(merged.count) 条建议（含模型）· \(ms)ms · 模型 \(out.items.count) 条"
+                let fast = CategoryPrefs.fastMode()
+                let reasoning = fast ? "none" : "默认"
+                self.status.stringValue = "\(merged.count) 条建议（模型 \(out.items.count) 条）· \(ms)ms · reasoning=\(reasoning)"
                 if Sidebar.shared.isVisible { Sidebar.shared.present(items: merged, score: self.lastScore, at: nil) }
             } catch {
                 self.status.stringValue = "模型检查失败：\(error)"

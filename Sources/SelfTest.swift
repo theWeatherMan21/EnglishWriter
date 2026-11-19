@@ -46,6 +46,7 @@ enum SelfTest {
         if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); docScanTests(); spellCheckTests(); routerTests(); RewriteTests.run(); CategoryPrefsTests.run() }
         if wantAll || argv.contains("--lang") { languageGateTests() }
         if wantAll || argv.contains("--score") { scoreTests() }
+        if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -1080,5 +1081,38 @@ extension SelfTest {
 
         if let d = sGood.deliveryNote.isEmpty ? nil : sGood.deliveryNote, !d.isEmpty { SelfTest.ok("score: 每维都有说明文字") }
         else { SelfTest.bad("score: 说明文字", "deliveryNote 为空") }
+    }
+}
+
+// MARK: 请求体防线（11-19：深度检查 74 秒的根因是漏传 reasoning_effort）
+extension SelfTest {
+    static func requestBodyTests() {
+        let cfg = LLMConfig(baseURL: "https://opencode.ai/zen/go/v1", apiKey: "k", model: "deepseek-v4.1-flash")
+        let fastBody = InlineEngine.buildBody(text: "hello", config: cfg, fast: true)
+        let slowBody = InlineEngine.buildBody(text: "hello", config: cfg, fast: false)
+
+        if (fastBody["reasoning_effort"] as? String) == "none" {
+            SelfTest.ok("req: 快速模式带 reasoning_effort=none")
+        } else {
+            SelfTest.bad("req: 快速模式必须带 reasoning_effort=none", "实际 \(String(describing: fastBody["reasoning_effort"]))")
+        }
+        if slowBody["reasoning_effort"] == nil {
+            SelfTest.ok("req: 非快速模式不带 reasoning_effort")
+        } else {
+            SelfTest.bad("req: 非快速模式不该带", "实际 \(String(describing: slowBody["reasoning_effort"]))")
+        }
+        if (fastBody["max_tokens"] as? Int) == 4000 {
+            SelfTest.ok("req: opencode 端点 max_tokens=4000")
+        } else {
+            SelfTest.bad("req: opencode max_tokens", "实际 \(String(describing: fastBody["max_tokens"]))")
+        }
+        let other = InlineEngine.buildBody(text: "hello",
+                                           config: LLMConfig(baseURL: "https://api.deepseek.com/v1", apiKey: "k", model: "m"),
+                                           fast: true)
+        if other["max_tokens"] == nil {
+            SelfTest.ok("req: 非 opencode 端点不硬塞 max_tokens")
+        } else {
+            SelfTest.bad("req: 非 opencode 不该带 max_tokens", "实际 \(String(describing: other["max_tokens"]))")
+        }
     }
 }

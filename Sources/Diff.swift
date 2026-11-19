@@ -187,6 +187,24 @@ struct InlineOutcome {
 }
 
 enum InlineEngine {
+
+    /// 请求体构造（纯函数，可单元断言）：快速模式必须带 reasoning_effort:"none"
+    /// 11-19 实测同段 12 句：不传 → 74s；带推理 → 19–57s 且输出被截断；none → 5.8–10.6s
+    static func buildBody(text: String, config: LLMConfig, fast: Bool) -> [String: Any] {
+        var body: [String: Any] = [
+            "model": config.model.trimmed,
+            "temperature": 0,
+            "response_format": ["type": "json_object"],
+            "messages": [
+                ["role": "system", "content": systemPromptV2()],
+                ["role": "user", "content": "Text (UTF-16 offsets counted from 0):\n\"\"\"\n\(text)\n\"\"\""],
+            ],
+        ]
+        if fast { body["reasoning_effort"] = "none" }
+        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 4000 }
+        return body
+    }
+
     static func review(text: String, config: LLMConfig,
                        timeout: TimeInterval = 15,
                        session: URLSession = .shared) async throws -> InlineOutcome {
@@ -199,16 +217,14 @@ enum InlineEngine {
         for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
             req.setValue(v, forHTTPHeaderField: k)
         }
-        var body: [String: Any] = [
-            "model": config.model.trimmed,
-            "temperature": 0,
-            "response_format": ["type": "json_object"],
-            "messages": [
-                ["role": "system", "content": systemPromptV2()],
-                ["role": "user", "content": "Text (UTF-16 offsets counted from 0):\n\"\"\"\n\(text)\n\"\"\""],
-            ],
-        ]
+        var body = buildBody(text: text, config: config, fast: CategoryPrefs.fastMode())
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let fast = CategoryPrefs.fastMode()
+        RequestLog.append(model: config.model.trimmed,
+                          reasoning: fast ? "none" : "(默认·带推理)",
+                          maxTokens: (body["max_tokens"] as? Int) ?? 0,
+                          sentences: Scorer.splitSentences(text).count,
+                          chars: (text as NSString).length)
 
         let t0 = Date()
         let data: Data, response: URLResponse

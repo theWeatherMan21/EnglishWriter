@@ -59,7 +59,7 @@ final class Sidebar: NSPanel {
         root.layer?.cornerRadius = 14
         root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        let title = NSTextField(labelWithString: "写作检查")
+        let title = NSTextField(labelWithString: "Overall · 总评分")
         title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         title.textColor = .secondaryLabelColor
         title.frame = NSRect(x: 18, y: 484, width: 200, height: 18)
@@ -77,18 +77,18 @@ final class Sidebar: NSPanel {
         dimsBox.orientation = .vertical
         dimsBox.alignment = .leading
         dimsBox.spacing = 4
-        dimsBox.frame = NSRect(x: 116, y: 386, width: 226, height: 96)
+        dimsBox.frame = NSRect(x: 108, y: 330, width: 240, height: 156)
         root.addSubview(dimsBox)
 
         // 筛选
         filter.target = self
         filter.action = #selector(filterChanged)
         filter.selectedSegment = 0
-        filter.frame = NSRect(x: 18, y: 348, width: 200, height: 24)
+        filter.frame = NSRect(x: 18, y: 310, width: 200, height: 24)
         root.addSubview(filter)
 
         // 列表
-        listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: 296)
+        listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: 258)
         listScroll.hasVerticalScroller = true
         listScroll.drawsBackground = false
         listScroll.borderType = .noBorder
@@ -138,15 +138,15 @@ final class Sidebar: NSPanel {
 
     private func sizeToFit() {
         let maxH = (NSScreen.screens.first?.visibleFrame.height ?? 900) * 0.7
-        let contentH = CGFloat(44 + 300 + 60)
+        let contentH = CGFloat(44 + 340 + 60)
         let h = min(maxH, contentH)
         setContentSize(NSSize(width: width, height: h))
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 44 - 300 + 250)
         ring.frame = NSRect(x: 18, y: h - 124, width: 84, height: 84)
         bigScore.frame = NSRect(x: 18, y: h - 96, width: 84, height: 30)
-        dimsBox.frame = NSRect(x: 116, y: h - 134, width: 226, height: 96)
-        filter.frame = NSRect(x: 18, y: h - 172, width: 200, height: 24)
-        listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 172 - 34)
+        dimsBox.frame = NSRect(x: 108, y: h - 194, width: 240, height: 156)
+        filter.frame = NSRect(x: 18, y: h - 210, width: 200, height: 24)
+        listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 210 - 34)
         toneLabel.frame = NSRect(x: 18, y: 16, width: width - 36, height: 16)
         if let root = contentView {
             for v in root.subviews where v !== listScroll && v !== toneLabel { _ = v }
@@ -174,28 +174,40 @@ final class Sidebar: NSPanel {
         ring.needsDisplay = true
 
         for v in dimsBox.arrangedSubviews { dimsBox.removeArrangedSubview(v); v.removeFromSuperview() }
-        for (name, val, note) in [("Correctness", score.correctness, score.correctnessNote),
-                                  ("Clarity", score.clarity, score.clarityNote),
-                                  ("Engagement", score.engagement, score.engagementNote),
-                                  ("Delivery", score.delivery, score.deliveryNote)] {
+        for (name, val, note) in [("正确性", score.correctness, score.correctnessNote),
+                                  ("清晰度", score.clarity, score.clarityNote),
+                                  ("吸引力", score.engagement, score.engagementNote),
+                                  ("表达", score.delivery, score.deliveryNote)] {
+            // 一行：中文维度名 + 分数 + 进度条；下一行：一句话说明
             let row = NSStackView()
             row.orientation = .horizontal
             row.spacing = 6
+            row.alignment = .centerY
             let n = NSTextField(labelWithString: name)
             n.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-            n.textColor = .labelColor
-            n.widthAnchor.constraint(equalToConstant: 78).isActive = true
+            n.widthAnchor.constraint(equalToConstant: 44).isActive = true
             let v = NSTextField(labelWithString: "\(val)")
             v.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-            v.textColor = val >= 80 ? .systemGreen : (val >= 55 ? .systemOrange : .systemRed)
-            v.widthAnchor.constraint(equalToConstant: 26).isActive = true
+            v.textColor = tone(val)
+            v.widthAnchor.constraint(equalToConstant: 24).isActive = true
+            let bar = ScoreBar()
+            bar.value = Double(val) / 100.0
+            bar.color = tone(val)
+            bar.widthAnchor.constraint(equalToConstant: 148).isActive = true
+            bar.heightAnchor.constraint(equalToConstant: 5).isActive = true
+            row.addArrangedSubview(n); row.addArrangedSubview(v); row.addArrangedSubview(bar)
+
             let noteLabel = NSTextField(labelWithString: note)
             noteLabel.font = NSFont.systemFont(ofSize: 9)
             noteLabel.textColor = .tertiaryLabelColor
             noteLabel.lineBreakMode = .byTruncatingTail
-            noteLabel.widthAnchor.constraint(equalToConstant: 108).isActive = true
-            row.addArrangedSubview(n); row.addArrangedSubview(v); row.addArrangedSubview(noteLabel)
-            dimsBox.addArrangedSubview(row)
+            noteLabel.widthAnchor.constraint(equalToConstant: 216).isActive = true
+
+            let col = NSStackView(views: [row, noteLabel])
+            col.orientation = .vertical
+            col.alignment = .leading
+            col.spacing = 1
+            dimsBox.addArrangedSubview(col)
         }
 
         for v in listStack.arrangedSubviews { listStack.removeArrangedSubview(v); v.removeFromSuperview() }
@@ -208,8 +220,8 @@ final class Sidebar: NSPanel {
             return
         }
         let order = ["spelling", "grammar", "clarity", "style"]
-        let titles = ["spelling": "Correctness · 拼写", "grammar": "Correctness · 语法",
-                      "clarity": "Clarity · 清晰度", "style": "Delivery · 风格"]
+        let titles = ["spelling": "正确性 · 拼写", "grammar": "正确性 · 语法",
+                      "clarity": "清晰度 · 冗长表达", "style": "表达 · 风格"]
         for t in order {
             let group = live.filter { $0.type == t }
             guard !group.isEmpty else { continue }
@@ -237,25 +249,20 @@ final class Sidebar: NSPanel {
         dot.widthAnchor.constraint(equalToConstant: 6).isActive = true
         dot.heightAnchor.constraint(equalToConstant: 6).isActive = true
 
-        let text = NSMutableAttributedString()
-        text.append(NSAttributedString(string: it.original + " → ", attributes: [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.systemRed,
-            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
-        ]))
-        text.append(NSAttributedString(string: it.replacement, attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor.systemGreen,
-        ]))
-        let label = NSTextField(labelWithAttributedString: text)
+        let label = NSTextField(labelWithAttributedString: diffText(it))
         label.lineBreakMode = .byTruncatingTail
-        label.widthAnchor.constraint(equalToConstant: 196).isActive = true
+        label.widthAnchor.constraint(equalToConstant: 132).isActive = true
+        label.tag = it.start
+        label.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(jumpRow(_:))))
 
-        let jumpBtn = NSButton(title: "", target: self, action: #selector(jumpRow(_:)))
-        jumpBtn.image = NSImage(systemSymbolName: "arrow.up.forward.square", accessibilityDescription: nil)
+        let jumpBtn = NSButton(title: "定位", target: self, action: #selector(jumpRow(_:)))
+        jumpBtn.bezelStyle = .inline
+        jumpBtn.controlSize = .small
+        jumpBtn.font = NSFont.systemFont(ofSize: 9)
         jumpBtn.isBordered = false
+        jumpBtn.contentTintColor = .secondaryLabelColor
         jumpBtn.tag = it.start
-        jumpBtn.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        jumpBtn.widthAnchor.constraint(equalToConstant: 26).isActive = true
 
         let acceptBtn = NSButton(title: "接受", target: self, action: #selector(acceptRow(_:)))
         acceptBtn.bezelStyle = .rounded
@@ -272,7 +279,68 @@ final class Sidebar: NSPanel {
         for b in [jumpBtn, acceptBtn, dismissBtn] { b.identifier = NSUserInterfaceItemIdentifier("\(it.start)") }
         row.addArrangedSubview(dot); row.addArrangedSubview(label)
         row.addArrangedSubview(jumpBtn); row.addArrangedSubview(acceptBtn); row.addArrangedSubview(dismissBtn)
-        return row
+
+        // 理由（模型给的 reason 直接显示，没有就按类型给一句人话）
+        let reasonText = it.reason.isEmpty ? defaultReason(it.type) : it.reason
+        let reason = NSTextField(wrappingLabelWithString: reasonText)
+        reason.font = NSFont.systemFont(ofSize: 9)
+        reason.textColor = .tertiaryLabelColor
+        reason.preferredMaxLayoutWidth = 300
+        reason.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        let col = NSStackView(views: [row, reason])
+        col.orientation = .vertical
+        col.alignment = .leading
+        col.spacing = 1
+        col.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 4, right: 0)
+        return col
+    }
+
+    private func tone(_ v: Int) -> NSColor {
+        if v >= 80 { return .systemGreen }
+        if v >= 50 { return .systemOrange }
+        return .systemRed
+    }
+
+    /// 拼写类：把「真正变的字母」加粗下划线，别让 immediatly→immediately 看着像一样
+    private func diffText(_ it: DiffItem) -> NSAttributedString {
+        let a = it.original, b = it.replacement
+        let ca = Array(a), cb = Array(b)
+        var pre = 0
+        while pre < min(ca.count, cb.count), ca[pre] == cb[pre] { pre += 1 }
+        var suf = 0
+        while suf < min(ca.count - pre, cb.count - pre),
+              ca[ca.count - 1 - suf] == cb[cb.count - 1 - suf] { suf += 1 }
+        func parts(_ arr: [Character]) -> (String, String, String) {
+            let p = String(arr[0..<pre])
+            let mid = String(arr[pre..<(arr.count - suf)])
+            let s = String(arr[(arr.count - suf)...])
+            return (p, mid, s)
+        }
+        let (pa, ma, sa) = parts(ca)
+        let (pb, mb, sb) = parts(cb)
+        let out = NSMutableAttributedString()
+        let normal: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
+        let oldBad: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.systemRed,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue]
+        let newGood: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.systemGreen]
+        out.append(NSAttributedString(string: pa, attributes: normal))
+        out.append(NSAttributedString(string: ma, attributes: oldBad))
+        out.append(NSAttributedString(string: sa + " → " + pb, attributes: normal))
+        out.append(NSAttributedString(string: mb, attributes: newGood))
+        out.append(NSAttributedString(string: sb, attributes: normal))
+        return out
+    }
+
+    private func defaultReason(_ type: String) -> String {
+        switch type {
+        case "spelling": return "拼写错误"
+        case "grammar": return "语法问题"
+        case "clarity": return "表达可以更简洁"
+        default: return "风格建议"
+        }
     }
 
     private func color(for type: String) -> NSColor {
@@ -302,8 +370,12 @@ final class Sidebar: NSPanel {
         render()
     }
 
-    @objc private func jumpRow(_ sender: NSButton) {
-        guard let it = item(at: sender.tag) else { return }
+    @objc private func jumpRow(_ sender: Any) {
+        let tag: Int
+        if let b = sender as? NSButton { tag = b.tag }
+        else if let g = sender as? NSClickGestureRecognizer, let v = g.view { tag = v.tag }
+        else { return }
+        guard let it = item(at: tag) else { return }
         onJump?(it)
     }
 
@@ -340,4 +412,23 @@ final class ScoreRing: NSView {
 /// 翻转坐标系（让列表从顶部往下排）
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// 四维横向进度条
+final class ScoreBar: NSView {
+    var value: Double = 0 { didSet { needsDisplay = true } }
+    var color: NSColor = .systemGreen { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let h = bounds.height
+        let track = NSBezierPath(roundedRect: bounds, xRadius: h / 2, yRadius: h / 2)
+        NSColor.quaternaryLabelColor.setFill()
+        track.fill()
+        var w = bounds.width * CGFloat(min(1, max(0, value)))
+        w = max(w, h)   // 太小时也留个圆头
+        let fill = NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: w, height: h),
+                                xRadius: h / 2, yRadius: h / 2)
+        color.setFill()
+        fill.fill()
+    }
 }

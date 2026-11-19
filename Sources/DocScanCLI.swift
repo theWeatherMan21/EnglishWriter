@@ -43,14 +43,17 @@ enum DocScanCLI {
             if cfg.isComplete {
                 print("  模型：\(cfg.model)（深度检查，约 5–8 秒）")
                 let t0 = Date()
-                if let out = try? await InlineEngine.review(text: text, config: cfg, timeout: 90) {
+                do {
+                let out = try await InlineEngine.review(text: text, config: cfg, timeout: 90)
+                if true {
                     modelItems = out.items
                     print("  模型返回 \(out.items.count) 条，耗时 \(Int(Date().timeIntervalSince(t0) * 1000))ms")
                     for it in out.items.prefix(10) {
                         print("    [\(it.type)] \(it.original) → \(it.replacement)")
                     }
-                } else {
-                    print("  模型检查失败")
+                }
+                } catch {
+                    print("  模型检查失败：\(error)")
                 }
             } else {
                 print("  模型三项没填，跳过深度检查")

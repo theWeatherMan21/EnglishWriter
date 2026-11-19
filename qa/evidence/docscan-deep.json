@@ -1,17 +1,25 @@
 {
   "chars" : 373,
-  "edits" : 6,
-  "elapsedMs" : 44,
+  "edits" : 7,
+  "elapsedMs" : 68,
   "engine" : "spell+rules",
   "file" : "\/tmp\/demo-sample.txt",
   "items" : [
     {
-      "length" : 8,
-      "original" : "There is",
-      "reason" : "主语 reasons 为复数，需用 There are。",
+      "length" : 5,
+      "original" : "There",
+      "reason" : "There be 句型需与复数主语 reasons 保持一致，用 are。",
       "replacement" : "There are",
       "start" : 0,
       "type" : "grammar"
+    },
+    {
+      "length" : 4,
+      "original" : "many",
+      "reason" : "占位修正：many 本身无误，此条不应输出。",
+      "replacement" : "many",
+      "start" : 9,
+      "type" : "style"
     },
     {
       "length" : 4,
