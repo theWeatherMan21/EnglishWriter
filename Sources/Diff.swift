@@ -196,7 +196,7 @@ enum InlineEngine {
             "temperature": 0,
             "response_format": ["type": "json_object"],
             "messages": [
-                ["role": "system", "content": systemPromptV2()],
+                ["role": "system", "content": systemPromptV2() + GoalsStore.load().promptSuffix],
                 ["role": "user", "content": "Text (UTF-16 offsets counted from 0):\n\"\"\"\n\(text)\n\"\"\""],
             ],
         ]

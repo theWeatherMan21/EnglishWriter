@@ -21,6 +21,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var lastScore = WritingScore()
     private var lastScoreText = ""
     private var didAutoOpenSidebar = false
+    private var toneText = ""
     private var checkTask: Task<Void, Never>?
     private var debounce: Timer?
 
@@ -240,7 +241,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.renderList(items)
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
             // 评分（P2 纯本地）
-            self.lastScore = Scorer.score(text: text, items: items, formality: nil)
+            self.lastScore = Scorer.score(text: text, items: items, formality: GoalsStore.load().formality)
             self.lastScoreText = text
             let langSkipped = res.skippedCJK + counter.langSkipped
             if ProcessInfo.processInfo.arguments.contains("--deep"), !self.didAutoOpenSidebar {
@@ -250,6 +251,17 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if ProcessInfo.processInfo.arguments.contains("--sidebar-open"), !self.didAutoOpenSidebar, !items.isEmpty {
                 self.didAutoOpenSidebar = true
                 self.openSidebar()
+            }
+            // 语气（P3）：≥150 字符才判；模型优先、失败回落本地，出结果才更新，绝不阻塞
+            if (text as NSString).length >= Tone.minChars {
+                Task { @MainActor in
+                    if let t = await Tone.detect(text, config: SettingsStore.load()) {
+                        Sidebar.shared.setTone("\(t.primary)（次要 \(t.secondary)，\(t.source == "model" ? "模型" : "本地")）")
+                        self.toneText = "\(t.primary) / \(t.secondary)"
+                    }
+                }
+            } else {
+                Sidebar.shared.setTone("文本太短（<150 字符），暂不判断")
             }
             self.status.stringValue = "\(items.count) 条建议 · \(res.sentenceCount) 句 / 跳过非英文 \(langSkipped) 句 · \(ms)ms · 语言门控开"
         }

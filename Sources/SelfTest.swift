@@ -47,6 +47,8 @@ enum SelfTest {
         if wantAll || argv.contains("--lang") { languageGateTests() }
         if wantAll || argv.contains("--score") { scoreTests() }
         if wantAll || argv.contains("--req") { requestBodyTests() }
+        if wantAll || argv.contains("--goals") { goalsTests() }
+        if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
         if argv.contains("--live") { liveTests() }
         if argv.contains("--live-diff") { liveDiffTests() }
@@ -1113,6 +1115,58 @@ extension SelfTest {
             SelfTest.ok("req: 非 opencode 端点不硬塞 max_tokens")
         } else {
             SelfTest.bad("req: 非 opencode 不该带 max_tokens", "实际 \(String(describing: other["max_tokens"]))")
+        }
+    }
+}
+
+// MARK: Goals（P4）/ Tone（P3）
+extension SelfTest {
+    static func goalsTests() {
+        let d = UserDefaults(suiteName: "ew.goals.selftest")!
+        d.removePersistentDomain(forName: "ew.goals.selftest")
+        let empty = GoalsStore.load(d)
+        if empty.isEmpty && empty.promptSuffix.isEmpty {
+            SelfTest.ok("goals: 零预设（四项全空，提示词不拼任何目标）")
+        } else {
+            SelfTest.bad("goals: 零预设", "实际 \(empty)")
+        }
+        var g = Goals()
+        g.audience = "客户"; g.formality = 3; g.intent = "请求"; g.domain = "商务"
+        GoalsStore.save(g, d)
+        let back = GoalsStore.load(d)
+        if back == g { SelfTest.ok("goals: 保存/读回一致") } else { SelfTest.bad("goals: 读回不一致", "\(back)") }
+        if back.promptSuffix.contains("Audience: 客户") && back.promptSuffix.contains("Formality target: 3/4") {
+            SelfTest.ok("goals: 提示词按设置拼接")
+        } else {
+            SelfTest.bad("goals: 提示词拼接", back.promptSuffix)
+        }
+        GoalsStore.save(Goals(), d)
+        if d.object(forKey: "goals.v1") == nil { SelfTest.ok("goals: 清空后不留空对象") }
+        else { SelfTest.bad("goals: 清空后仍留键", "") }
+    }
+
+    static func toneTests() {
+        let t1 = Tone.detectLocal("We must confirm this immediately. Failure will cause penalty. Required no later than today.")
+        if t1.primary == "强硬" || t1.primary == "急切" { SelfTest.ok("tone: 强硬/急切 命中", "\(t1.primary)/\(t1.secondary)") }
+        else { SelfTest.bad("tone: 强硬语气判据", t1.primary) }
+
+        let t2 = Tone.detectLocal("Thank you so much, we appreciate your help and we are happy to support you, best regards.")
+        if t2.primary == "友好" { SelfTest.ok("tone: 友好 命中") } else { SelfTest.bad("tone: 友好判据", t2.primary) }
+
+        let t3 = Tone.detectLocal("Kindly find the documents. Furthermore, please be advised accordingly. Regards.")
+        if t3.primary == "正式" { SelfTest.ok("tone: 正式 命中") } else { SelfTest.bad("tone: 正式判据", t3.primary) }
+
+        let t4 = Tone.detectLocal("Sorry for the inconvenience, this was my mistake and I regret it.")
+        if t4.primary == "致歉" { SelfTest.ok("tone: 致歉 命中") } else { SelfTest.bad("tone: 致歉判据", t4.primary) }
+
+        let t5 = Tone.detectLocal("Ship sails tomorrow.")
+        if t5.primary == "中性" { SelfTest.ok("tone: 无关键词给中性") } else { SelfTest.bad("tone: 中性兜底", t5.primary) }
+
+        let short = "too short text"
+        if (short as NSString).length < Tone.minChars {
+            SelfTest.ok("tone: 触发门槛 150 字符（短文本不判）")
+        } else {
+            SelfTest.bad("tone: 门槛", "常量不一致")
         }
     }
 }

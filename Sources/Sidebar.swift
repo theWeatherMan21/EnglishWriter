@@ -32,7 +32,7 @@ final class Sidebar: NSPanel {
     private let dimsBox = NSStackView()
     private let listScroll = NSScrollView()
     private let listStack = NSStackView()
-    private let toneLabel = NSTextField(labelWithString: "语气：—（P3 未接）")
+    private let toneLabel = NSTextField(labelWithString: "")   // 没结果就不显示，不许出现「未接/占位」字样
     private let filter = NSSegmentedControl(labels: ["重要建议", "全部建议"], trackingMode: .selectOne, target: nil, action: nil)
 
     private let width: CGFloat = 360
@@ -72,6 +72,20 @@ final class Sidebar: NSPanel {
         bigScore.alignment = .center
         bigScore.frame = NSRect(x: 18, y: 424, width: 84, height: 30)
         root.addSubview(bigScore)
+        let scoreCaption = NSTextField(labelWithString: "总评分")
+        scoreCaption.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        scoreCaption.textColor = .secondaryLabelColor
+        scoreCaption.alignment = .center
+        scoreCaption.frame = NSRect(x: 18, y: 404, width: 84, height: 14)
+        scoreCaption.tag = 991
+        root.addSubview(scoreCaption)
+
+        let close = NSButton(title: "✕", target: self, action: #selector(closePanel))
+        close.isBordered = false
+        close.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        close.contentTintColor = .tertiaryLabelColor
+        close.frame = NSRect(x: width - 34, y: 484, width: 20, height: 20)
+        root.addSubview(close)
 
         // 四维
         dimsBox.orientation = .vertical
@@ -101,7 +115,7 @@ final class Sidebar: NSPanel {
         NSLayoutConstraint.activate([
             listStack.topAnchor.constraint(equalTo: clip.topAnchor, constant: 2),
             listStack.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
-            listStack.trailingAnchor.constraint(equalTo: clip.trailingAnchor, constant: -8),
+            listStack.widthAnchor.constraint(equalToConstant: width - 36),
         ])
         listScroll.documentView = clip
         root.addSubview(listScroll)
@@ -138,12 +152,17 @@ final class Sidebar: NSPanel {
 
     private func sizeToFit() {
         let maxH = (NSScreen.screens.first?.visibleFrame.height ?? 900) * 0.7
-        let contentH = CGFloat(44 + 340 + 60)
+        let contentH = CGFloat(620)
         let h = min(maxH, contentH)
         setContentSize(NSSize(width: width, height: h))
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 44 - 300 + 250)
         ring.frame = NSRect(x: 18, y: h - 124, width: 84, height: 84)
         bigScore.frame = NSRect(x: 18, y: h - 96, width: 84, height: 30)
+        contentView?.viewWithTag(991)?.frame = NSRect(x: 18, y: h - 116, width: 84, height: 14)
+        // 关闭按钮跟着高度走（固定 y 会被 resize 顶出可视区）
+        if let close = contentView?.subviews.first(where: { ($0 as? NSButton)?.title == "✕" }) {
+            close.frame = NSRect(x: width - 34, y: h - 36, width: 20, height: 20)
+        }
         dimsBox.frame = NSRect(x: 108, y: h - 194, width: 240, height: 156)
         filter.frame = NSRect(x: 18, y: h - 210, width: 200, height: 24)
         listScroll.frame = NSRect(x: 12, y: 44, width: width - 24, height: h - 210 - 34)
@@ -154,6 +173,8 @@ final class Sidebar: NSPanel {
     }
 
     // MARK: 渲染
+
+    @objc private func closePanel() { orderOut(nil) }
 
     @objc private func filterChanged() {
         importantOnly = filter.selectedSegment == 0
@@ -198,7 +219,7 @@ final class Sidebar: NSPanel {
             row.addArrangedSubview(n); row.addArrangedSubview(v); row.addArrangedSubview(bar)
 
             let noteLabel = NSTextField(labelWithString: note)
-            noteLabel.font = NSFont.systemFont(ofSize: 9)
+            noteLabel.font = NSFont.systemFont(ofSize: 10)
             noteLabel.textColor = .tertiaryLabelColor
             noteLabel.lineBreakMode = .byTruncatingTail
             noteLabel.widthAnchor.constraint(equalToConstant: 216).isActive = true
@@ -267,13 +288,13 @@ final class Sidebar: NSPanel {
         let acceptBtn = NSButton(title: "接受", target: self, action: #selector(acceptRow(_:)))
         acceptBtn.bezelStyle = .rounded
         acceptBtn.controlSize = .small
-        acceptBtn.font = NSFont.systemFont(ofSize: 10)
+        acceptBtn.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         acceptBtn.tag = it.start
 
         let dismissBtn = NSButton(title: "忽略", target: self, action: #selector(dismissRow(_:)))
         dismissBtn.bezelStyle = .rounded
         dismissBtn.controlSize = .small
-        dismissBtn.font = NSFont.systemFont(ofSize: 10)
+        dismissBtn.font = NSFont.systemFont(ofSize: 11)
         dismissBtn.tag = it.start
 
         for b in [jumpBtn, acceptBtn, dismissBtn] { b.identifier = NSUserInterfaceItemIdentifier("\(it.start)") }
@@ -283,7 +304,7 @@ final class Sidebar: NSPanel {
         // 理由（模型给的 reason 直接显示，没有就按类型给一句人话）
         let reasonText = it.reason.isEmpty ? defaultReason(it.type) : it.reason
         let reason = NSTextField(wrappingLabelWithString: reasonText)
-        reason.font = NSFont.systemFont(ofSize: 9)
+        reason.font = NSFont.systemFont(ofSize: 10)
         reason.textColor = .tertiaryLabelColor
         reason.preferredMaxLayoutWidth = 300
         reason.widthAnchor.constraint(equalToConstant: 300).isActive = true
@@ -379,7 +400,10 @@ final class Sidebar: NSPanel {
         onJump?(it)
     }
 
-    func setTone(_ s: String) { toneLabel.stringValue = "语气：\(s)" }
+    func setTone(_ s: String) {
+        toneLabel.stringValue = s.isEmpty ? "" : "语气：\(s)"
+        toneLabel.isHidden = s.isEmpty
+    }
 }
 
 /// 总分圆环
