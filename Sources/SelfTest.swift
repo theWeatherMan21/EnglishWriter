@@ -59,7 +59,7 @@ enum SelfTest {
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
         if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests() }
-        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests() }
+        if wantAll || argv.contains("--privacy") { privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
         if wantAll || argv.contains("--settings") { settingsTests() }
@@ -2023,5 +2023,30 @@ extension SelfTest {
         if a?.itemID == 2 && b?.itemID == 2 {
             SelfTest.ok("click: 点击后立即焦点变化仍命中", "itemID=2")
         } else { SelfTest.bad("click: 快照命中", "\(String(describing: a?.itemID))") }
+    }
+}
+
+// MARK: 设置面板：从 ~/.hermes/.env 导入 Key（不预设模型/端点）
+extension SelfTest {
+    static func settingsKeyImportTest() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".hermes/.env")
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else {
+            SelfTest.ok("settings: 无 ~/.hermes/.env，导入按钮会保持静默", "skip")
+            return
+        }
+        let hasKey = ["OPENCODE_GO_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"]
+            .contains { raw.contains($0 + "=") }
+        let got = SettingsView.keyFromHermesEnv()
+        if hasKey {
+            if let k = got, !k.isEmpty, !k.contains(" ") {
+                SelfTest.ok("settings: 能从 .env 取到 Key", "长度 \(k.count)")
+            } else {
+                SelfTest.bad("settings: .env 里有 key 但取不到", String(describing: got))
+            }
+        } else if got == nil {
+            SelfTest.ok("settings: .env 里没有可用 key，返回 nil", "nil")
+        } else {
+            SelfTest.bad("settings: 不该取到 key", String(describing: got))
+        }
     }
 }

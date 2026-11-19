@@ -56,6 +56,22 @@ struct SettingsView: View {
         }
     }
 
+    /// 从 ~/.hermes/.env 里取一个可用的模型 key（存在就返回，不写死任何服务商）
+    static func keyFromHermesEnv() -> String? {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".hermes/.env")
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let wanted = ["OPENCODE_GO_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"]
+        for line in raw.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard !t.hasPrefix("#") else { continue }
+            for w in wanted where t.hasPrefix(w + "=") {
+                let v = t.dropFirst(w.count + 1).trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
+                if !v.isEmpty { return v }
+            }
+        }
+        return nil
+    }
+
     private var content: some View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("模型接口（三项手填，无预设默认值）").font(.system(size: 13, weight: .semibold))
@@ -64,7 +80,16 @@ struct SettingsView: View {
                 field("Model", text: $model.config.model, hint: "请求体里的 model 字段")
                 HStack(spacing: 8) {
                     Button("保存") { save() }
-                    Text(badge.text).font(.system(size: 11)).foregroundStyle(.secondary)
+                    // 只导入 key，不替你选模型/端点（那两项是用户决定，不预设默认值）
+                    Button("从 ~/.hermes/.env 导入 Key") {
+                        if let k = SettingsView.keyFromHermesEnv() {
+                            model.config.apiKey = k
+                            SettingsStore.save(model.config)
+                        }
+                    }
+                    // 不用 @State（本工具链没有 SwiftUIMacros）——直接从 model 读，改了就刷新
+                    Text(model.config.apiKey.isEmpty ? badge.text : "已填入 Key（还需要 Base URL 与 Model）")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 
                 Divider()
