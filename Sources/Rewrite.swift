@@ -82,7 +82,7 @@ enum Rewrite {
         if CategoryPrefs.fastMode() {
             body["reasoning_effort"] = "none"   // 实测 18.3s → ~2s，候选质量不掉
         }
-        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 4000 }
+        if config.baseURL.lowercased().contains("opencode") { body["max_tokens"] = 2000 }   // 3 条候选足够；4000 让单次调用慢 ~40%
         return body
     }
 
@@ -120,7 +120,21 @@ enum Rewrite {
         var out: [RewriteCandidate] = []
         for (i, c) in raw.enumerated() {
             // 只接受逐条 diff：整段文本整段替换的候选一律丢（违反口径 1）
-            guard let edits = c.edits, !edits.isEmpty else { continue }
+            guard var edits = c.edits, !edits.isEmpty else { continue }
+            // 边界空格清理：模型把 "kindly advise us the" 改成 " advise us of the" 时，
+            // 接上去会变成双空格（11-19 实测 6 条候选全因此被拒）。这里直接修，不丢候选。
+            // 只在与原文相邻已有空格的边界上裁空格；否则会把 "advise us"→"provide us" 粘成 "provideus"
+            let seg = segment as NSString
+            for i in edits.indices {
+                var rep = edits[i].replacement
+                let start = edits[i].start, len = edits[i].length
+                let prevIsSpace = start == 0 || seg.character(at: start - 1) == 32
+                let nextIsSpace = start + len >= seg.length || seg.character(at: start + len) == 32
+                if prevIsSpace, rep.hasPrefix(" ") { rep.removeFirst() }
+                if nextIsSpace, rep.hasSuffix(" ") { rep.removeLast() }
+                edits[i].replacement = rep
+            }
+            edits.removeAll { $0.replacement == $0.original }
             let cleaned = DiffSanitize.clean(edits, in: segment)
             guard !cleaned.isEmpty else { continue }
             let label = (c.label?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
@@ -190,7 +204,7 @@ enum Rewrite {
         guard config.isComplete, let url = config.endpoint else { throw ReviewFailure.notConfigured }
 
         // 一次请求 + 解析 + 硬过滤。过滤后为空时再试一次（模型偶发写坏整批）
-        func attempt(_ extraRule: String) async throws -> [RewriteCandidate] {
+        func attempt(_ extraRule: String, _ useLabels: [String]) async throws -> [RewriteCandidate] {
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.timeoutInterval = timeout
@@ -200,7 +214,7 @@ enum Rewrite {
             for (k, v) in EnginePrefs.extraModelHeaders(baseURL: config.baseURL) {
                 req.setValue(v, forHTTPHeaderField: k)
             }
-            var body = requestBody(segment: segment, config: config, labels: labels)
+            var body = requestBody(segment: segment, config: config, labels: useLabels)
             if !extraRule.isEmpty,
                var msgs = body["messages"] as? [[String: String]], !msgs.isEmpty {
                 msgs[0]["content"] = (msgs[0]["content"] ?? "") + "\n" + extraRule
@@ -246,14 +260,11 @@ enum Rewrite {
             return kept
         }
 
-        let first = try await attempt("")
+        let first = try await attempt("", labels)
         if !first.isEmpty { return first }
-        // 整批都被过滤掉了：带着更严的追加规则重试一次
-        let retry = try await attempt("""
-        IMPORTANT: the previous attempt produced candidates that deleted words or introduced new errors.
-        Rewrite again: keep every piece of information, produce a complete grammatical sentence,
-        and make sure each label gives a DIFFERENT wording from the others.
-        """)
+        // 整批都被过滤掉了：只补一条（单 label，输出小、快），带着更严的追加规则
+        let retry = try await attempt("Rewrite again. IMPORTANT: the previous attempt deleted words or introduced new errors. Keep every piece of information and produce one complete grammatical sentence.",
+                                      [labels.first ?? "更清晰"])
         if !retry.isEmpty { return retry }
         return first
     }
