@@ -79,7 +79,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         scroll.layer?.borderWidth = 1
         scroll.layer?.borderColor = NSColor.separatorColor.cgColor
 
-        let tv = NSTextView(frame: scroll.bounds)
+        // 用子类接住 mouseDown：NSTextView 自己会吃掉点击，gesture 常常不触发
+        // （爹地点了半天「没反应」的根因之一）
+        let tv = ClickTextView(frame: scroll.bounds)
         tv.isEditable = true
         tv.isRichText = false
         tv.font = NSFont.systemFont(ofSize: 15)
@@ -96,9 +98,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.delegate = self
         tv.string = sample
-        let click = NSClickGestureRecognizer(target: self, action: #selector(textClicked(_:)))
-        click.delaysPrimaryMouseButtonEvents = false
-        tv.addGestureRecognizer(click)
+        tv.onClickAt = { [weak self] point in
+            Task { @MainActor in self?.handleClick(at: point) }
+        }
         tv.backgroundColor = NSColor.textBackgroundColor
         tv.insertionPointColor = .systemBlue
         scroll.documentView = tv
@@ -312,9 +314,9 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     /// 点正文里的词 → 侧栏对应卡片展开并高亮（双向联动的另一半）
-    @MainActor @objc private func textClicked(_ g: NSClickGestureRecognizer) {
+    @MainActor
+    private func handleClick(at p: NSPoint) {
         guard let tv = textView else { return }
-        let p = tv.convert(g.location(in: tv), from: nil)
         let idx = tv.characterIndexForInsertion(at: p)
         let hit = items.first(where: { idx >= $0.start && idx < $0.start + max(1, $0.length) })
         let hitIdx = hit.flatMap { h in items.firstIndex(where: { (it: DiffItem) -> Bool in it.start == h.start }) }
@@ -487,5 +489,16 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
     func windowWillClose(_ n: Notification) {
         Sidebar.shared.orderOut(nil)
         window = nil
+    }
+}
+
+/// 点击能直接拿到坐标的 NSTextView（gesture 会被文本视图吞掉，用子类最稳）
+final class ClickTextView: NSTextView {
+    var onClickAt: ((NSPoint) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        onClickAt?(p)
+        super.mouseDown(with: event)
     }
 }
