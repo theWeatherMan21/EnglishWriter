@@ -101,7 +101,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-19T10:00:39Z",
+  "generatedAt" : "2026-11-19T10:11:02Z",
   "netStub" : {
     "emptyConfigHits" : 0,
     "how" : "URLProtocol 打桩计数（CountingProtocol）",

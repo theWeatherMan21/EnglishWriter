@@ -741,21 +741,25 @@ final class InlineController {
         let textRole = (role == "AXTextArea" || role == "AXTextField" || role == "AXWebArea")
         let readable = cand.map { AXInline.fullText(of: $0) != nil || WebText.isWebBody($0) } ?? false
         if cand == nil || !textRole || !readable {
-            // WebKit 正文（Mail 写信）这里是最关键的一刀：焦点元素是 WebArea 外层、AXValue 恒空，
-            // 不接手前台窗口正文的话永远停在 no-text（真机 2026-11-19 实测）。
-            if let wb = AXInline.frontWindowBody(pid: pid) {
-                // 网页输入控件优先（Chrome：textarea 在 AX 树里是 AXTextArea，AXValue 有字）
+            // 顺序很关键（知澜 11-19 抓到的反例）：
+            //   ① 先找 key window 里的**可编辑**元素（原生 App 的正路，确定性，不猜）
+            //   ② 再考虑前台窗口正文（只对 Web 宿主有意义：Mail 写信 / WebArea 外层 AXValue 恒空）
+            // 反过来的话，TextEdit 的窗口正文是 AXImage，cand 被只读正文占住，
+            // keyWindowEditable 的 `cand == nil` 永远不成立 → 又落到 skip-readonly。
+            if let kw = AXInline.keyWindowEditable(pid: pid),
+               let v = AXInline.fullText(of: kw), !v.isEmpty {
+                cand = kw
+                role = attrString(kw, kAXRoleAttribute as String) ?? ""
+                emit(CheckEvent(kind: "attach-keywindow", pid: pid, app: appName(pid), role: role,
+                                textLen: (v as NSString).length, sentenceLen: 0, itemCount: 0,
+                                rectCount: 0, elapsed: "-", err: "焦点不可读 → key window 可编辑元素", at: Date()))
+            } else if let wb = AXInline.frontWindowBody(pid: pid), WebText.isWebBody(wb) {
+                // 网页输入控件优先（textarea 在 AX 树里是 AXTextArea，AXValue 有字）
                 cand = AXInline.textField(in: wb) ?? wb
                 role = attrString(cand!, kAXRoleAttribute as String) ?? ""
                 emit(CheckEvent(kind: "attach-web", pid: pid, app: appName(pid), role: role,
                                 textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                                 elapsed: "-", err: "焦点不可读 → 改挂前台窗口正文", at: Date()))
-            }
-            // 不再回落到「窗口里最大的 AXTextArea」（跨窗口比较大小 = 猜，猜中的永远是正文段落）。
-            // 换成确定性替代：当前 key window 里第一个可编辑元素。
-            if cand == nil, let kw = AXInline.keyWindowEditable(pid: pid) {
-                cand = kw
-                role = attrString(kw, kAXRoleAttribute as String) ?? ""
             }
         }
         guard let el = cand else {

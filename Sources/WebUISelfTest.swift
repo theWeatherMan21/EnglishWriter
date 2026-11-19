@@ -56,13 +56,13 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
         {"overall":72,"band":"需注意 · 72","tone":"正式（次要 友好，本地）",
          "dims":[{"name":"正确性","value":72,"note":"拼写 1"},{"name":"清晰度","value":58,"note":"冗长 2"},
                  {"name":"吸引力","value":81,"note":"多样性 74%"},{"name":"表达","value":75,"note":"中性"}],
-         "tabs":[{"name":"全部","n":3},{"name":"正确性","n":1},{"name":"清晰度","n":1},{"name":"表达","n":1}],
+         "tabs":[{"name":"重要建议","n":2},{"name":"全部建议","n":3}],
          "groups":[{"title":"正确性 · 拼写与语法","type":"grammar","items":[
-                     {"id":0,"original":"immediatly","replacement":"immediately","reason":"拼写错误"}]},
+                     {"id":0,"type":"grammar","original":"immediatly","replacement":"immediately","reason":"拼写错误"}]},
                    {"title":"清晰度 · 精简表达","type":"clarity","items":[
-                     {"id":1,"original":"In order to","replacement":"to","reason":"表达可以更简洁"}]},
+                     {"id":1,"type":"clarity","original":"In order to","replacement":"to","reason":"表达可以更简洁"}]},
                    {"title":"表达 · 风格","type":"style","items":[
-                     {"id":2,"original":"very unique","replacement":"unique","reason":"风格建议"}]}]}
+                     {"id":2,"type":"style","original":"very unique","replacement":"unique","reason":"风格建议"}]}]}
         """
         _ = await js("EW.render(\(payload))")
         try? await Task.sleep(nanoseconds: 300_000_000)
@@ -79,20 +79,25 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
         let dimCount = await js("document.querySelectorAll('#dims .dim').length") as? Int ?? 0
         expect("四维数量", dimCount == 4, "dims=\(dimCount)")
 
+        // 11-19 改成两档（重要建议 / 全部建议），不再是四个类别 tab
         let tabCount = await js("document.querySelectorAll('#tabs .tab').length") as? Int ?? 0
-        expect("四个分类 tab", tabCount == 4, "tabs=\(tabCount)")
+        expect("两档筛选 tab", tabCount == 2, "tabs=\(tabCount)")
 
+        // 默认档 = 重要建议：style 那 1 条必须被过滤掉（不是靠隐藏，是压根不渲染）
         let rows = await js("document.querySelectorAll('.row').length") as? Int ?? 0
-        expect("建议行数量", rows == 3, "rows=\(rows)")
+        expect("重要建议档 2 行（style 被过滤）", rows == 2, "rows=\(rows)")
 
         let groups = await js("document.querySelectorAll('.group').length") as? Int ?? 0
-        expect("分组数量", groups == 3, "groups=\(groups)")
+        expect("重要建议档 2 组", groups == 2, "groups=\(groups)")
+
+        let listHead = await js("document.getElementById('listhead').textContent") as? String ?? ""
+        expect("列表头条数与筛选一致", listHead.contains("2 条建议"), "listhead=\(listHead)")
 
         let oldBlocks = await js("document.querySelectorAll('.old').length") as? Int ?? 0
-        expect("旧词红底块", oldBlocks == 3, "old=\(oldBlocks)")
+        expect("旧词红底块（按当前档=2）", oldBlocks == 2, "old=\(oldBlocks)")
 
         let newBlocks = await js("document.querySelectorAll('.new').length") as? Int ?? 0
-        expect("新词绿底块", newBlocks == 3, "new=\(newBlocks)")
+        expect("新词绿底块（按当前档=2）", newBlocks == 2, "new=\(newBlocks)")
 
         // 分层必须肉眼可分：卡片底 #F7F8FA vs 面板 #FFFFFF，且卡片有阴影
         let rowBg = await js("getComputedStyle(document.querySelector('.row')).backgroundColor") as? String ?? ""
@@ -106,11 +111,11 @@ final class WebUISelfTest: NSObject, WKNavigationDelegate {
         let tone = await js("document.getElementById('tone').textContent") as? String ?? ""
         expect("语气行", tone.contains("正式"), "tone=\(tone)")
 
-        // 过滤：点「语法」只剩 1 组
+        // 切「全部建议」→ 三组全回来
         _ = await js("EW.pick(1)")
         try? await Task.sleep(nanoseconds: 200_000_000)
         let filtered = await js("document.querySelectorAll('.group').length") as? Int ?? 0
-        expect("分类过滤生效", filtered == 1, "groups after pick=\(filtered)")
+        expect("全部建议档 3 组", filtered == 3, "groups after pick=\(filtered)")
 
         // 转义：文档里出现 <img onerror> 不许被当标签执行
         let evil: [String: Any] = ["overall": 1, "band": "x", "tone": "", "dims": [], "tabs": [],
