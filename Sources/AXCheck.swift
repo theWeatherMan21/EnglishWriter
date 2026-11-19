@@ -504,7 +504,11 @@ enum AXCheck {
     private static func windows(_ pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 1.5)
-        return (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        let raw = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        // macOS 27 实测：TextEdit 处于「有文档、没窗口」时，AXWindows 里塞的是 **AXApplication 元素**
+        // （role=AXApplication、children 全是菜单栏）。把它当窗口去遍历，永远找不到 AXTextArea，
+        // 于是报「窗口数=1 却没有正文」——先在源头滤掉，只认真正的 AXWindow。
+        return raw.filter { (attrString($0, kAXRoleAttribute as String) ?? "") == kAXWindowRole as String }
     }
 
     private static func body(pid: pid_t, minArea: CGFloat) -> Body? {

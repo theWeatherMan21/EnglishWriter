@@ -109,13 +109,19 @@ enum AXInline {
     /// 仍然过 editable 门槛：只读正文照样不碰。
     static func keyWindowEditable(pid: pid_t) -> AXUIElement? {
         let appEl = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(appEl, 0.25)
+        AXUIElementSetMessagingTimeout(appEl, 1.0)
         var win: AXUIElement?
         for key in [kAXFocusedWindowAttribute as String, kAXMainWindowAttribute as String] {
             if let v = attr(appEl, key) {
                 win = (v as! AXUIElement)
                 break
             }
+        }
+        // App 没被激活时 focused/main window 都可能取不到（真机 TextEdit 实测），
+        // 退到 AXWindows[0]：仍是「当前这台 App 的窗口」，不跨 App、不猜。
+        if win == nil, let ws = attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement],
+           let first = ws.first {
+            win = first
         }
         guard let w = win else { return nil }
         var queue: [AXUIElement] = [w]

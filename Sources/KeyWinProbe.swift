@@ -15,6 +15,31 @@ enum KeyWinProbe {
         }
         let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?"
         print("--- key window 可编辑元素探针（只读）--- App=\(name) pid=\(pid)")
+        let appEl = AXUIElementCreateApplication(pid)
+        let wins = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        print("AXWindows = \(wins.count)")
+        for w in wins {
+            let r = attrString(w, kAXRoleAttribute as String) ?? "?"
+            let t = attrString(w, kAXTitleAttribute as String) ?? ""
+            let kids = (attr(w, kAXChildrenAttribute as String) as? [AXUIElement])?.count ?? 0
+            print("  win role=\(r) title=\(t) children=\(kids)")
+        }
+        let foc = attr(appEl, kAXFocusedWindowAttribute as String) != nil
+        let main = attr(appEl, kAXMainWindowAttribute as String) != nil
+        print("focusedWindow=\(foc) mainWindow=\(main)")
+        if let w = wins.first {
+            var q: [(AXUIElement, Int)] = [(w, 0)]
+            var n = 0
+            while !q.isEmpty, n < 40 {
+                let (cur, d) = q.removeFirst(); n += 1
+                let r = attrString(cur, kAXRoleAttribute as String) ?? "?"
+                let sub = attrString(cur, kAXSubroleAttribute as String) ?? ""
+                print(String(repeating: "  ", count: d) + "\(r) \(sub)")
+                for k in (attr(cur, kAXChildrenAttribute as String) as? [AXUIElement]) ?? [] where d < 4 {
+                    q.append((k, d + 1))
+                }
+            }
+        }
         guard let el = AXInline.keyWindowEditable(pid: pid) else {
             print("RESULT: none（key window 里没有可编辑元素，或没有 key window）")
             return 3
