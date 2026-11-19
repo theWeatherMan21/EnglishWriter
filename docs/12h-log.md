@@ -28,10 +28,14 @@
 5. 模型把 FCL / demurrage 这类业务词当错改掉 → 术语保护区间
 6. 锁屏期间仍写 `attach-app loginwindow` → 门控下沉到真实发射点
 
-**只有你能验的两条（我在锁屏环境里无法替代）**
+**只有你能验的三条（我在锁屏环境里无法替代）**
 1. TextEdit 里写 `We was late because there is many problems with the booking.` → 出线 → 点线 → 接受 → 变 `We were…`
 2. Mail 新建邮件粘同一句 → 出线 → 接受 → 正文真的变
+3. **来回切 5 次 App（TextEdit / Mail / Safari），App 图标不能消失**
+   —— 这一条以前没有任何断言能覆盖：崩溃报告里有 8 份是「切 App 时 App 直接退出」
+   （`MainActor.assumeIsolated`，已在 d8a302a 修掉，CI 现在硬拦这类写法），但只有人切才能最终确认。
    任一条没反应：把 `~/Library/Application Support/EnglishWriter/check-log.jsonl` 最后 50 行发我，
-   日志里 `owner / front / nearest / path` 会直接指向原因。
+   日志里 `owner / front / nearest / path` 会直接指向原因；App 若消失，崩溃报告在
+   `~/Library/Logs/DiagnosticReports/`（我按 `.ips` 直接读，不用你描述）。
 
 **没做的（不是缺口）**：Chrome 商店安装路径（还没打算发布）、锁屏期间的点击样本（环境限制，不算质量结论）。
