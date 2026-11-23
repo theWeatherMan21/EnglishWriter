@@ -17,7 +17,9 @@ body { margin:0; background:transparent; font: var(--f-secondary)/1.45 -apple-sy
 .acts { display:flex; gap: var(--s1); justify-content:flex-end; flex-wrap:wrap; }
 .acts.main { gap: var(--s2); }
 .btn { font-size: var(--f-caption); border:1px solid var(--border); background:var(--bg);
-       border-radius: var(--r-control); padding:3px 8px; cursor:pointer; color:var(--text); }
+       border-radius: var(--r-control); padding:8px 16px; min-height:36px; cursor:pointer; color:var(--text); }
 .btn:hover { background: var(--hover, rgba(0,0,0,.04)); }
-.btn.primary { background:#027E6F; border-color:#027E6F; color:#fff; font-weight:600; padding:3px 12px; }
+/* 接受按钮占满整行：爹地 11-23 报「接受按钮过小」（原 3px 内边距 ≈20px 高） */
+.btn.primary { background:#027E6F; border-color:#027E6F; color:#fff; font-weight:600;
+               padding:10px 16px; min-height:40px; flex:1 1 auto; }
 .btn.primary:hover { background:#016a5d; }

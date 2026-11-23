@@ -238,7 +238,8 @@ final class UnderlineOverlay: NSPanel {
     /// 兜底存活时间。注意：2s 太短——人只是「看着不动」而没有敲字时，没有任何事件来刷新 stamp，
     /// 线会在 2 秒后自己消失（11-19 实测：render rect=3，19 秒后点击时 rectCount=0）。
     /// 现在改成 60s 兜底 + 宿主切换立刻灭（见 alive 的 frontPid 判据）。
-    private let specTTL: TimeInterval = 60.0
+    // 线只活到「下一次确认」为止：3 秒内没有新结果就自灭（爹地 11-23 报「下划线滞留」）
+    private let specTTL: TimeInterval = 3.0
     private var ttlTimer: Timer?
 
     /// 清掉所有超过 TTL 没被确认的线（滚走 / 窗口移走 / 切 App 的残影兜底）
@@ -262,6 +263,18 @@ final class UnderlineOverlay: NSPanel {
         specs = keep
         canvas.specs = keep
         if keep.isEmpty { orderOut(nil) }
+    }
+
+    /// 同一段文本被轮询再次确认时刷新时间戳：线只在「没人再确认」时才灭，
+    /// 不是因为用户停下来看（否则 3 秒后线会自己在屏幕上消失）。
+    func touch(pid: pid_t) {
+        guard !specs.isEmpty else { return }
+        let now = Date()
+        specs = specs.map { sp in
+            var s = sp
+            if s.ownerPid == pid || s.ownerPid == 0 { s.stamp = now }
+            return s
+        }
     }
 
     func startTTLWatchdog() {

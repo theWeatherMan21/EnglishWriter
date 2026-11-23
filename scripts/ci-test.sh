@@ -139,6 +139,15 @@ if [ "${EW_WITH_LIVE:-0}" = "1" ]; then
     "$BIN" --live-rewrite || { echo "真模型改写失败"; exit 1; }
 fi
 
+echo "== 卡片按钮尺寸（爹地 11-23 报「接受按钮过小」）=="
+if python3 qa/card-btn-probe.py > /tmp/ci-cardbtn.log 2>&1; then
+  grep -E "^  OK|RESULT|RESULT: PASS|SKIP" /tmp/ci-cardbtn.log | tail -8
+else
+  echo "FAIL 卡片按钮尺寸不达标"
+  tail -12 /tmp/ci-cardbtn.log
+  exit 1
+fi
+
 echo "== Safari 扩展外壳（.appex 构建 + 签名 + 结构校验）=="
 if bash scripts/safari-appex.sh > /tmp/ci-safari.log 2>&1; then
   grep -E "^OK|^RESULT: READY" /tmp/ci-safari.log

@@ -1103,7 +1103,12 @@ final class InlineController {
         }
         // 同文本不重复请求
         let hash = "\(pid):\(sentence.hashValue)"
-        if lastHash[pid] == hash { diag.dedupedHits += 1; return }
+        if lastHash[pid] == hash {
+            // 文本没变 = 这一轮复验通过：给现有线续命，否则 3 秒后线会自己消失
+            overlay.touch(pid: pid)
+            diag.dedupedHits += 1
+            return
+        }
         lastHash[pid] = hash
 
         diag.checks += 1
@@ -1399,10 +1404,30 @@ final class InlineController {
     /// 接受前把「原文快照 + pid + range」压进内存撤销栈（菜单「撤销上次替换」出栈回写）。
     @discardableResult
     func accept(itemID id: Int) -> Bool {
-        guard id >= 0, id < items.count else { return false }
+        // 四段日志：accept-begin → accept-write → accept-readback / accept-fail
+        // 为什么这么细：爹地报过「点了接受没反应」，而日志里只有一条 ok=false，
+        // 分不清是没点中、写不进去、还是写进去又回滚了。三段分开记，一眼看出卡在哪。
+        guard id >= 0, id < items.count else {
+            emit(CheckEvent(kind: "accept-fail", pid: currentPid, app: appName(currentPid), role: "card",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "越界 id=\(id) items=\(items.count)", at: Date()))
+            return false
+        }
         let it = items[id]
+        emit(CheckEvent(kind: "accept-begin", pid: currentPid, app: appName(currentPid), role: "card",
+                        textLen: 0, sentenceLen: 0, itemCount: id, rectCount: overlay.specs.count,
+                        elapsed: "-", err: "range=\(it.start)+\(it.length) \"\(it.original)\"" , at: Date()))
         let doc = docFor(itemID: id)
         let out = M3Flow.accept(items: items, only: id, in: doc, stack: M3UndoStack.shared)
+        if out.ok {
+            emit(CheckEvent(kind: "accept-write", pid: currentPid, app: appName(currentPid), role: "card",
+                            textLen: 0, sentenceLen: 0, itemCount: id, rectCount: 0,
+                            elapsed: "-", err: "→ \"\(it.replacement)\" 栈=\(M3UndoStack.shared.count)", at: Date()))
+        } else {
+            emit(CheckEvent(kind: "accept-fail", pid: currentPid, app: appName(currentPid), role: "card",
+                            textLen: 0, sentenceLen: 0, itemCount: id, rectCount: 0,
+                            elapsed: "-", err: out.detail, at: Date()))
+        }
         diag.lastError = out.ok ? "已接受：\(it.original) → \(it.replacement)" : "写回失败：\(out.detail)"
         AppLog.info("m3", "accept id=\(id) pid=\(currentPid) range=\(it.start)+\(it.length) ok=\(out.ok) stack=\(M3UndoStack.shared.count) detail=\"\(out.detail)\"")
         refresh()

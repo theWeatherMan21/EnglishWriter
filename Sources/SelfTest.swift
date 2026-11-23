@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2444,6 +2444,32 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 线的生命周期（TTL + 续命）
+extension SelfTest {
+    static func underlineLifecycleTests() {
+        let now = Date()
+        let r = CGRect(x: 0, y: 0, width: 10, height: 2)
+        let fresh = UnderlineSpec(rect: r, kind: .grammar, itemID: 0, ownerPid: 100, stamp: now.addingTimeInterval(-2.5))
+        let stale = UnderlineSpec(rect: r.offsetBy(dx: 20, dy: 0), kind: .grammar, itemID: 1, ownerPid: 100,
+                                  stamp: now.addingTimeInterval(-3.5))
+        let wrongHost = UnderlineSpec(rect: r.offsetBy(dx: 40, dy: 0), kind: .spelling, itemID: 2, ownerPid: 999)
+
+        let keep = UnderlineSpec.alive([fresh, stale, wrongHost], now: now, ttl: 3.0, frontPid: 100)
+        if keep.count == 1, keep[0].itemID == 0 {
+            ok("underline: TTL 3 秒边界", "2.5s 留、3.5s 灭、宿主不符灭")
+        } else {
+            bad("underline: TTL 3 秒边界", "留下 \(keep.map(\.itemID))")
+        }
+        // 复验续命：同文本再确认一次，2.5s 的线应该继续活着
+        let refreshed = UnderlineSpec.alive([fresh], now: now, ttl: 3.0, frontPid: 100)
+        if refreshed.count == 1 {
+            ok("underline: 被复验的线不因计时器自灭", "1 条存活")
+        } else {
+            bad("underline: 复验续命", "线被误杀")
+        }
     }
 }
 
