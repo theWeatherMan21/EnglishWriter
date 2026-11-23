@@ -14,7 +14,7 @@ BIN="$APP/Contents/MacOS/英文写作助手"
 BUILD="build/英文写作助手.app/Contents/MacOS/英文写作助手"
 
 if [ ! -x "$BIN" ]; then
-  echo "装机二进制 : 不存在（$BIN）"
+  echo "装机二进制 : 不存在（${BIN}）"
   echo "RESULT: NOT_INSTALLED"
   exit 2
 fi

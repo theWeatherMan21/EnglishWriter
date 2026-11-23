@@ -69,7 +69,7 @@ echo "$DEEP_OUT" | grep -E "^(PASS|FAIL|RESULT)|平均耗时" | tail -4
 if echo "$DEEP_OUT" | grep -qE "NO_BUILD|NO_GOLD|跳过"; then
     echo "deep 质量回归未覆盖（NO_BUILD / NO_GOLD / 跳过 都算没跑，不是绿）"; exit 1
 fi
-[ "$DEEP_RC" -eq 0 ] || { echo "deep 质量回归失败（exit $DEEP_RC）"; exit 1; }
+[ "$DEEP_RC" -eq 0 ] || { echo "deep 质量回归失败（exit ${DEEP_RC}）"; exit 1; }
 
 echo "== 崩溃防线：运行路径里禁止 MainActor.assumeIsolated =="
 # 本机 8 份崩溃报告都是 Inline.start() 的 AppKit 通知闭包里 assumeIsolated 直接崩
@@ -106,6 +106,23 @@ if [ -n "$BAD_GEO" ]; then
     exit 1
 fi
 echo "PASS  坐标换算只走 ScreenGeom"
+
+echo "== 脚本防线：\$var 后面不许紧跟中文字符（bash 会吞进变量名，set -u 直接退出）=="
+if python3 - <<'PYGUARD'
+import re, glob, sys
+bad = []
+for f in glob.glob('scripts/*.sh') + glob.glob('qa/*.sh'):
+    for i, line in enumerate(open(f, encoding='utf-8'), 1):
+        if line.lstrip().startswith('#'):
+            continue
+        for m in re.finditer(r'\$([A-Za-z_][A-Za-z0-9_]*)(?=[^\x00-\x7F])', line):
+            bad.append(f"{f}:{i}: ${m.group(1)} 后紧跟中文")
+if bad:
+    print("FAIL  " + "; ".join(bad[:5]))
+    sys.exit(1)
+print("PASS  没有 \$var 紧贴中文的写法")
+PYGUARD
+then :; else echo "FAIL 脚本变量写法（\$var 后紧跟中文）"; exit 1; fi
 
 echo "== 视觉基线 diff（改 CSS 就看得出跑没跑版）=="
 BASELINE="$PWD/qa/baseline"
@@ -185,7 +202,7 @@ if timeout 25 "$BIN" --probe-mail > /tmp/ci-probe-mail.log 2>&1; then
 else
   ec=$?
   if [ "$ec" -eq 124 ]; then echo "FAIL  --probe-mail 超过 25s 被强杀（无界等待）"; exit 1; fi
-  echo "SKIP  --probe-mail 退出码 $ec（Mail 未运行）"
+  echo "SKIP  --probe-mail 退出码 ${ec}（Mail 未运行）"
 fi
 
 echo "== Safari 扩展外壳（.appex 构建 + 签名 + 结构校验）=="
