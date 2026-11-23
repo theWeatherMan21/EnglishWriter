@@ -651,6 +651,9 @@ final class InlineController {
                 self.dropItem(start: it.start, length: it.length)
             }
         }
+        // 侧栏的「改写这一段」：复用既有的 RewriteFlow（同一提示词、同一模型、同一条应用链），
+        // 不另造一套，避免两边行为漂移。
+        sb.onRewrite = { RewriteFlow.start(tone: false) }
         sb.onJump = { [weak self] it in
             Task { @MainActor in
                 guard let self, let id = ItemLocator.id(for: it, in: self.items) else { return }

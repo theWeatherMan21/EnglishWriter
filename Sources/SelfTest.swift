@@ -2531,6 +2531,24 @@ extension SelfTest {
             } else { SelfTest.bad("sidebar: dismissed", "\(g.count) 组") }
         } else { SelfTest.bad("sidebar: dismissed 解析", "失败") }
 
+        // 改写三档进侧栏：默认空（点才发请求），有候选时按 label/text 原样下发
+        let withRW = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [],
+                                     rewrites: [.init(label: "更简洁", text: "We sent it.", note: "删冗余"),
+                                                .init(label: "更正式", text: "We have dispatched it.", note: "正式")])
+        if let d = withRW.data(using: .utf8),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let rw = o["rewrites"] as? [[String: Any]] {
+            let labels = rw.compactMap { $0["label"] as? String }
+            if rw.count == 2, labels == ["更简洁", "更正式"], (rw[0]["text"] as? String) == "We sent it." {
+                SelfTest.ok("sidebar: 改写候选下发", "2 条 \(labels)")
+            } else { SelfTest.bad("sidebar: 改写候选", "\(rw.count) 条 \(labels)") }
+        } else { SelfTest.bad("sidebar: 改写候选解析", "失败") }
+        let emptyRW = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [])
+        if emptyRW.contains("\"rewrites\":[]") {
+            SelfTest.ok("sidebar: 未点改写时不下发候选", "rewrites=[]")
+        } else { SelfTest.bad("sidebar: 默认改写", "非空") }
+
+
         // 去重键必须带块号：同一句里同样的错在不同段落要各报一次
         func mk(_ o: String) -> DiffItem {
             DiffItem(start: 0, length: (o as NSString).length, original: o, replacement: "X",

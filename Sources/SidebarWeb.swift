@@ -20,11 +20,15 @@ final class Sidebar: NSPanel {
     var onDismiss: ((DiffItem) -> Void)?
     var onJump: ((DiffItem) -> Void)?
     var onAcceptAll: (() -> Void)?
+    var onRewrite: (() -> Void)?
+
 
     private var web: WKWebView!
     private var items: [DiffItem] = []
     private var score = WritingScore()
     private var dismissed = Set<String>()
+    private(set) var rewrites: [RewriteOption] = []
+    private(set) var rewriteBusy = false
     private var tone = ""
 
     private let width: CGFloat = 360
@@ -126,12 +130,23 @@ final class Sidebar: NSPanel {
     }
 
     private func payload() -> String {
-        Self.payload(items: items, score: score, tone: tone, dismissed: dismissed)
+        Self.payload(items: items, score: score, tone: tone, dismissed: dismissed,
+                     rewrites: rewrites, rewriteBusy: rewriteBusy)
     }
 
+    /// 改写候选回填（点了改写按钮才走到这里）
+    func showRewrites(_ list: [RewriteOption]) {
+        rewrites = list; rewriteBusy = false; push()
+    }
+    func setRewriteBusy(_ busy: Bool) { rewriteBusy = busy; push() }
+    func clearRewrites() { rewrites = []; rewriteBusy = false }
+
     /// payload 只此一份：上屏的窗口与离屏快照共用，避免「截图好看、上屏另一套」
+    struct RewriteOption { var label: String; var text: String; var note: String }
+
     static func payload(items: [DiffItem], score: WritingScore, tone: String,
-                        dismissed: Set<String>) -> String {
+                        dismissed: Set<String>, rewrites: [RewriteOption] = [],
+                        rewriteBusy: Bool = false) -> String {
         let live = items.filter { !dismissed.contains(Self.key($0)) }
         func count(_ t: String?) -> Int {
             guard let t else { return live.count }
@@ -164,6 +179,9 @@ final class Sidebar: NSPanel {
             "tabs": [["name": "重要建议", "n": live.filter { $0.type != "style" }.count],
                      ["name": "全部建议", "n": live.count]],
             "groups": groups,
+            // 改写三档：默认空（点了才发请求，不许自动烧钱）
+            "rewrites": rewrites.map { ["label": $0.label, "text": $0.text, "note": $0.note] },
+            "rewriteBusy": rewriteBusy,
         ]
         guard let d = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: d, encoding: .utf8) else { return "{}" }
@@ -204,6 +222,8 @@ extension Sidebar: WKScriptMessageHandler {
             if items.indices.contains(id) { onDismiss?(items[id]); dismissed.insert(Self.key(items[id])); push() }
         case "jump":
             if items.indices.contains(id) { onJump?(items[id]) }
+        case "rewrite":
+            onRewrite?()
         case "acceptAll":
             onAcceptAll?(); showSaved()
         case "close":
