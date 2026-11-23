@@ -1519,10 +1519,12 @@ final class InlineController {
             let el = block.element
             return ClosureDoc(pid: currentPid,
                               read: { WebText.liveText(of: el) ?? block.text },
-                              writeRange: { r, t in WebText.replace(range: r, with: t, in: block) },
-                              writeFull: { t in
-                                  WebText.replace(range: NSRange(location: 0, length: (block.text as NSString).length),
-                                                   with: t, in: block)
+                              writeRange: { [weak self] r, t in
+                                  self?.writeWebBlock(range: r, text: t, in: block, pid: self?.currentPid ?? 0) ?? false
+                              },
+                              writeFull: { [weak self] t in
+                                  self?.writeWebBlock(range: NSRange(location: 0, length: (block.text as NSString).length),
+                                                      text: t, in: block, pid: self?.currentPid ?? 0) ?? false
                               })
         }
         if let el = currentElement {
@@ -1538,6 +1540,30 @@ final class InlineController {
                               })
         }
         return BufferDoc(lastText, pid: currentPid)
+    }
+
+    /// Web 正文写回的唯一收口：AXSelectedText 打不进就落到正文容器 + 剪贴板 ⌘V。
+    /// 以前 docFor 直接调 WebText.replace（一次 AX 写、无兜底、无日志），
+    /// Mail 的 WebArea 不吃那个属性 → 恒 false → 「点了接受没反应」且 write-layer 为 0（11-23 定位）。
+    private func writeWebBlock(range: NSRange, text: String, in block: WebText.Block, pid: pid_t) -> Bool {
+        if WebText.replace(range: range, with: text, in: block) {
+            Diag.shared.applyMethod = "AX 写回"
+            AppLog.info("m3", "write-layer=AXSelectedText range=\(range.location)+\(range.length)")
+            return true
+        }
+        // 兜底：选区要落在**能打字的容器**上（块的父链上找），再 ⌘V
+        let host = WebText.editableAncestor(of: block.element) ?? block.element
+        if let v = axRangeValue(range.location, range.length) {
+            _ = AXUIElementSetAttributeValue(host, kAXSelectedTextRangeAttribute as CFString, v)
+        }
+        if pasteViaClipboard(text, to: pid) {
+            usleep(450_000)
+            Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
+            AppLog.info("m3", "write-layer=clipboard range=\(range.location)+\(range.length) len=\(text.count)")
+            return true
+        }
+        AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（AX 与剪贴板都失败）")
+        return false
     }
 
     /// 写回四层降级（原位替换）：AX text operation → 选区 + AXSelectedText → 剪贴板 ⌘V（用完恢复剪贴板）

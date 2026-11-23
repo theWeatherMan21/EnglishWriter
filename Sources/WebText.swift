@@ -83,6 +83,23 @@ enum WebText {
         return false
     }
 
+    /// 块元素往上找**能打字的容器**（Mail 写回必须落在正文容器上，写 AXStaticText 没用）。
+    /// 11-23 现场：accept 走的 WebText.replace 把 AXSelectedText 打到 static text 上，
+    /// 恒失败、且没有兜底 —— 于是 write-layer 一条日志都没有，write=0。
+    static func editableAncestor(of el: AXUIElement) -> AXUIElement? {
+        var cur: AXUIElement? = el
+        var hops = 0
+        while let c = cur, hops < 12 {
+            if isEditableNode(c) { return c }
+            guard let raw = attr(c, kAXParentAttribute as String) else { return nil }
+            let cf = raw as CFTypeRef
+            guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { return nil }
+            cur = (cf as! AXUIElement)
+            hops += 1
+        }
+        return nil
+    }
+
     /// 在 AXWebArea 子树里找出**真正在写的正文容器**（最大面积的那个可编辑节点）。
     ///
     /// 为什么必须有这一层（11-23 真机事故）：Mail 窗口整块是一个 AXWebArea，
