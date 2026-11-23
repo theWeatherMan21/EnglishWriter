@@ -56,7 +56,16 @@ enum MailProbe {
     /// 为什么用这个信号：Mail 的阅读窗和写信窗都是 AXWebArea、都有可编辑节点（搜索框），
     /// 只看「有没有可编辑控件」会把阅读视图当成在写 —— 爹地 11-23 截图里左栏那些线就是这么来的。
     /// 这条不按尺寸打分（尺寸阈值会把小窗口的写信区误杀），只看「有没有发送按钮」。
+    /// 从探针报告里取 Mail 的 pid（报告里没带就用当前 Mail 进程）
+    static func pidOfMail(reports: [WindowReport]) -> pid_t {
+        if let p = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").first?.processIdentifier {
+            return p
+        }
+        return 0
+    }
+
     static func isComposeWindow(pid: pid_t) -> Bool {
+        guard pid > 0 else { return false }
         guard let app = AXUIElementCreateApplication(pid) as AXUIElement? else { return false }
         guard let windows = attr(app, kAXWindowsAttribute as String) as? [AXUIElement],
               let front = windows.first else { return false }
@@ -299,6 +308,10 @@ enum MailProbe {
         // 判据只认 compose（你正在写的邮件）；阅读视图是别人的内容，不是验收对象。
         // 爹地 11-23：「我们检查的不是自己写的内容吗，和看邮件有什么关系」。
         let composeReports = reports.filter { $0.kind == "compose" }
+        // 门控用的同一条判据（有没有发送按钮），在这里一起打印：探针与门控同一口径，
+        // 否则会出现「探针说 compose、门控说 reading」这种互相打脸。
+        let composeByButton = isComposeWindow(pid: pidOfMail(reports: reports))
+        print("compose 判定：窗口标题=\(composeReports.count) 条 · 发送按钮=\(composeByButton)")
         if composeReports.isEmpty && !argv.contains("--include-reading") {
             print("RESULT: SKIP（没有写信窗口 —— 阅读视图不是验收对象；要查阅读请加 --include-reading）")
             return true
