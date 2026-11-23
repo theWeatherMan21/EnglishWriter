@@ -1165,29 +1165,46 @@ final class InlineController {
             var seenWords = Set<String>()
         let maxItems = 20
         var ltMs: Double = 0
+        // 整篇一次请求：块之间用 "\n\n" 拼接，记下每块起始偏移，回来再按偏移映射。
+        // 一块一个请求是 11-23 java 爆炸的直接原因（1477 块 → JVM 饱和、单请求 32s）。
+        var segs: [(bi: Int, start: Int, len: Int)] = []
+        var joined = ""
+        let joinLimit = 8000                      // 单次请求字符上限，压住最坏延迟
         for (bi, b) in blks.enumerated() {
-            // 区域/噪声过滤：邮件列表行、签名、引用链的文字通常很短，没有完整句子
-            let blen = (b.text as NSString).length
-            if blen < 12 || !b.text.contains(" ") { continue }
-                let t = b.text
-                guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
-                if !LanguageGate.isEnglish(t) { cjkSkipped += 1; continue }
-                // 整块就是签名行 → 不检查
-                let lowered = t.lowercased()
-                if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
-                guard ltOK else { firstError = "本地引擎未启动"; continue }
-                do {
-                    let t0 = Date()
-                    let out = try await LocalEngine.review(text: t, language: EnginePrefs.language())
-                    ltMs += Date().timeIntervalSince(t0) * 1000
-                    await MainActor.run {
-                        self.diag.lastElapsed = String(format: "%.0fms", ltMs)
-                    }
-                    for it in out.items { all.append(it); map.append(bi) }
-                } catch {
-                    firstError = "LT: \(error)"
+            let t = b.text
+            let blen = (t as NSString).length
+            if blen < 12 || !t.contains(" ") { continue }
+            guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
+            if !LanguageGate.isEnglish(t) { cjkSkipped += 1; continue }
+            let lowered = t.lowercased()
+            if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
+            if (joined as NSString).length + blen > joinLimit { break }
+            let off = (joined as NSString).length
+            joined += t + "\n\n"
+            segs.append((bi, off, blen))
+        }
+        if segs.isEmpty {
+            // 全是中文 / 噪声块：一个请求都不发
+        } else if !ltOK {
+            firstError = "本地引擎未启动"
+        } else {
+            do {
+                let t0 = Date()
+                let out = try await LocalEngine.review(text: joined, language: EnginePrefs.language())
+                ltMs += Date().timeIntervalSince(t0) * 1000
+                await MainActor.run { self.diag.lastElapsed = String(format: "%.0fms", ltMs) }
+                for var it in out.items {
+                    // 落在哪一块里（块与块之间用 \n\n 隔开，跨块的一律丢）
+                    guard let seg = segs.last(where: { $0.start <= it.start }) else { continue }
+                    guard it.start + it.length <= seg.start + seg.len else { continue }
+                    it.start -= seg.start
+                    all.append(it)
+                    map.append(seg.bi)
                 }
+            } catch {
+                firstError = "LT: \(error)"
             }
+        }
             await MainActor.run {
                 if let e = firstError { self.diag.lastError = e } else { self.diag.lastError = "-" }
                 // 语言门控留痕：块全是中文 → 一个引擎请求都没发
