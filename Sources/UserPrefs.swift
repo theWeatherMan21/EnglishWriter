@@ -29,6 +29,26 @@ enum DictStore {
         words = list
     }
 
+    /// 批量导入：每行一个，也认逗号/分号/中文顿号分隔；大小写与空行自动处理，重复不重复加。
+    /// 返回真正新增的条数（0 表示全都已在词典里）。
+    @discardableResult
+    static func addMany(_ raw: String) -> Int {
+        let seps = CharacterSet(charactersIn: "\n\r,;，；、\t")
+        let parts = raw.components(separatedBy: seps)
+        var added = 0
+        for p in parts {
+            let w = p.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !w.isEmpty else { continue }
+            let before = words.count
+            add(w)
+            if words.count > before { added += 1 }
+        }
+        return added
+    }
+
+    /// 导出：一行一个词，便于备份/换机搬运
+    static var exportText: String { words.joined(separator: "\n") }
+
     static func remove(_ word: String) {
         words = words.filter { $0.caseInsensitiveCompare(word) != .orderedSame }
     }

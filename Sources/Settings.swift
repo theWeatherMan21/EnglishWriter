@@ -185,6 +185,18 @@ struct SettingsView: View {
                     Spacer()
                     Text("共 \(prefs.words.count) 个词").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                // 批量导入 / 导出：换机搬运、从旧工具迁词表都靠这一行，不用一个一个点
+                HStack(spacing: 8) {
+                    TextField("批量添加：每行一个，逗号/顿号分隔也行", text: $prefs.bulkText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                    Button("导入") { prefs.importBulk() }
+                        .disabled(prefs.bulkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("复制全部") { prefs.copyAll() }.disabled(prefs.words.isEmpty)
+                }
+                if let msg = prefs.bulkMsg, !msg.isEmpty {
+                    Text(msg).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 if prefs.words.isEmpty {
                     Text("（空：不预设任何词，全部由你自己加）").font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
@@ -289,11 +301,29 @@ final class PrefsModel: ObservableObject {
     @Published var ignoreCount: Int = IgnoreStore.shared.count
     @Published var sessionIgnoreCount: Int = IgnoreStore.shared.sessionCount
     @Published var newWord: String = ""
+    @Published var bulkText: String = ""
+    @Published var bulkMsg: String? = nil
     // 引擎地址 / 方言 / App 排除（都存在 com.wanyi.englishwriter 域里）
     @Published var ltBase: String = (SettingsStore.store.string(forKey: SettingsStore.kLTBase) ?? "")
     @Published var language: String = EnginePrefs.language()
     @Published var exclusions: [String] = EnginePrefs.excludedApps()
     @Published var newExclusion: String = ""
+
+    /// 批量导入：去重/去空/大小写不敏感；结果一句话反馈（不弹窗）
+    func importBulk() {
+        let n = DictStore.addMany(bulkText)
+        bulkMsg = n > 0 ? "已导入 \(n) 个词（现共 \(DictStore.words.count) 个）" : "没有新词（都已在词典里）"
+        bulkText = ""
+        reload()
+    }
+
+    /// 复制全部：一行一个词，粘到别处就是备份
+    func copyAll() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(DictStore.exportText, forType: .string)
+        bulkMsg = "已复制 \(DictStore.words.count) 个词到剪贴板"
+    }
 
     func addWord() {
         DictStore.add(newWord)

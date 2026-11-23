@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2249,6 +2249,37 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 个人词典：批量导入 / 导出（纯函数，不碰界面）
+extension SelfTest {
+    static func dictBulkTests() {
+        let saved = DictStore.words
+        DictStore.words = []
+        defer { DictStore.words = saved }
+
+        let n1 = DictStore.addMany("demurrage\nB/L\n,detention,\n、freight\n\n")
+        if n1 == 4, DictStore.words.count == 4 {
+            ok("dict: 多分隔符批量导入", "4 个词：\(DictStore.words)")
+        } else { bad("dict: 批量导入", "n=\(n1) words=\(DictStore.words)") }
+
+        let n2 = DictStore.addMany("DEMURRAGE\ndetention")
+        if n2 == 0, DictStore.words.count == 4 {
+            ok("dict: 重复(含大小写)不重复加", "新增 0")
+        } else { bad("dict: 重复", "n=\(n2) count=\(DictStore.words.count)") }
+
+        let exported = DictStore.exportText
+        DictStore.words = []
+        let n3 = DictStore.addMany(exported)
+        if n3 == 4, DictStore.exportText == exported {
+            ok("dict: 导出再导入往返一致", "4/4")
+        } else { bad("dict: 往返", "n=\(n3)") }
+
+        DictStore.words = []
+        if DictStore.addMany("   \n\t  ") == 0, DictStore.words.isEmpty {
+            ok("dict: 空白输入被忽略", "0")
+        } else { bad("dict: 空白输入", "\(DictStore.words)") }
     }
 }
 
