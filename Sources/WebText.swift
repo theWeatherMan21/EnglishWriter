@@ -89,6 +89,22 @@ enum WebText {
         return best
     }
 
+    /// 纯函数：这个可编辑框够不够「正文」的尺寸。
+    /// Mail 阅读视图里也有可编辑节点（搜索框、地址条），面积只有窗口的零点几个百分点；
+    /// 拿它当「有可编辑控件」去判定，就会去查整个阅读视图 —— 爹地截图里左栏那些线就是这么来的。
+    static func isBodySized(editable: CGRect, window: CGRect, minRatio: CGFloat = 0.25) -> Bool {
+        guard window.width > 0, window.height > 0, editable.width > 0, editable.height > 0 else { return false }
+        let ratio = (editable.width * editable.height) / (window.width * window.height)
+        return ratio >= minRatio
+    }
+
+    /// body 里存在「正文尺寸」的可编辑区（而不是一个搜索框）
+    static func hasBodySizedEditable(in body: AXUIElement, window: CGRect? = nil) -> Bool {
+        guard let region = editableRegion(of: body) else { return false }
+        let win = window ?? windowFrame(of: body)
+        return isBodySized(editable: frame(region), window: win)
+    }
+
     /// 纯函数：按「正文区」筛块。
     ///   · 有 editableFrame：只保留中心点落在正文区内（±2pt 容差）的块
     ///   · 没找到正文区：退化为「丢掉窗口左侧 20%」——那里是导航栏，不可能是正文

@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); bodySizeTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2444,6 +2444,33 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 搜索框不算正文（阅读视图不许被当写信区）
+extension SelfTest {
+    static func bodySizeTests() {
+        let win = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let searchBox = CGRect(x: 600, y: 780, width: 240, height: 24)      // ≈0.6% 面积
+        let compose = CGRect(x: 700, y: 60, width: 500, height: 700)       // ≈36% 面积
+        if !WebText.isBodySized(editable: searchBox, window: win) {
+            ok("gate: 搜索框不算正文区", "面积 0.6% < 25%")
+        } else { bad("gate: 搜索框被当正文", "误判") }
+        if WebText.isBodySized(editable: compose, window: win) {
+            ok("gate: 写信正文区算正文", "面积 36% ≥ 25%")
+        } else { bad("gate: 正文区被判太小", "误杀") }
+        // 阅读视图：有搜索框但没正文区 → 不该被查
+        if !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                   hasEditableWebField: WebText.isBodySized(editable: searchBox, window: win),
+                                   checkReading: false, inEditableWindow: false) {
+            ok("gate: 阅读视图不查", "搜索框不足以触发")
+        } else { bad("gate: 阅读视图被查", "仍是 true") }
+        // 写信窗口：正文区够大 → 要查
+        if InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                  hasEditableWebField: WebText.isBodySized(editable: compose, window: win),
+                                  checkReading: false, inEditableWindow: false) {
+            ok("gate: 写信正文要查", "正文区足够大")
+        } else { bad("gate: 写信正文没查", "被误杀") }
     }
 }
 

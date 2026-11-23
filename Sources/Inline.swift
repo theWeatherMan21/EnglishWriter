@@ -993,7 +993,11 @@ final class InlineController {
         // 唯一例外：Mail 的邮件正文（宿主是 Mail 且元素是 AXWebArea）。
         // 浏览器宿主已在上游 skip-browser；这里管的是其它 App 的只读正文（PDF / 预览 / 面板说明）。
         let isMailBody = WebText.isWebBody(el) && appName(pid) == "Mail"
-        let hasEditableWebField = WebText.isWebBody(el) && AXInline.textField(in: el) != nil
+        // 必须「正文尺寸」的可编辑区才算在写：阅读视图里的搜索框也能编辑，
+        // 面积只有窗口的零点几，按它判定就会去查整封别人的邮件（11-23 爹地截图）。
+        let hasEditableWebField = WebText.isWebBody(el)
+            && AXInline.textField(in: el) != nil
+            && WebText.hasBodySizedEditable(in: el)
         let inEditableWindow = WebText.isWebBody(el) && AXInline.webAreaIsInEditableWindow(el, pid: pid)
         if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
                                    isWebBody: WebText.isWebBody(el),
