@@ -211,3 +211,15 @@ bash scripts/settings-selftest.sh        # 断言 + 静态不变量 + 面板截�
 | 性能护栏 | 已有 | 单轮 1 次请求、在飞 ≤2、java 空闲 0% |
 
 **唯一硬缺口**：真机「点线 → 卡片 → 接受 → 文字变」这一段从未在真机跑通（所有相关断言都是离屏的）。
+
+## 6. 日志级别口径（2026-11-23 改正）
+
+**症状**：`~/Library/Logs/EnglishWriter/app.log` 一天 20,820 行 `ERROR`，真故障 0 行 —— `skip-readonly / attach-el / web-poll / accept-write` 这些「带说明的正常路径」全被记成 ERROR，自检 cron 每轮假警。
+
+**根因**：`main.swift` 的 `onCheck` 判据是「`err != "-"` 就算引擎失败」。但 `CheckEvent.err` 是**说明文字**（`skip-readonly→"readonly"`、`accept-write→"→ 新文本 栈=1"`），不是错误标志。
+
+**现在**：判据搬到 `Sources/CheckLogLevel.swift`（纯函数）：只有 `failureKinds`（`accept-fail` / 预留 `draft-backup-fail`）记 ERROR，其余一律 INFO。断言 `--selftest --log` 20 条（含 `skip-*` 全族反向判据）。
+
+**自检同步改**（`~/.hermes/selfcheck/projects.json`，过 `selfcheck-add.py` 闸门）：`normal` 改为任意 `INFO|DEBUG <tag>`，`glob` 只认 `app.log`、`window_min=30`（归档文件留档复盘，不参与值班）。改之前 18:00 前后的历史误报行已归档到 `~/Library/Logs/EnglishWriter/archive/app.log-pre-logclass-fix-20261123-1955`（未删，grep 可用）。
+
+**证据**：`build/ci-selftest --selftest` 306/0；`scripts/ci-test.sh` 全部通过；装机 19:35（sha `67b815b1…`），重启后 app.log 只有 INFO boot/m3/ax 行；`selfcheck-run.py` → `EnglishWriter 正常`。

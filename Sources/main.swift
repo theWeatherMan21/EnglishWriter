@@ -74,13 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   格式固定 `YYYY-MM-DD HH:mm:ss LEVEL tag key=value`，selfcheck 一条 normal 全覆盖。
         AppLog.info("boot", "pid=\(getpid()) args=\(CommandLine.arguments.dropFirst().joined(separator: " "))")
         InlineController.shared.onCheck = { e in
-            // 只把「引擎真失败」记 ERROR。焦点不在输入框 / 中文 / 排除 App 都是正常跳过：
-            // 常驻检查在 Telegram、Finder 上也会被触发，那些不算错误（否则日志天天误报）。
-            let skipKinds: Set<String> = ["no-text", "skip-cjk", "skip-excluded", "attach-app", "attach-el-fail"]
-            let engineFailed = e.err != "-" && !e.err.isEmpty
-                && !e.err.contains("没有焦点") && !e.err.contains("读不到文本框")
-            let bad = engineFailed && !skipKinds.contains(e.kind)
-            AppLog.write(bad ? "ERROR" : "INFO", "check",
+            // 级别只看 kind（CheckLogLevel）：err 是说明文字，不是错误标志。
+            // 11-23 实测：旧判据「err != '-' 就算失败」把 20,820 行正常跳过记成 ERROR，
+            // 自检 cron 天天误报，真故障反而看不见。判据本体在 CheckLogLevel（--log 组有断言）。
+            AppLog.write(CheckLogLevel.level(kind: e.kind, err: e.err), "check",
                          "kind=\(e.kind) app=\(e.app) pid=\(e.pid) textLen=\(e.textLen) items=\(e.itemCount) rects=\(e.rectCount) elapsed=\(e.elapsed) err=\(e.err)")
         }
         model = AppModel()

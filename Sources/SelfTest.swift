@@ -42,13 +42,55 @@ enum SelfTest {
         print(line); lines.append(line)
     }
 
+    /// 日志级别判据：正常跳过不许记 ERROR（11-23：20,820 行误报把自检信号淹了）
+    static func logLevelTests() {
+        struct Case { let kind: String; let err: String; let want: String; let why: String }
+        let cases: [Case] = [
+            Case(kind: "check", err: "-", want: "INFO", why: "检查成功"),
+            Case(kind: "skip-readonly", err: "readonly", want: "INFO", why: "只读输入框是正常跳过（旧判据在这里误报）"),
+            Case(kind: "skip-readonly-keep", err: "不清线，等 TTL/宿主切换", want: "INFO", why: "保留旧线的正常路径"),
+            Case(kind: "skip-sensitive", err: "敏感字段（命中关键词黑名单）", want: "INFO", why: "隐私门控是设计行为"),
+            Case(kind: "skip-app-disabled", err: "该 App 适配未探明，已关闭", want: "INFO", why: "适配表未探明属正常"),
+            Case(kind: "attach-el", err: "focused", want: "INFO", why: "挂接焦点元素成功"),
+            Case(kind: "attach-el-fail", err: "没有焦点元素", want: "INFO", why: "无焦点元素不是故障"),
+            Case(kind: "attach-keywindow", err: "焦点不可读 → key window 可编辑元素", want: "INFO", why: "降级通道生效"),
+            Case(kind: "no-element", err: "焦点不可读 / 无 key 可编辑元素 / 无窗口正文", want: "INFO", why: "无可查文本"),
+            Case(kind: "fallback-el", err: "window-body", want: "INFO", why: "前台窗口正文兜底"),
+            Case(kind: "web-poll", err: "blocks=46", want: "INFO", why: "网页轮询计数"),
+            Case(kind: "skip-busy", err: "上一轮块检查未结束，本轮合并", want: "INFO", why: "背压合并"),
+            Case(kind: "truncated-blocks", err: "可见块 46 > 上限 40，本轮只查 40 块", want: "INFO", why: "块数上限是保护不是错"),
+            Case(kind: "render", err: "原始 3 条 → 保留 2 条", want: "INFO", why: "去重统计"),
+            Case(kind: "render-none", err: "-", want: "INFO", why: "没有可画的东西"),
+            Case(kind: "accept-begin", err: "range=12+7 \"recieve\"", want: "INFO", why: "接受动作开始"),
+            Case(kind: "accept-write", err: "→ \"receive\" 栈=1", want: "INFO", why: "写回成功的注记（旧判据在这里误报）"),
+            Case(kind: "accept-fail", err: "写回后文本与期望不一致", want: "ERROR", why: "真失败：写回没成功"),
+            Case(kind: "draft-backup-fail", err: "磁盘满 —— 不覆盖正文", want: "ERROR", why: "真失败：草稿备份失败"),
+        ]
+        for c in cases {
+            let got = CheckLogLevel.level(kind: c.kind, err: c.err)
+            if got == c.want {
+                ok("日志级别 \(c.kind) → \(got)", c.why)
+            } else {
+                bad("日志级别 \(c.kind)", "期望 \(c.want) 实际 \(got)（\(c.why)）")
+            }
+        }
+        // 反向判据：所有 skip-* 事件一律不许是 ERROR（漏一个就会天天误报）
+        let skipKinds = ["skip-readonly", "skip-readonly-keep", "skip-sensitive", "skip-app-disabled",
+                         "skip-excluded", "skip-excluded-attach", "skip-busy", "skip-lang",
+                         "skip-cjk", "skip-browser"]
+        let offenders = skipKinds.filter { CheckLogLevel.level(kind: $0, err: "任意说明") == "ERROR" }
+        offenders.isEmpty
+            ? ok("skip-* 全族不记 ERROR", "\(skipKinds.count) 个 kind 都过")
+            : bad("skip-* 被记成 ERROR", offenders.joined(separator: ","))
+    }
+
     static func run(_ argv: [String]) -> Int32 {
         if argv.contains("--clickdiag") { return clickDiagTests() }
         if argv.contains("--rewrite-selftest") { return rewriteSelftest() }
         if argv.contains("--acceptflow") { return acceptFlowTests() }
         // 只要指定了任何一个分组开关，就只跑那一组（--privacy 不该顺手把全组跑一遍）
         let groupFlags = ["--privacy", "--style", "--ui", "--webui", "--score", "--lang",
-                          "--diffhl", "--m3", "--settings", "--glossary", "--cjk", "--faults", "--live"]
+                          "--diffhl", "--m3", "--settings", "--glossary", "--cjk", "--faults", "--live", "--log"]
         let wantAll = !argv.contains { groupFlags.contains($0) }
         print("=== 英文写作助手 selftest ===")
 
@@ -60,6 +102,7 @@ enum SelfTest {
         if argv.contains("--style") || argv.contains("--docscan") { styleRuleTests(); grammarTests(); docScanTests(); spellCheckTests(); routerTests(); RewriteTests.run(); CategoryPrefsTests.run() }
         if argv.contains("--grammar") && !argv.contains("--style") && !argv.contains("--docscan") { grammarTests() }
         if wantAll || argv.contains("--lang") { languageGateTests() }
+        if wantAll || argv.contains("--log") { logLevelTests() }
         if wantAll || argv.contains("--score") { scoreTests() }
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
