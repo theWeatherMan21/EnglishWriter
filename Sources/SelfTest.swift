@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); webRecoverTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); webRecoverTests(); webWriteTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2464,6 +2464,39 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - Web 写回：容器坐标换算 + 读回验证
+extension SelfTest {
+    static func webWriteTests() {
+        let sent = ("I have send the file." as NSString).range(of: "send")
+        let same = WebText.mapRange(blockText: "I have send the file.", range: sent, hostText: "I have send the file.")
+        if same?.location == 7, same?.length == 4 {
+            ok("webwrite: 偏移一致时直接用原偏移", "7+4")
+        } else { bad("webwrite: 偏移一致时算错", "\(String(describing: same))") }
+
+        let shifted = WebText.mapRange(blockText: "I have send the file.", range: sent,
+                                      hostText: "Quote line\nI have send the file.")
+        if shifted?.location == 18, shifted?.length == 4 {
+            ok("webwrite: 容器多了前缀也能定位", "18+4")
+        } else { bad("webwrite: 前缀偏移没算对", "\(String(describing: shifted))") }
+
+        if WebText.mapRange(blockText: "I have send the file.", range: sent, hostText: "nothing here") == nil {
+            ok("webwrite: 容器里找不到这段就返回 nil", "不瞎写")
+        } else { bad("webwrite: 找不到还返回了位置", "会写错地方") }
+
+        if WebText.mapRange(blockText: "abc", range: NSRange(location: 2, length: 9), hostText: "abc") == nil {
+            ok("webwrite: 越界 range 返回 nil", "不写")
+        } else { bad("webwrite: 越界 range 没拦住", "会写坏") }
+
+        if InlineController.webWriteVerified(hostText: "I have sent the file.", mapped: sent, replacement: "sent") {
+            ok("webwrite: 读回是替换后文本才算成功", "sent")
+        } else { bad("webwrite: 读回验证漏判", "明明已经是 sent") }
+
+        if !InlineController.webWriteVerified(hostText: "I have send the file.", mapped: sent, replacement: "sent") {
+            ok("webwrite: AX 报 success 但文本没变 → 判失败", "会去落剪贴板")
+        } else { bad("webwrite: 文本没变却判成功", "又把没写当写成") }
     }
 }
 

@@ -1542,28 +1542,50 @@ final class InlineController {
         return BufferDoc(lastText, pid: currentPid)
     }
 
-    /// Web 正文写回的唯一收口：AXSelectedText 打不进就落到正文容器 + 剪贴板 ⌘V。
-    /// 以前 docFor 直接调 WebText.replace（一次 AX 写、无兜底、无日志），
-    /// Mail 的 WebArea 不吃那个属性 → 恒 false → 「点了接受没反应」且 write-layer 为 0（11-23 定位）。
+    /// Web 正文写回的唯一收口 —— 三层，每层都要**读回验证**。
+    ///
+    /// 11-23 两次真机证据：
+    ///   ① docFor 直接调 WebText.replace 时 write-layer 一条都没有（走的是另一条路）
+    ///   ② 接上之后：write-layer=AXSelectedText 报成功，文本一个字没变 → accept-fail
+    /// 所以「AX 返回 success」不算写成功，只有读回看到替换后的文本才算。
     private func writeWebBlock(range: NSRange, text: String, in block: WebText.Block, pid: pid_t) -> Bool {
-        if WebText.replace(range: range, with: text, in: block) {
-            Diag.shared.applyMethod = "AX 写回"
-            AppLog.info("m3", "write-layer=AXSelectedText range=\(range.location)+\(range.length)")
-            return true
+        // 换到能打字的容器 + 容器坐标（块内偏移 ≠ 容器偏移）
+        let host = WebText.editableAncestor(of: block.element)
+        let hostText = host.flatMap { AXInline.fullText(of: $0) } ?? ""
+        let mapped = host != nil ? WebText.mapRange(blockText: block.text, range: range, hostText: hostText) : nil
+        AppLog.info("m3", "web-write host=\(host != nil ? "有" : "无") map=\(mapped.map { "\($0.location)+\($0.length)" } ?? "nil") block=\(range.location)+\(range.length)")
+
+        // ① 容器上 AXSelectedText（坐标已换算）
+        if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
+            _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, v)
+            let err = AXUIElementSetAttributeValue(h, kAXSelectedTextAttribute as CFString, text as CFTypeRef)
+            if err == .success, Self.webWriteVerified(hostText: AXInline.fullText(of: h) ?? "", mapped: m, replacement: text) {
+                Diag.shared.applyMethod = "AX 写回（正文容器）"
+                AppLog.info("m3", "write-layer=AXSelectedText range=\(m.location)+\(m.length)")
+                return true
+            }
+            AppLog.info("m3", "write-layer=AXSelectedText 但读回没变（API 报 success 不做事）—— 落剪贴板")
         }
-        // 兜底：选区要落在**能打字的容器**上（块的父链上找），再 ⌘V
-        let host = WebText.editableAncestor(of: block.element) ?? block.element
-        if let v = axRangeValue(range.location, range.length) {
-            _ = AXUIElementSetAttributeValue(host, kAXSelectedTextRangeAttribute as CFString, v)
+
+        // ② 剪贴板 ⌘V（选区仍落在容器上）
+        if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
+            _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, v)
+            if pasteViaClipboard(text, to: pid) {
+                usleep(450_000)
+                Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
+                AppLog.info("m3", "write-layer=clipboard range=\(m.location)+\(m.length) len=\(text.count)")
+                return true
+            }
         }
-        if pasteViaClipboard(text, to: pid) {
-            usleep(450_000)
-            Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
-            AppLog.info("m3", "write-layer=clipboard range=\(range.location)+\(range.length) len=\(text.count)")
-            return true
-        }
-        AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（AX 与剪贴板都失败）")
+        AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（容器定位失败 / AX 与剪贴板都不成功）")
         return false
+    }
+
+    /// 读回验证（纯函数）：容器文本在 mapped 位置上是否已经是替换后的文本
+    nonisolated static func webWriteVerified(hostText: String, mapped: NSRange, replacement: String) -> Bool {
+        let ht = hostText as NSString
+        guard mapped.location >= 0, mapped.length >= 0, mapped.location + mapped.length <= ht.length else { return false }
+        return ht.substring(with: mapped) == replacement
     }
 
     /// 写回四层降级（原位替换）：AX text operation → 选区 + AXSelectedText → 剪贴板 ⌘V（用完恢复剪贴板）

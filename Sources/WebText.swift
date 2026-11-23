@@ -83,6 +83,25 @@ enum WebText {
         return false
     }
 
+    /// 块内偏移 → 容器偏移（纯函数，可断言）。
+    ///
+    /// 11-23 真机：在 AXStaticText（块自己）上设 AXSelectedText，API 返回 success
+    /// 但文本一个字都没变，于是 write-layer 说「写了」、读回说「没变」→ accept-fail。
+    /// 写回必须落在**能打字的容器**上，坐标要按容器文本重算。
+    static func mapRange(blockText: String, range: NSRange, hostText: String) -> NSRange? {
+        let bt = blockText as NSString
+        guard range.location >= 0, range.length > 0, range.location + range.length <= bt.length else { return nil }
+        let original = bt.substring(with: range)
+        let ht = hostText as NSString
+        // ① 容器文本以块开头 / 偏移刚好对上
+        if range.location + range.length <= ht.length, ht.substring(with: range) == original {
+            return range
+        }
+        // ② 在容器文本里定位这段原文（取第一处；块顺序与文档顺序一致）
+        let found = ht.range(of: original)
+        return found.location == NSNotFound ? nil : found
+    }
+
     /// 块元素往上找**能打字的容器**（Mail 写回必须落在正文容器上，写 AXStaticText 没用）。
     /// 11-23 现场：accept 走的 WebText.replace 把 AXSelectedText 打到 static text 上，
     /// 恒失败、且没有兜底 —— 于是 write-layer 一条日志都没有，write=0。

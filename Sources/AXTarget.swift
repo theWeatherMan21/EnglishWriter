@@ -262,9 +262,21 @@ func axRangeValue(_ location: Int, _ length: Int) -> AXValue? {
     return AXValueCreate(.cfRange, &r)
 }
 
+/// 慢 AX 调用记账：超过 100ms 就打一行（知澜 11-23 定的判据）。
+/// 卡顿不是 CPU/内存，是主线程同步 AX 阻塞；没有这个日志就只能靠猜。
+private var axSlowCount = 0
+func axSlowCountValue() -> Int { axSlowCount }
+
 func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
+    let t0 = Date()
     var out: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(el, name as CFString, &out) == .success else { return nil }
+    let r = AXUIElementCopyAttributeValue(el, name as CFString, &out)
+    let ms = Int(Date().timeIntervalSince(t0) * 1000)
+    if ms >= 100 {
+        axSlowCount += 1
+        AppLog.error("ax", "slow attr=\(name) \(ms)ms（累计 \(axSlowCount)）")
+    }
+    guard r == .success else { return nil }
     return out
 }
 
