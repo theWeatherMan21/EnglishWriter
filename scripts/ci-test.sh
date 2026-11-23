@@ -139,6 +139,15 @@ if [ "${EW_WITH_LIVE:-0}" = "1" ]; then
     "$BIN" --live-rewrite || { echo "真模型改写失败"; exit 1; }
 fi
 
+echo "== Safari 扩展外壳（.appex 构建 + 签名 + 结构校验）=="
+if bash scripts/safari-appex.sh > /tmp/ci-safari.log 2>&1; then
+  grep -E "^OK|^RESULT: READY" /tmp/ci-safari.log
+else
+  echo "FAIL Safari 扩展外壳构建"
+  tail -12 /tmp/ci-safari.log
+  exit 1
+fi
+
 echo "== 浏览器扩展端到端（headless Chrome + CDP：点线弹卡 / 键盘 / contenteditable）=="
 CFT_BIN="$PWD/.tools/chrome-for-testing/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
 if [ -x "$CFT_BIN" ] || bash scripts/chrome-testing-up.sh prepare >/dev/null 2>&1; then
