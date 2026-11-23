@@ -17,11 +17,21 @@ enum WebText {
     }
 
     /// body 下按文档顺序的所有非空文本块
-    static func blocks(of body: AXUIElement) -> [Block] {
+    ///
+    /// 加了节点预算与截止时间：Mail 一个窗口能挂 2000+ 个 AX 节点，每个节点都是一次跨进程 IPC。
+    /// 无界遍历（11-23 之前）在 Mail 卡顿时会把常驻检查拖住，连累宿主。
+    /// 按文档顺序取，预算用完就停 —— 拿到的是「靠前的块」，也就是用户正在看的那一段。
+    static func blocks(of body: AXUIElement, nodeBudget: Int = 1500,
+                       deadline: TimeInterval = 0.6) -> [Block] {
         var out: [Block] = []
+        var budget = nodeBudget
+        let until = Date().addingTimeInterval(deadline)
         func walk(_ el: AXUIElement, depth: Int) {
-            guard depth > 0 else { return }
+            guard depth > 0, budget > 0 else { return }
+            if Date() > until { budget = 0; return }
             for c in attrChildren(el) {
+                budget -= 1
+                if budget <= 0 { return }
                 let role = attrString(c, kAXRoleAttribute as String) ?? ""
                 if role == "AXStaticText" {
                     let t = attrString(c, kAXValueAttribute as String) ?? ""
