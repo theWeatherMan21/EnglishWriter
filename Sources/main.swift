@@ -336,6 +336,19 @@ if argv.contains("--keywin") {
     exit(KeyWinProbe.run(argv))
 }
 
+// 引擎就绪状态（给 CI 对账：curl 说通、App 也必须说通）
+if argv.contains("--lt-ready") {
+    let sem = DispatchSemaphore(value: 0)
+    var ok = false
+    Task {
+        ok = await LocalEngine.available(force: true)
+        sem.signal()
+    }
+    sem.wait()
+    print("lt-ready: \(ok ? "就绪" : "未就绪")")
+    exit(ok ? 0 : 1)
+}
+
 // 真机闭环核对：把日志算成一条结论（出线 / 点中 / 写回 / 失败原因）
 if let i = argv.firstIndex(of: "--e2e-report") {
     let mins = (i + 1 < argv.count) ? (Int(argv[i + 1]) ?? 10) : 10

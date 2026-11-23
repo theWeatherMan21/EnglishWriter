@@ -187,8 +187,15 @@ enum LocalEngine {
     }
 
     /// 探活结果缓存 60 秒：避免每句话都探测一次（不是轮询 Timer）
+    /// 探活结果要不要复用（纯函数，可断言）。
+    /// 负结果不能缓存 60 秒：爹地 11-23 的现场就是 App 先起、LT 后起，
+    /// 一次「没就绪」被记住 60 秒，期间怎么写都不画线（render-none 本地引擎未启动）。
+    nonisolated static func reuseProbe(ok: Bool, age: TimeInterval) -> Bool {
+        ok ? age < 60 : age < 2
+    }
+
     static func available(force: Bool = false) async -> Bool {
-        if !force, Date().timeIntervalSince(lastProbe.at) < 60 { return lastProbe.ok }
+        if !force, reuseProbe(ok: lastProbe.ok, age: Date().timeIntervalSince(lastProbe.at)) { return lastProbe.ok }
         guard let url = URL(string: baseURLString + "/v2/languages") else {
             lastProbe = (false, Date()); return false
         }

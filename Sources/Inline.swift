@@ -1303,8 +1303,12 @@ final class InlineController {
             guard let self else { return }
             // 无论走哪条出口都必须放闸，否则一次异常就永久不再检查
             defer { Task { @MainActor in self.finishWebCheck() } }
-            let ltOK = await LocalEngine.available()
-            if !ltOK { LocalEngineBootstrap.ensureRunningThrottled() }   // 闲置退出后按需拉回（节流 120s）
+            var ltOK = await LocalEngine.available()
+            if !ltOK {
+                LocalEngineBootstrap.ensureRunningThrottled()   // 闲置退出后按需拉回（节流 120s）
+                // 立刻强探一次：LT 可能刚起来，负结果只缓存 2 秒，这一轮就能翻过来
+                ltOK = await LocalEngine.available(force: true)
+            }
             var all: [DiffItem] = []
             var map: [Int] = []
             var cjkSkipped = 0

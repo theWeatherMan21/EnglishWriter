@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2464,6 +2464,21 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 引擎探活缓存（负结果不许长时间缓存）
+extension SelfTest {
+    static func ltProbeTests() {
+        if !LocalEngine.reuseProbe(ok: false, age: 30) {
+            ok("lt: 未就绪不缓存 30 秒", "会重新探")
+        } else { bad("lt: 未就绪被缓存 30 秒", "LT 后启动时 App 会一直不画线") }
+        if LocalEngine.reuseProbe(ok: true, age: 30) {
+            ok("lt: 就绪结果缓存 60 秒内", "不重复打引擎")
+        } else { bad("lt: 就绪结果没缓存", "每秒都探一次") }
+        if !LocalEngine.reuseProbe(ok: false, age: 5) {
+            ok("lt: 未就绪 5 秒后重探", "2 秒窗口已过")
+        } else { bad("lt: 未就绪 5 秒仍复用", "窗口设太大") }
     }
 }
 

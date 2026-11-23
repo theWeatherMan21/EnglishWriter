@@ -148,6 +148,17 @@ else
   exit 1
 fi
 
+echo "== 引擎就绪状态必须与实际一致（不许缓存死）=="
+if curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://127.0.0.1:8081/v2/languages 2>/dev/null | grep -q 200; then
+  if "$BIN" --lt-ready > /tmp/ci-lt.log 2>&1; then
+    echo "PASS  LT 在线且 App 判定就绪"
+  else
+    echo "FAIL  LT 在线但 App 判未就绪（负结果被缓存死）"; cat /tmp/ci-lt.log; exit 1
+  fi
+else
+  echo "SKIP  本机 LT 未在线（不判失败）"
+fi
+
 echo "== Mail 探针不许卡死（AX 遍历必须有限流）=="
 t0=$(date +%s)
 if timeout 12 "$BIN" --probe-mail > /tmp/ci-probe-mail.log 2>&1; then
