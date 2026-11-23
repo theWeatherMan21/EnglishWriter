@@ -44,3 +44,4 @@ click-hit    owner=<App>(pid)         ← 你点中了
 **没做的（不是缺口）**：Chrome 商店安装路径（还没打算发布）、锁屏期间的点击样本（环境限制，不算质量结论）。
 2026-11-19 22:36 | EXIT 0 | 自测45 / 本地规则64 / Mail块6 / WebUI16 / 隐私74 / 改写9 / acceptflow11 / clickdiag7 全 PASS 0 FAIL；deep PASS 召回100%(10/10) 零误报8句 2443ms/句；pngdiff 0.000%+0.000%；零新崩溃；装机 SYNC | 无异常；屏幕锁定未取真机 click-hit 证据
 2026-11-19 23:22 | EXIT 0 | 自测45 / 本地规则64 / Mail块6 / WebUI16 / 隐私74 / 改写9 / acceptflow11 / clickdiag7 全 PASS 0 FAIL；扩展端到端 3+2 PASS；deep PASS 召回100%(10/10) 零误报8句 2003ms/句；pngdiff 0.000%+0.000%；KPI PASS 日志5426行全可解析；零新崩溃；装机 SYNC(sha 81dc7ee)；HEAD ab59e5b ahead 0 | 无异常；屏幕锁定(CGSSessionScreenIsLocked=true)未取真机 click-hit / render path=keywindow-editable 证据
+2026-11-23 15:35 | EXIT 0 | 自测 86 / 本地规则 64 / Mail 块 6 / WebUI 16 / 隐私 74 / 改写 9 / acceptflow 11 / clickdiag 9 / 侧栏 8 / 词典 4 / web 区域 3 / gate 3 全 PASS 0 FAIL；--probe-mail 0.7s（原 14.2s）≤10s 断言入 CI；卡片按钮 40pt/88% 宽、侧栏与设置面板视觉基线 0.000%；Safari .appex 构建 READY（临时签名，启用需人在 Safari 勾选）
