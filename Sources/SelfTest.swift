@@ -84,7 +84,7 @@ enum SelfTest {
     // MARK: 语言门控
 
     static func cjkTests() {
-        print("\n--- 语言门控（CJK 占比 > 0.40 → 不介入）---")
+        print("\n--- 语言门控（CJK 占比 > \(LanguageGate.cjkGate) → 不介入）---")
         let cases: [(String, String, Bool)] = [
             ("全中文", "麻烦确认一下这批货的船期和舱位", true),
             ("中文为主", "请确认 FCL 订舱的 ETD 和舱位情况", true),

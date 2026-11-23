@@ -83,6 +83,18 @@ if [ -n "$BAD_AI" ]; then
 fi
 echo "PASS  运行路径零 assumeIsolated"
 
+echo "== 阈值口径防线：CJK 比例只许有 LanguageGate.cjkGate 一个来源 =="
+DUP_CJK=$(grep -rnE "(cjk|CJK)[^\n]*(>|>=)[[:space:]]*0\.[0-9]+" Sources/*.swift \
+    | grep -v "Sources/LanguageGate.swift" \
+    | grep -v "LanguageGate\\.cjkGate" \
+    | grep -v "abs(" || true)
+if [ -n "$DUP_CJK" ]; then
+    echo "$DUP_CJK"
+    echo "重复的 CJK 阈值：改用 LanguageGate.cjkGate（11-23 已有四个副本，中文被送进 LT 就是这么来的）"
+    exit 1
+fi
+echo "PASS  CJK 阈值单一来源"
+
 echo "== 坐标口径防线：除 Geometry.swift 外不许手写坐标换算 =="
 # 爹地 11-19 实报「悬浮点到处乱飘」：FloatBall 自己写了 h - p.y - size，
 # 用的是球所在屏的高度而不是全局 topOffset，单屏看不出来、接副屏必飘。

@@ -537,9 +537,22 @@ final class HoverCoordinator {
     }
 
     private func open(itemID: Int, rect: CGRect) {
+        // 卡片显隐也留痕：点中了却弹不出来时，日志要能说出是哪一步拦的
+        let ctrl0 = InlineController.shared
+        CheckLog.append(.init(kind: "card-open", pid: ctrl0.currentPid,
+                              app: appName(ctrl0.currentPid), role: usingWebCard ? "web" : "native",
+                              textLen: 0, sentenceLen: 0, itemCount: itemID,
+                              rectCount: ctrl0.items.count, elapsed: "-",
+                              err: "item=\(itemID) of \(ctrl0.items.count)", at: Date()))
         if usingWebCard { openWeb(itemID: itemID, rect: rect); return }
         let ctrl = InlineController.shared
-        guard itemID >= 0, itemID < ctrl.items.count else { return }
+        guard itemID >= 0, itemID < ctrl.items.count else {
+            CheckLog.append(.init(kind: "card-fail", pid: ctrl.currentPid,
+                                  app: appName(ctrl.currentPid), role: "-", textLen: 0, sentenceLen: 0,
+                                  itemCount: itemID, rectCount: ctrl.items.count, elapsed: "-",
+                                  err: "itemID 越界：items 只有 \(ctrl.items.count) 条", at: Date()))
+            return
+        }
         let item = ctrl.items[itemID]
         let sentence = ctrl.sentenceText(forItem: itemID)
 

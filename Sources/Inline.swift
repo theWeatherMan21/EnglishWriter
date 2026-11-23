@@ -1549,7 +1549,11 @@ final class InlineController {
             emit(CheckEvent(kind: "render", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
                             textLen: (lastText as NSString).length, sentenceLen: sentenceRange.length,
                             itemCount: items.count, rectCount: overlay.specs.count,
-                            elapsed: diag.lastElapsed, err: diag.lastError, at: Date()))
+                            elapsed: diag.lastElapsed,
+                            err: diag.lastError == "-"
+                                ? items.prefix(4).map { "\($0.kind.rawValue):\($0.original)→\($0.replacement)" }.joined(separator: " | ")
+                                : diag.lastError,
+                            at: Date()))
         }
         let cleaned = DiffSanitize.clean(newItems, in: lastText)
             .filter { !IgnoreStore.shared.isIgnored(original: $0.original, replacement: $0.replacement) }

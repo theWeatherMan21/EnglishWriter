@@ -202,10 +202,10 @@ final class LocalAPI {
     }
 
     static func check(text: String, language: String, mode: String = "full") async -> [String: Any] {
-        // 中文零干扰：CJK 占比 > 0.40 直接不查（和原生完全同一口径）
-        let cjk = text.unicodeScalars.filter { $0.value >= 0x4E00 && $0.value <= 0x9FFF }.count
-        let ratio = text.isEmpty ? 0 : Double(cjk) / Double(text.unicodeScalars.count)
-        if ratio > 0.40 { return ["edits": [], "engine": "skipped-cjk", "skipped": "cjk", "elapsedMs": 0] }
+        // 中文零干扰：口径统一到 LanguageGate.cjkGate（这里原来自带一个 0.40，是第四个副本）
+        if LanguageGate.cjkRatio(text) > LanguageGate.cjkGate {
+            return ["edits": [], "engine": "skipped-cjk", "skipped": "cjk", "elapsedMs": 0]
+        }
 
         let t0 = Date()
         let ltOn = EnginePrefs.ltEnabled()
