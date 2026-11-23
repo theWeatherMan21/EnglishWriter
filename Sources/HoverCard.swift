@@ -451,7 +451,15 @@ final class HoverCoordinator {
         //    （否则爹地点自己窗口会被记成 Safari/Mail 的 click-miss，看起来像「没反应」）
         let ownWindows: [NSWindow] = [CardWeb.shared, Sidebar.shared, FloatBall.shared,
                                       DemoLive.shared.windowRef].compactMap { $0 }
-        for w in ownWindows where w.isVisible && w.frame.contains(mouseAppKit) { return }
+        for w in ownWindows where w.isVisible && w.frame.contains(mouseAppKit) {
+            // 点在自己的窗口（卡片/侧栏/球）上不判定，但要留痕：
+            // 否则「我明明点了」和「日志什么都没有」永远分不清是没点中还是被我们吞了。
+            CheckLog.append(.init(kind: "click-skip-own", pid: getpid(), app: appName(getpid()),
+                                  role: "card", textLen: 0, sentenceLen: 0, itemCount: -1,
+                                  rectCount: specs.count, elapsed: "-",
+                                  err: "点在自家窗口（卡片/侧栏/球），不判定", at: Date()))
+            return
+        }
 
         let mouseQuartz = ScreenGeom.pointToQuartz(mouseAppKit)
         let hit = HoverCoordinator.hitTest(specs, at: mouseQuartz)

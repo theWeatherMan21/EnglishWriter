@@ -206,7 +206,7 @@ bash scripts/settings-selftest.sh        # 断言 + 静态不变量 + 面板截�
 | 侧栏全文报告 | 已有骨架 | `--sidebar-snapshot`；实时刷新 `syncSidebarIfOpen` |
 | 总体评分四维 | 已有 | `--selftest --score` |
 | 个人词典管理界面 | 存储有，界面薄 | 设置面板内「个人词典」列表（仅增删，无导入导出） |
-| 浏览器覆盖 | Chrome/Edge/Brave/Chromium/Firefox = 扩展；**Safari = App 自己画**（无 .appex） | `browserBundleIDs` + 断言 |
+| 浏览器覆盖 | Chrome/Edge/Brave/Chromium/Firefox = 扩展；**Safari = App 自己画**，.appex 外壳已可构建（`scripts/safari-appex.sh`，READY + 临时签名），启用需在 Safari 设置里勾选 | `browserBundleIDs` + `safari-appex.sh` 6 条自验 |
 | 原生 App 覆盖 | TextEdit / Mail / Telegram 启用；Word/Pages/Outlook/WPS/Slack 未适配 | `PROJECT.md` 适配表 9 条 |
 | 性能护栏 | 已有 | 单轮 1 次请求、在飞 ≤2、java 空闲 0% |
 
