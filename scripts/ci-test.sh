@@ -154,9 +154,9 @@ sleep 2
 if "$BIN" --lt-ready --ensure > /tmp/ci-lt-heal.log 2>&1; then
   code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8081/v2/languages)
   if [ "$code" = "200" ]; then
-    echo "PASS  引擎被杀后自愈（$(cat /tmp/ci-lt-heal.log | tail -1) · curl $code）"
+    echo "PASS  引擎被杀后自愈（$(cat /tmp/ci-lt-heal.log | tail -1) · curl ${code}）"
   else
-    echo "FAIL  --lt-ready --ensure 说就绪但 curl=$code（假就绪）"; exit 1
+    echo "FAIL  --lt-ready --ensure 说就绪但 curl=${code}（假就绪）"; exit 1
   fi
 else
   echo "FAIL  引擎被杀后没有自愈"; cat /tmp/ci-lt-heal.log; exit 1
