@@ -988,8 +988,14 @@ final class InlineController {
             emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: elRole,
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: kind, at: Date()))
-            overlay.clear(); items = []; blocks = []; itemBlock = []
-            diag.lastError = "只读文本，跳过"
+            // 不清线：这一轮读到的元素只读（点回邮件列表、焦点落到 AXTable），
+            // 不代表用户不需要看正文上的线。线的存活只由「宿主换了」和 TTL 决定
+            // —— 11-23 实测：render 出 10 条线后 5 秒，用户点进正文触发 skip-readonly，
+            // 线被清空 → 紧接着的点击 rectCount=0、nearest=nan，看起来就是「点线没反应」。
+            diag.lastError = "只读文本，跳过（保留现有线）"
+            emit(CheckEvent(kind: "skip-readonly-keep", pid: pid, app: appName(pid), role: elRole,
+                            textLen: 0, sentenceLen: 0, itemCount: items.count, rectCount: overlay.currentRects().count,
+                            elapsed: "-", err: "不清线，等 TTL/宿主切换", at: Date()))
             return
         }
         var full = AXInline.fullText(of: el)
