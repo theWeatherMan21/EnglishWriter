@@ -40,8 +40,8 @@ OUT="$EVID/unlock-watch.log"
 
 locked() { ioreg -n Root -d1 -a 2>/dev/null | grep -q CGSSessionScreenIsLocked; }
 
-echo "== 等解锁（最多 6 小时，每 30 秒看一次）== $(date '+%F %T')" >> "$OUT"
-for i in $(seq 1 720); do
+echo "== 等解锁（最多 12 小时，每 30 秒看一次）== $(date '+%F %T')" >> "$OUT"
+for i in $(seq 1 1440); do
     if ! locked; then
         echo "解锁了 $(date '+%F %T')，静 20 秒再做" >> "$OUT"
         sleep 20
@@ -72,5 +72,5 @@ for i in $(seq 1 720); do
     fi
     sleep 30
 done
-echo "== 超时：6 小时都没解锁，放弃 $(date '+%F %T')" >> "$OUT"
+echo "== 超时：12 小时都没解锁，放弃 $(date '+%F %T')" >> "$OUT"
 exit 1
