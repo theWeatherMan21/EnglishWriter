@@ -2480,6 +2480,43 @@ extension SelfTest {
             SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
         }
 
+        // 侧栏 payload：分组 / id 指向原条目 / dismissed 过滤（点球看全部问题的数据源）
+        let sideItems = [
+            DiffItem(start: 2, length: 9, original: "have send", replacement: "have sent", type: "grammar", reason: "完成时"),
+            DiffItem(start: 20, length: 10, original: "immediatly", replacement: "immediately", type: "spelling", reason: "拼写"),
+            DiffItem(start: 40, length: 12, original: "in order to", replacement: "to", type: "clarity", reason: "啰嗦"),
+            DiffItem(start: 60, length: 9, original: "very unique", replacement: "unique", type: "style", reason: "重复强调"),
+        ]
+        let score = WritingScore(overall: 82, correctness: 78, clarity: 85, engagement: 80, delivery: 84,
+                                 correctnessNote: "", clarityNote: "", engagementNote: "", deliveryNote: "")
+        let payloadJSON = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [])
+        if let data = payloadJSON.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let groups = (obj["groups"] as? [[String: Any]]) ?? []
+            let ids = groups.flatMap { ($0["items"] as? [[String: Any]])?.compactMap { $0["id"] as? Int } ?? [] }
+            let dims = (obj["dims"] as? [[String: Any]]) ?? []
+            // 正确性组要收 grammar + spelling 两条
+            let grammarCount = (groups.first { ($0["type"] as? String) == "grammar" }?["items"] as? [[String: Any]])?.count ?? 0
+            if groups.count == 3, grammarCount == 2, dims.count == 4,
+               ids.contains(0), ids.contains(1), ids.contains(3) {
+                SelfTest.ok("sidebar: 分组/id/四维齐全", "3 组（正确性 \(grammarCount) 条）· 4 维 · ids=\(ids)")
+            } else {
+                SelfTest.bad("sidebar: payload", "groups=\(groups.count) grammar=\(grammarCount) dims=\(dims.count) ids=\(ids)")
+            }
+        } else {
+            SelfTest.bad("sidebar: payload 解析", payloadJSON.prefix(80).description)
+        }
+        // dismissed 掉 clarity 那条 → 该组消失，其余不动
+        let dismissedKey = Sidebar.key(sideItems[2])
+        let filtered = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [dismissedKey])
+        if let d = filtered.data(using: .utf8),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let g = o["groups"] as? [[String: Any]] {
+            if g.count == 2, !g.contains(where: { ($0["type"] as? String) == "clarity" }) {
+                SelfTest.ok("sidebar: dismissed 过滤", "2 组（清晰度已移除）")
+            } else { SelfTest.bad("sidebar: dismissed", "\(g.count) 组") }
+        } else { SelfTest.bad("sidebar: dismissed 解析", "失败") }
+
         // 去重键必须带块号：同一句里同样的错在不同段落要各报一次
         func mk(_ o: String) -> DiffItem {
             DiffItem(start: 0, length: (o as NSString).length, original: o, replacement: "X",
