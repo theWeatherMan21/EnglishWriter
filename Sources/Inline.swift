@@ -1576,14 +1576,21 @@ final class InlineController {
             AppLog.info("m3", "write-layer=AXSelectedText 但读回没变（API 报 success 不做事）—— 落剪贴板")
         }
 
-        // ② 剪贴板 ⌘V（选区仍落在容器上）
+        // ② 剪贴板 ⌘V —— 必须先确认选区真的落在了容器上。
+        // 11-23 真机：选区没生效也照样粘，结果 sent 被追加到正文末尾而不是覆盖 send。
         if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
             _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, v)
-            if pasteViaClipboard(text, to: pid) {
+            let landed = Self.selectionLanded(h, expected: m)
+            AppLog.info("m3", "clipboard 前置：选区 \(landed ? "已落下" : "没落下，不粘") range=\(m.location)+\(m.length)")
+            if landed, pasteViaClipboard(text, to: pid) {
                 usleep(450_000)
-                Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
-                AppLog.info("m3", "write-layer=clipboard range=\(m.location)+\(m.length) len=\(text.count)")
-                return true
+                let after = AXInline.fullText(of: h) ?? ""
+                if Self.webWriteVerified(hostText: after, mapped: m, replacement: text) {
+                    Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
+                    AppLog.info("m3", "write-layer=clipboard range=\(m.location)+\(m.length) len=\(text.count)")
+                    return true
+                }
+                AppLog.info("m3", "clipboard 粘了但位置不对（选区丢失会粘到末尾）—— 不判成功")
             }
         }
         // ③ 暴力兜底：选中容器全文 + 粘贴「整段替换后的文本」
@@ -1592,7 +1599,9 @@ final class InlineController {
            let full = WebText.replacedFullText(hostText: AXInline.fullText(of: h) ?? "", mapped: m, replacement: text),
            let all = axRangeValue(0, (full as NSString).length) {
             _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, all)
-            if pasteViaClipboard(full, to: pid) {
+            let landedAll = Self.selectionLanded(h, expected: NSRange(location: 0, length: (full as NSString).length))
+            AppLog.info("m3", "整段替换前置：全选 \(landedAll ? "已落下" : "没落下，跳过")")
+            if landedAll, pasteViaClipboard(full, to: pid) {
                 usleep(450_000)
                 Diag.shared.applyMethod = "整段替换（剪贴板）"
                 AppLog.info("m3", "write-layer=clipboard-full len=\(full.count)（区间写不进，改整段）")
@@ -1604,7 +1613,11 @@ final class InlineController {
         if host == nil {
             let original = (block.text as NSString).substring(with: range)
             pressSelectAll(to: pid)
+            // ⌘A 之后必须确认选区覆盖全文：读 AXValue 拿到全文不等于选中了全文，
+            // 没选中就粘 = 追加到末尾（11-23 真机症状）。
+            let selCovered = Self.selectionCoversAllText(pid: pid)
             if let full = selectedText(of: pid),
+               selCovered,
                WebText.allowFullReplace(fullText: full),
                let newFull = WebText.replaceOnce(fullText: full, original: original, replacement: text),
                newFull != full, Self.backupDraft(full), pasteViaClipboard(newFull, to: pid) {
@@ -1619,11 +1632,42 @@ final class InlineController {
                 AppLog.info("m3", "write-layer=keyboard-all 但读回不一致（字数 \(back.count) vs \(newFull.count)）")
             } else {
                 let n = selectedText(of: pid)?.count ?? 0
-                AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 \(n) 字 / 原文不唯一 / 正文超长拒绝覆盖）")
+                AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 \(n) 字 / 未全选 \(selCovered) / 原文不唯一 / 正文超长拒绝覆盖）")
             }
         }
         AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（容器定位失败 / AX 与剪贴板都不成功）")
         return false
+    }
+
+    /// ⌘A 之后：该进程焦点元素的选区是否覆盖全文（长度 == 全文长度）。
+    /// 读 AXValue 拿到全文不代表选中了；没选中就粘 = 粘到光标处（末尾）。
+    nonisolated static func selectionCoversAllText(pid: pid_t) -> Bool {
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 0.3)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let f = focused, CFGetTypeID(f as CFTypeRef) == AXUIElementGetTypeID() else { return false }
+        var cur = f as! AXUIElement
+        for _ in 0..<5 {
+            if let r = axSelection(cur) {
+                var val: CFTypeRef?
+                if AXUIElementCopyAttributeValue(cur, kAXValueAttribute as CFString, &val) == .success,
+                   let t = val as? String, !t.isEmpty {
+                    return r.length >= (t as NSString).length - 1   // 容差 1（末尾换行）
+                }
+            }
+            guard let raw = attr(cur, kAXParentAttribute as String) else { break }
+            let cf = raw as CFTypeRef
+            guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
+            cur = (cf as! AXUIElement)
+        }
+        return false
+    }
+
+    /// 选区是否真的落在期望区间（容差 0）。
+    nonisolated static func selectionLanded(_ el: AXUIElement, expected: NSRange) -> Bool {
+        guard let r = axSelection(el) else { return false }
+        return r.location == expected.location && r.length == expected.length
     }
 
     /// 读回验证（纯函数）：容器文本在 mapped 位置上是否已经是替换后的文本

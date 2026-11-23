@@ -257,6 +257,18 @@ final class AXTarget {
 
 // MARK: - 低层读属性
 
+/// 选区到底落没落在这个元素上（写完必须确认，否则 ⌘V 会粘到光标处 = 末尾）。
+/// 11-23 真机：AXSelectedTextRange 设了、API 不报错，但选区没生效，
+/// 结果「接受」把 sent 追加到正文末尾而不是覆盖 send。
+func axSelection(_ el: AXUIElement) -> CFRange? {
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &raw) == .success,
+          let v = raw, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+    var r = CFRange(location: 0, length: 0)
+    guard AXValueGetValue(v as! AXValue, .cfRange, &r) else { return nil }
+    return r
+}
+
 func axRangeValue(_ location: Int, _ length: Int) -> AXValue? {
     var r = CFRange(location: location, length: length)
     return AXValueCreate(.cfRange, &r)
