@@ -118,6 +118,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in menu.items { item.target = self }
         statusItem.menu = menu
 
+        // 菜单栏图标自证：--status-probe 打印 statusItem 的窗口与屏几何后退出。
+        // 为什么需要：爹地 11-23 报「看不到图标」，光看代码没法区分
+        // 「没创建」「被系统藏进溢出区」「创建了但在屏外」——这三件事修法完全不同。
+        if CommandLine.arguments.contains("--status-probe") {
+            // 立刻打印一次，再等 1.2 秒（状态栏条目是 runloop 起来后才布局的）打印第二次
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                let b2 = self.statusItem.button
+                let w2 = b2?.window
+                let f2 = w2?.frame ?? .zero
+                print("status-probe[+1.2s]: isVisible=\(w2?.isVisible ?? false) frame=(\(Int(f2.minX)),\(Int(f2.minY)),\(Int(f2.width))x\(Int(f2.height)))")
+                exit(0)
+            }
+            let btn = statusItem.button
+            let win = btn?.window
+            let scr = NSScreen.screens.first
+            let f = win?.frame ?? .zero
+            let vis = win?.isVisible ?? false
+            print("status-probe: exists=\(statusItem != nil) isVisible=\(vis) frame=(\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width))x\(Int(f.height)))")
+            print("status-probe: screen=\((scr?.frame.debugDescription ?? "?")) menuBarHeight=\(NSStatusBar.system.thickness)")
+            print("status-probe: onScreen=\(scr?.frame.contains(f) ?? false) buttonImage=\(btn?.image != nil) imageSize=\(btn?.image?.size.debugDescription ?? "nil")")
+            for name in ["pencil.and.outline", "pencil.line", "square.and.pencil", "text.badge.checkmark"] {
+                let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+                print("status-probe: symbol \(name) = \(img == nil ? "nil" : "\(img!.size)")")
+            }
+        }
+
         // 无头探针：EW_PROBE_EXIT=1 时跑一次探针、打印 JSON、退出（给验收 / 自动化用）
         if ProcessInfo.processInfo.environment["EW_PROBE_EXIT"] == "1" {
             let report = Probe.run(model: model)
@@ -429,7 +455,7 @@ if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--
 // 第二次谁都没接到）。所以：常驻模式用一个文件锁，抢不到锁就退出。
 let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--keywin", "--quality", "--realshot", "--axdump", "--axprobe",
                 "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome",
-                "--sidebar-snapshot", "--settings-snapshot", "--ball-snapshot"]
+                "--sidebar-snapshot", "--settings-snapshot", "--ball-snapshot", "--status-probe"]
 let isCLIMode = argv.contains { cliFlags.contains($0) }
 if !isCLIMode {
     let lockPath = (NSHomeDirectory() as NSString)
