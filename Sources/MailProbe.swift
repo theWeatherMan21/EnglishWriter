@@ -64,27 +64,42 @@ enum MailProbe {
         return 0
     }
 
-    static func isComposeWindow(pid: pid_t) -> Bool {
-        guard pid > 0 else { return false }
-        guard let app = AXUIElementCreateApplication(pid) as AXUIElement? else { return false }
+    static func isComposeWindow(pid: pid_t) -> Bool { composeSignal(pid: pid).isCompose }
+
+    /// 写信窗的两个信号（命中任一即算）：
+    ///   send      工具栏有「发送 / Send」按钮
+    ///   recipient 有收件人字段（To / 收件人 / Cc）
+    /// 两个都留是因为不同 macOS 版本 Mail 的工具栏暴露方式不一样；
+    /// 阅读窗两个都不命中，所以不会误判成写信。
+    static func composeSignal(pid: pid_t) -> (isCompose: Bool, reason: String) {
+        guard pid > 0 else { return (false, "pid=0") }
+        guard let app = AXUIElementCreateApplication(pid) as AXUIElement? else { return (false, "拿不到 AXApplication") }
         guard let windows = attr(app, kAXWindowsAttribute as String) as? [AXUIElement],
-              let front = windows.first else { return false }
-        let words = ["发送", "Send", "送信", "Enviar", "Envoyer"]
-        var found = false
+              let front = windows.first else { return (false, "没有窗口") }
+        let sendWords = ["发送", "Send", "送信", "Enviar", "Envoyer"]
+        let toWords = ["收件人", "To:", "收件人：", "Cc", "抄送", "To "]
+        var sendHit = false, recipientHit = false
         func walk(_ el: AXUIElement, depth: Int) {
-            if found || depth <= 0 { return }
+            if (sendHit && recipientHit) || depth <= 0 { return }
             let role = attrString(el, kAXRoleAttribute as String) ?? ""
-            if role == kAXButtonRole as String {
-                let label = [attrString(el, kAXTitleAttribute as String),
-                             attrString(el, kAXDescriptionAttribute as String),
-                             attrString(el, kAXHelpAttribute as String)]
-                    .compactMap { $0 }.joined(separator: " ")
-                if words.contains(where: { label.contains($0) }) { found = true; return }
+            let label = [attrString(el, kAXTitleAttribute as String),
+                         attrString(el, kAXDescriptionAttribute as String),
+                         attrString(el, kAXHelpAttribute as String),
+                         attrString(el, "AXPlaceholderValue")]
+                .compactMap { $0 }.joined(separator: " ")
+            if role == kAXButtonRole as String, sendWords.contains(where: { label.contains($0) }) {
+                sendHit = true
+            }
+            if role == kAXTextFieldRole as String || role == kAXTextAreaRole as String,
+               toWords.contains(where: { label.contains($0) }) {
+                recipientHit = true
             }
             for c in attrChildren(el) { walk(c, depth: depth - 1) }
         }
         walk(front, depth: 12)
-        return found
+        if sendHit { return (true, "发送按钮") }
+        if recipientHit { return (true, "收件人字段") }
+        return (false, "无发送按钮、无收件人字段")
     }
 
     static func waitForEnglish(_ argv: [String]) async -> Bool {
@@ -310,8 +325,8 @@ enum MailProbe {
         let composeReports = reports.filter { $0.kind == "compose" }
         // 门控用的同一条判据（有没有发送按钮），在这里一起打印：探针与门控同一口径，
         // 否则会出现「探针说 compose、门控说 reading」这种互相打脸。
-        let composeByButton = isComposeWindow(pid: pidOfMail(reports: reports))
-        print("compose 判定：窗口标题=\(composeReports.count) 条 · 发送按钮=\(composeByButton)")
+        let sig = composeSignal(pid: pidOfMail(reports: reports))
+        print("compose 判定：窗口标题=\(composeReports.count) 条 · 信号=\(sig.isCompose)(\(sig.reason))")
         if composeReports.isEmpty && !argv.contains("--include-reading") {
             print("RESULT: SKIP（没有写信窗口 —— 阅读视图不是验收对象；要查阅读请加 --include-reading）")
             return true
