@@ -1,32 +1,73 @@
 {
   "bundle" : "com.apple.mail",
-  "composePresent" : false,
+  "composePresent" : true,
   "pid" : 85845,
-  "windowCount" : 1,
+  "windowCount" : 2,
   "windows" : [
     {
       "badRects" : [
 
       ],
-      "blocks" : 4,
-      "chars" : 103,
-      "englishBlocks" : 2,
-      "itemCount" : 0,
+      "blocks" : 9,
+      "chars" : 240,
+      "englishBlocks" : 7,
+      "itemCount" : 1,
       "items" : [
-
+        {
+          "original" : "have send",
+          "rect" : "[124,388,75,18]",
+          "replacement" : "have sent",
+          "type" : "grammar"
+        }
       ],
-      "kind" : "reading",
-      "langSkippedBlocks" : 0,
-      "note" : "可见 4 块 \/ 屏幕外 0 块；其中中文块 2（69 字，按设计跳过）、英文块 2 → 本次命中 0",
+      "kind" : "compose",
+      "langSkippedBlocks" : 1,
+      "note" : "",
       "offscreenBlocks" : 0,
       "rectsInsideWindow" : true,
-      "skippedCjkBlocks" : 2,
-      "skippedCjkChars" : 69,
-      "staticTexts" : 4001,
+      "skippedCjkBlocks" : 0,
+      "skippedCjkChars" : 0,
+      "staticTexts" : 15,
+      "textAreas" : 0,
+      "title" : "New Message",
+      "totalChars" : 240,
+      "visibleBlocks" : 9,
+      "webAreaFound" : true,
+      "windowRect" : [
+        92,
+        80,
+        436,
+        949
+      ]
+    },
+    {
+      "badRects" : [
+
+      ],
+      "blocks" : 9,
+      "chars" : 240,
+      "englishBlocks" : 7,
+      "itemCount" : 1,
+      "items" : [
+        {
+          "original" : "have send",
+          "rect" : "[545,207,58,16]",
+          "replacement" : "have sent",
+          "type" : "grammar"
+        }
+      ],
+      "kind" : "reading",
+      "langSkippedBlocks" : 1,
+      "note" : "",
+      "offscreenBlocks" : 0,
+      "rectsInsideWindow" : true,
+      "skippedCjkBlocks" : 0,
+      "skippedCjkChars" : 0,
+      "staticTexts" : 38,
       "textAreas" : 1,
-      "title" : "Inbox – Network Management – 3,597 messages, 30 unread",
-      "totalChars" : 103,
-      "visibleBlocks" : 4,
+      "title" : "Drafts – Network Management – 1 draft",
+      "totalChars" : 240,
+      "visibleBlocks" : 9,
       "webAreaFound" : true,
       "windowRect" : [
         61,
