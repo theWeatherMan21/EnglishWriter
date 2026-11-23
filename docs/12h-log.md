@@ -28,15 +28,18 @@
 5. 模型把 FCL / demurrage 这类业务词当错改掉 → 术语保护区间
 6. 锁屏期间仍写 `attach-app loginwindow` → 门控下沉到真实发射点
 
-**只有你能验的三条（我在锁屏环境里无法替代）**
-1. TextEdit 里写 `We was late because there is many problems with the booking.` → 出线 → 点线 → 接受 → 变 `We were…`
-2. Mail 新建邮件粘同一句 → 出线 → 接受 → 正文真的变
-3. **来回切 5 次 App（TextEdit / Mail / Safari），App 图标不能消失**
-   —— 这一条以前没有任何断言能覆盖：崩溃报告里有 8 份是「切 App 时 App 直接退出」
-   （`MainActor.assumeIsolated`，已在 d8a302a 修掉，CI 现在硬拦这类写法），但只有人切才能最终确认。
-   任一条没反应：把 `~/Library/Application Support/EnglishWriter/check-log.jsonl` 最后 50 行发我，
-   日志里 `owner / front / nearest / path` 会直接指向原因；App 若消失，崩溃报告在
-   `~/Library/Logs/DiagnosticReports/`（我按 `.ips` 直接读，不用你描述）。
+**只有你能验的三步（全部在「你正在写」的输入框里，不看别人的邮件）**
+1. **Mail 新建邮件**：写 `I have send the file, please check it.` → 停住 → 出线 → 点线 → 卡片 → 接受 → 变 `I have sent…`
+2. **TextEdit**：同一句 → 同上链路
+3. **Chrome 网页输入框**（扩展）：同一句 → 出线、点线弹卡、接受生效
+
+判据我这边看 `check-log.jsonl` 三行：
+```
+fallback-el  err=keywindow-editable   ← 选路对了
+render       itemCount>0 rectCount>0  ← 线画出来了
+click-hit    owner=<App>(pid)         ← 你点中了
+```
+阅读视图（别人发来的邮件）默认不查了 —— 那不是主场，`EnginePrefs.checkReading` 留作开关。
 
 **没做的（不是缺口）**：Chrome 商店安装路径（还没打算发布）、锁屏期间的点击样本（环境限制，不算质量结论）。
 2026-11-19 22:36 | EXIT 0 | 自测45 / 本地规则64 / Mail块6 / WebUI16 / 隐私74 / 改写9 / acceptflow11 / clickdiag7 全 PASS 0 FAIL；deep PASS 召回100%(10/10) 零误报8句 2443ms/句；pngdiff 0.000%+0.000%；零新崩溃；装机 SYNC | 无异常；屏幕锁定未取真机 click-hit 证据

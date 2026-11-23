@@ -241,3 +241,16 @@ blocks=4（可见 4 / 屏外 0）可见字 103（中文块 2/69 字 · 英文块
 ```
 中文邮件按设计跳过，2 个英文块本身没错 → `items=0` 是「真的没有错」，不是「没读到」。
 **要验下划线，得开一封真有英文错误的邮件**；`rectsInside=true` 只在 `items>0` 时才有意义。
+
+
+## 验收方向（11-23 爹地定）：只验「你正在写」
+
+Grammarly 的主场是**你正在敲的输入框**，不是读别人发来的邮件。
+所以验收一律用这三步，不再打开邮件看阅读视图：
+1. Mail 新建邮件 → 写一句有错的英文 → 出线 → 点线 → 接受 → 文字变
+2. TextEdit → 同一句 → 同上
+3. Chrome 网页输入框（扩展）→ 出线 → 点线弹卡 → 接受生效
+
+阅读视图（`Mail` 的 `[reading]` 窗口）默认不查（`InlineGate.shouldCheck` 的 `checkReading=false`），
+需要时把 `EnginePrefs.checkReading` 打开。`--probe-mail` 也只认 compose，
+没有写信窗口直接 SKIP，不再用阅读视图给 PARTIAL。
