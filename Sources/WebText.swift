@@ -105,8 +105,22 @@ enum WebText {
     /// 键盘兜底用：在一段全文里把 original 换掉一次（纯函数，可断言）。
     /// 为什么需要它：Mail 的正文没有任何可编辑 AX 容器（host=无），
     /// 只能走「⌘A 全选 → 在全文里改 → ⌘V 覆盖」这条不依赖 AX 写权限的路。
+    /// 出现次数（纯函数）：键盘兜底改全文前必须确认这一段只出现一次，
+    /// 否则「第一次出现」可能改到引用里、签名里，改错地方比不改更糟。
+    static func occurrences(of needle: String, in hay: String) -> Int {
+        guard !needle.isEmpty else { return 0 }
+        var count = 0
+        var search = hay.startIndex..<hay.endIndex
+        while let r = hay.range(of: needle, range: search) {
+            count += 1
+            if r.upperBound >= hay.endIndex { break }
+            search = r.upperBound..<hay.endIndex
+        }
+        return count
+    }
+
     static func replaceOnce(fullText: String, original: String, replacement: String) -> String? {
-        guard !original.isEmpty else { return nil }
+        guard !original.isEmpty, occurrences(of: original, in: fullText) == 1 else { return nil }
         let ns = fullText as NSString
         let r = ns.range(of: original)
         guard r.location != NSNotFound else { return nil }

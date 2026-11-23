@@ -30,6 +30,9 @@ enum E2EReport {
         var layerNone = 0
         var layerFull = 0
         var layerKey = 0
+        var lastWriteIdx = -1
+        var lastFailIdx = -1
+        var idx = 0
         var lastFailReason = ""
         var lastDiag = ""
         var verdict = ""
@@ -69,8 +72,9 @@ enum E2EReport {
             if s.contains("compose 判定") && s.contains("true") { v.compose = true }
             if s.contains("kind=click-hit") { v.clickHit += 1; v.lastDiag = s }
             if s.contains("kind=click-miss") { v.clickMiss += 1; v.lastDiag = s }
+            v.idx += 1
             if s.contains("kind=accept-begin") { v.acceptBegin += 1 }
-            if s.contains("kind=accept-write") { v.acceptWrite += 1 }
+            if s.contains("kind=accept-write") { v.acceptWrite += 1; v.lastWriteIdx = v.idx }
             if s.contains("write-layer=AXSelectedText") { v.layerAX += 1 }
             if s.contains("write-layer=clipboard") { v.layerClip += 1 }
             if s.contains("write-layer=clipboard-full") { v.layerFull += 1 }
@@ -78,6 +82,7 @@ enum E2EReport {
             if s.contains("write-layer=none") { v.layerNone += 1 }
             if s.contains("kind=accept-fail") {
                 v.acceptFail += 1
+                v.lastFailIdx = v.idx
                 v.lastFailReason = s.components(separatedBy: "err=").last ?? ""
             }
         }
@@ -89,7 +94,9 @@ enum E2EReport {
         print("  接受序列     begin=\(v.acceptBegin) write=\(v.acceptWrite) fail=\(v.acceptFail)")
         print("  写入层       AX=\(v.layerAX) clipboard=\(v.layerClip) 整段=\(v.layerFull) 键盘=\(v.layerKey) none=\(v.layerNone)")
 
-        if v.acceptFail > 0 {
+        // 只有「最后一次失败发生在最后一次成功之后」才判 FAIL：
+        // 修好之后再试成功，不该被历史失败拖住（这是之前报告的毛病）
+        if v.acceptFail > 0, v.lastFailIdx > v.lastWriteIdx {
             print("RESULT: FAIL —— 接受失败：\(v.lastFailReason)")
             return 1
         }

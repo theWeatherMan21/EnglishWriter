@@ -2499,6 +2499,14 @@ extension SelfTest {
             ok("webwrite: 键盘兜底能在全文里改一处", "have send → have sent")
         } else { bad("webwrite: 键盘兜底替换算错", "replaceOnce") }
 
+        if WebText.replaceOnce(fullText: "have send ... have send", original: "have send", replacement: "have sent") == nil {
+            ok("webwrite: 同一段出现多次就拒绝改", "改错地方比不改更糟")
+        } else { bad("webwrite: 多处出现还改了", "可能改到引用/签名里") }
+
+        if WebText.occurrences(of: "have send", in: "have send and have sent") == 1 {
+            ok("webwrite: 出现次数计算正确", "1 次")
+        } else { bad("webwrite: 出现次数算错", "occurrences") }
+
         if WebText.replaceOnce(fullText: "nothing", original: "have send", replacement: "have sent") == nil {
             ok("webwrite: 键盘兜底原文不在就返回 nil", "不乱改")
         } else { bad("webwrite: 键盘兜底找不到还改了", "会改错") }
