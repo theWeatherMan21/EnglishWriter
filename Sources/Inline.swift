@@ -1607,7 +1607,7 @@ final class InlineController {
             if let full = selectedText(of: pid),
                WebText.allowFullReplace(fullText: full),
                let newFull = WebText.replaceOnce(fullText: full, original: original, replacement: text),
-               newFull != full, pasteViaClipboard(newFull, to: pid) {
+               newFull != full, Self.backupDraft(full), pasteViaClipboard(newFull, to: pid) {
                 usleep(500_000)
                 pressSelectAll(to: pid)
                 let back = selectedText(of: pid) ?? ""
@@ -1631,6 +1631,25 @@ final class InlineController {
         let ht = hostText as NSString
         guard mapped.location >= 0, mapped.length >= 0, mapped.location + mapped.length <= ht.length else { return false }
         return ht.substring(with: mapped) == replacement
+    }
+
+    /// 整段覆盖前先把原文落盘。全选覆盖不可撤销地改写正文，
+    /// 万一改错（或在长邮件上毁格式），我还能把它原样还回去。
+    @discardableResult
+    static func backupDraft(_ text: String) -> Bool {
+        let dir = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/EnglishWriter/draft-backup")
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
+        let path = (dir as NSString).appendingPathComponent("draft-\(f.string(from: Date())).txt")
+        do {
+            try text.write(toFile: path, atomically: true, encoding: .utf8)
+            AppLog.info("m3", "draft-backup \(path)")
+            return true
+        } catch {
+            AppLog.error("m3", "draft-backup 失败：\(error.localizedDescription) —— 不覆盖正文")
+            return false
+        }
     }
 
     /// 合成 ⌘A（给键盘兜底用）：Mail 正文没有可编辑 AX 容器时，只能靠键击
