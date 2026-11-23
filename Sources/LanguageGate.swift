@@ -40,6 +40,20 @@ enum LanguageGate {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return false }
 
+        // 0) CJK 直接判非英文（11-23 负例断言抓到的漏洞：
+        //    「总经理应虹于11月23日休假」这种短中文，长度 < 30 不走 NL 主语言判定 → 被放过，
+        //    结果整句中文被送进 LanguageTool。中文块按设计一律跳过。）
+        var scalars = 0, cjk = 0
+        for u in t.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(u) {
+            scalars += 1
+            switch u.value {
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0x3040...0x30FF, 0xAC00...0xD7AF, 0xF900...0xFAFF:
+                cjk += 1
+            default: break
+            }
+        }
+        if cjk >= 2, scalars > 0, Double(cjk) / Double(scalars) > 0.2 { return false }
+
         // 1) 变音字符比例
         var total = 0, marked = 0
         for ch in t where !ch.isWhitespace && !ch.isNewline {

@@ -1182,7 +1182,9 @@ final class InlineController {
 
     /// 浏览器宿主：线由浏览器扩展自己画（DOM Range 精度比 AX 高一个数量级），
     /// App 主动退让，绝不两套同时在一个宿主上画线（11-19 定的架构）。
-    private static let browserBundleIDs: Set<String> = [
+    nonisolated static func isBrowserBundle(_ bid: String) -> Bool { browserBundleIDs.contains(bid) }
+
+    nonisolated static let browserBundleIDs: Set<String> = [
         "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
         "org.chromium.Chromium",
         // Safari 不在名单里：我们还没有 Safari 扩展（Safari 只认 .appex，Chrome 的 MV3 装不进去）。

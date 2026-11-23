@@ -2480,6 +2480,38 @@ extension SelfTest {
             SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
         }
 
+        // skip-* 的负例：每个「跳过」都要能区分「该跳」和「误伤」
+        let lang: [(String, String, Bool)] = [
+            ("英文业务句 → 查",            "We was late because there is many problems.", true),
+            ("中文 → 跳",                  "总经理应虹于11月23日休假一天。",              false),
+            ("波兰语 → 跳",                "Firma spedytor informacji dla naszego",       false),
+            ("英文带业务术语 → 查",        "Please confirm the ETD and B/L copy.",         true),
+        ]
+        for (name, t, want) in lang {
+            let got = LanguageGate.isEnglish(t)
+            if got == want { SelfTest.ok("lang: \(name)", got ? "查" : "跳") }
+            else { SelfTest.bad("lang: \(name)", "期望 \(want) 实际 \(got)") }
+        }
+        let sens: [(String, String, Bool)] = [
+            ("密码字段 → 跳",   "AXTextField 密码 password", true),
+            ("正文 → 不跳",      "AXTextArea 邮件正文",        false),
+            ("正文带 cargo → 不跳", "AXTextArea cargo booking", false),
+        ]
+        for (name, t, want) in sens {
+            let got = Integrations.isSensitive(text: t)
+            if got == want { SelfTest.ok("sensitive: \(name)", got ? "跳" : "不跳") }
+            else { SelfTest.bad("sensitive: \(name)", "期望 \(want) 实际 \(got)") }
+        }
+        // 浏览器宿主名单：Safari/Chrome 该跳，Mail 不该跳
+        // Safari 故意不在名单里（没有 Safari 扩展，App 自己画）；Chrome 移交扩展
+        if !InlineController.isBrowserBundle("com.apple.Safari"),
+           InlineController.isBrowserBundle("com.google.Chrome"),
+           !InlineController.isBrowserBundle("com.apple.mail") {
+            SelfTest.ok("browser: 名单正确", "Chrome 跳 · Safari/Mail 自己画")
+        } else {
+            SelfTest.bad("browser: 名单", "判定不对")
+        }
+
         // 写信窗口的正文区（AXWebArea 自身不可编辑，但同窗口有可编辑控件）→ 必须查
         if InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
                                   hasEditableWebField: false, checkReading: false,
