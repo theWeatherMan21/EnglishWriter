@@ -1333,7 +1333,8 @@ final class InlineController {
             guard ns.substring(with: it.utf16Range) == it.original else { continue }   // 偏移对不上一律不画
             cands.append((it, bi))
         }
-        for (it, bi) in WebText.ItemFilter.dedupeAndCap(cands, item: { $0.0 }, max: maxItems) {
+        for (it, bi) in WebText.ItemFilter.dedupeAndCap(cands, item: { $0.0 }, max: maxItems,
+                                                          key: { "\($0.1)|\($0.0.original.lowercased())" }) {
             let b = blks[bi]
             if IgnoreStore.shared.isIgnored(original: it.original, replacement: it.replacement) { continue }
             let rects = WebText.lineRects(for: it.utf16Range, in: b)

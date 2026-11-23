@@ -2480,6 +2480,25 @@ extension SelfTest {
             SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
         }
 
+        // 去重键必须带块号：同一句里同样的错在不同段落要各报一次
+        func mk(_ o: String) -> DiffItem {
+            DiffItem(start: 0, length: (o as NSString).length, original: o, replacement: "X",
+                     type: "grammar", reason: "t")
+        }
+        let crossBlock = [(mk("have send"), 0), (mk("have send"), 1), (mk("have send"), 0)]
+        let kept = WebText.ItemFilter.dedupeAndCap(crossBlock, item: { $0.0 }, max: 20,
+                                                   key: { "\($0.1)|\($0.0.original.lowercased())" })
+        if kept.count == 2, kept[0].1 == 0, kept[1].1 == 1 {
+            SelfTest.ok("dedupe: 跨块同词各留一条", "2 条（块0/块1）")
+        } else {
+            SelfTest.bad("dedupe: 跨块同词", "\(kept.map { $0.1 })")
+        }
+        let capped = WebText.ItemFilter.dedupeAndCap((0..<30).map { (mk("w\($0)"), 0) },
+                                                     item: { $0.0 }, max: 20)
+        if capped.count == 20 {
+            SelfTest.ok("dedupe: 上限 20", "20 条")
+        } else { SelfTest.bad("dedupe: 上限", "\(capped.count)") }
+
         // CJK 阈值只有一个来源：三条路径 + 语言门控必须给出同一个判定
         let cjkSamples = [
             "We was late because there is many problems.",

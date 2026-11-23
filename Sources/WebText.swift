@@ -115,13 +115,16 @@ enum WebText {
     /// 块内 range → 屏幕矩形（块自己的 AXBoundsForRange）
     /// 同词去重 + 单篇上限（生产与离屏验收共用同一套规则）
     enum ItemFilter {
-        static func dedupeAndCap<T>(_ xs: [T], item: (T) -> DiffItem, max: Int) -> [T] {
+        /// 去重键默认「原文小写」；调用方可传入「块 + 原文」，
+        /// 否则同一句里同样的错误在不同段落只会报第一处（跨块误杀）。
+        static func dedupeAndCap<T>(_ xs: [T], item: (T) -> DiffItem, max: Int,
+                                    key: ((T) -> String)? = nil) -> [T] {
             var seen = Set<String>()
             var out: [T] = []
             for x in xs {
-                let w = item(x).original.lowercased()
-                guard !seen.contains(w) else { continue }
-                seen.insert(w)
+                let k = key?(x) ?? item(x).original.lowercased()
+                guard !seen.contains(k) else { continue }
+                seen.insert(k)
                 if out.count >= max { break }
                 out.append(x)
             }
