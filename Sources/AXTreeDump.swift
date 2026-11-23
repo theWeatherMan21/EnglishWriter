@@ -9,8 +9,20 @@ import Foundation
 import AppKit
 import ApplicationServices
 
+
+/// 锁屏时 AX 树只剩骨架（windows 都是 AXApplication 占位），
+/// 一切「找不到容器」的结论都不成立。先判锁屏，别把环境问题当产品缺陷。
+func screenLocked() -> Bool {
+    guard let d = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+    return (d["CGSSessionScreenIsLocked"] as? Bool) ?? false
+}
+
 enum AXTreeDump {
     static func run() -> Int32 {
+        if screenLocked() {
+            print("RESULT: SKIP（屏幕已锁 —— AX 树只剩骨架，dump 无意义）")
+            return 0
+        }
         guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.mail" }) else {
             print("RESULT: SKIP（Mail 没在运行）")
             return 0
@@ -19,9 +31,10 @@ enum AXTreeDump {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.4)
 
-        var winsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
-              let wins = winsRef as? [AXUIElement], !wins.isEmpty else {
+        // 窗口查找必须和 --probe-mail 同口径（MailProbe.windows 会滤掉 AXApplication 占位、
+        // 跳过菜单栏、带预算）。11-23 之前这里自己读 kAXWindowsAttribute，两边一个能看见一个看不见。
+        let wins = MailProbe.windows(pid)
+        guard !wins.isEmpty else {
             print("RESULT: SKIP（Mail 没有窗口 —— 打开一封写信窗口再跑）")
             return 0
         }
@@ -70,7 +83,14 @@ enum AXTreeDump {
             }
             let fr = CGRect(origin: pt, size: sz)
             let pad = String(repeating: " ", count: min(depth, 24))
-            print("\(pad)\(role)\(sub.isEmpty ? "" : "(\(sub))") edit=\(isEditable ? "1" : "0") selRange=\(selRangeOK ? "1" : "0") valLen=\(valLen) frame=\(Int(fr.width))x\(Int(fr.height))@\(Int(fr.origin.x)),\(Int(fr.origin.y))")
+            var settable = ""
+            if let one = axRangeValue(0, 1) {
+                let e = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, one)
+                if e == .success {
+                    if let back = axSelection(el), back.length == 1 { settable = " selSet=ok" } else { settable = " selSet=谎" }
+                }
+            }
+            print("\(pad)\(role)\(sub.isEmpty ? "" : "(\(sub))") edit=\(isEditable ? "1" : "0") selRange=\(selRangeOK ? "1" : "0") valLen=\(valLen)\(settable) frame=\(Int(fr.width))x\(Int(fr.height))@\(Int(fr.origin.x)),\(Int(fr.origin.y))")
 
             var kidsRef: CFTypeRef?
             guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &kidsRef) == .success,

@@ -9,20 +9,15 @@
 
       ],
       "blocks" : 9,
-      "chars" : 240,
+      "chars" : 244,
       "englishBlocks" : 7,
-      "itemCount" : 1,
+      "itemCount" : 0,
       "items" : [
-        {
-          "original" : "have send",
-          "rect" : "[124,388,75,18]",
-          "replacement" : "have sent",
-          "type" : "grammar"
-        }
+
       ],
       "kind" : "compose",
       "langSkippedBlocks" : 1,
-      "note" : "",
+      "note" : "可见 9 块 \/ 屏幕外 0 块；其中中文块 0（0 字，按设计跳过）、英文块 7 → 本次命中 0",
       "offscreenBlocks" : 0,
       "rectsInsideWindow" : true,
       "skippedCjkBlocks" : 0,
@@ -30,7 +25,7 @@
       "staticTexts" : 15,
       "textAreas" : 0,
       "title" : "New Message",
-      "totalChars" : 240,
+      "totalChars" : 244,
       "visibleBlocks" : 9,
       "webAreaFound" : true,
       "windowRect" : [
@@ -45,20 +40,15 @@
 
       ],
       "blocks" : 9,
-      "chars" : 240,
+      "chars" : 244,
       "englishBlocks" : 7,
-      "itemCount" : 1,
+      "itemCount" : 0,
       "items" : [
-        {
-          "original" : "have send",
-          "rect" : "[545,207,58,16]",
-          "replacement" : "have sent",
-          "type" : "grammar"
-        }
+
       ],
       "kind" : "reading",
       "langSkippedBlocks" : 1,
-      "note" : "",
+      "note" : "可见 9 块 \/ 屏幕外 0 块；其中中文块 0（0 字，按设计跳过）、英文块 7 → 本次命中 0",
       "offscreenBlocks" : 0,
       "rectsInsideWindow" : true,
       "skippedCjkBlocks" : 0,
@@ -66,7 +56,7 @@
       "staticTexts" : 38,
       "textAreas" : 1,
       "title" : "Drafts – Network Management – 1 draft",
-      "totalChars" : 240,
+      "totalChars" : 244,
       "visibleBlocks" : 9,
       "webAreaFound" : true,
       "windowRect" : [

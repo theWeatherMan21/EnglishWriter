@@ -367,7 +367,7 @@ enum MailProbe {
         return ["new message", "新邮件", "no subject", "无主题", "untitled", "未命名", "re:"].contains { t.contains($0) }
     }
 
-    private static func windows(_ pid: pid_t) -> [AXUIElement] {
+    static func windows(_ pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.25)
         var raw: CFTypeRef?
