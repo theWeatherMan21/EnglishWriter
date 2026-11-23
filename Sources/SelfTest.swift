@@ -2480,6 +2480,18 @@ extension SelfTest {
             SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
         }
 
+        // 写信窗口的正文区（AXWebArea 自身不可编辑，但同窗口有可编辑控件）→ 必须查
+        if InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                  hasEditableWebField: false, checkReading: false,
+                                  inEditableWindow: true) {
+            SelfTest.ok("gate: 写信窗口正文区 → 查", "true")
+        } else { SelfTest.bad("gate: 写信窗口正文区", "被判只读") }
+        if !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                   hasEditableWebField: false, checkReading: false,
+                                   inEditableWindow: false) {
+            SelfTest.ok("gate: 阅读窗口正文区 → 不查", "false")
+        } else { SelfTest.bad("gate: 阅读窗口正文区", "被查了") }
+
         // 只查「你在写的」，不查「别人写的」：reading 视图默认不查
         if !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
                                    hasEditableWebField: false, checkReading: false) {

@@ -180,6 +180,56 @@ enum AXInline {
         return nil
     }
 
+    /// web area 所在的**窗口**里是否存在可编辑控件（收件人/主题/正文任何一处）。
+    /// Mail 写信窗口：正文是 AXWebArea，它自己 AXEditable=false，可编辑的是同窗口的兄弟节点；
+    /// 阅读窗口则一个可编辑控件都没有 —— 这就是 compose 与 reading 的确定性区分。
+    static func webAreaIsInEditableWindow(_ webArea: AXUIElement, pid: pid_t) -> Bool {
+        var cur: AXUIElement? = webArea
+        var win: AXUIElement?
+        var hops = 0
+        while let c = cur, hops < 12 {
+            if (attrString(c, kAXRoleAttribute as String) ?? "") == "AXWindow" { win = c; break }
+            guard let raw = attr(c, kAXParentAttribute as String) else { break }
+            let cf = raw as CFTypeRef
+            guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
+            cur = (cf as! AXUIElement)
+            hops += 1
+        }
+        guard let w = win else { return false }
+        for node in descendants(w, depth: 8) {
+            let role = attrString(node, kAXRoleAttribute as String) ?? ""
+            guard role == "AXTextArea" || role == "AXTextField" else { continue }
+            if AXInline.isEditable(node) { return true }
+        }
+        return false
+    }
+
+    /// 一个 App 里「最值得看的」WebArea：优先含可编辑控件的（= 你正在写的），
+    /// 其次文本最长的。Mail 的窗口里往往同时有邮件列表（几百个 3 字块）和正文，
+    /// 只取第一个 WebArea 会去查列表那堆垃圾（11-23 实测 blocks=431 全是列表行）。
+    static func bestWebBody(pid: pid_t) -> (el: AXUIElement, len: Int, hasField: Bool)? {
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 1.0)
+        var wins: [AXUIElement] = []
+        for key in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+            if let v = attr(appEl, key as String), CFGetTypeID(v) == AXUIElementGetTypeID() {
+                wins.append(v as! AXUIElement)
+            }
+        }
+        wins.append(contentsOf: (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? [])
+        var best: (el: AXUIElement, len: Int, hasField: Bool, score: Int)?
+        for w in wins {
+            for node in descendants(w, depth: 12) where WebText.isWebBody(node) {
+                let len = WebText.blocks(of: node).reduce(0) { $0 + ($1.text as NSString).length }
+                if len < 20 { continue }
+                let hasField = textField(in: node) != nil
+                let score = (hasField ? 1_000_000 : 0) + len
+                if best == nil || score > best!.score { best = (node, len, hasField, score) }
+            }
+        }
+        return best.map { ($0.el, $0.len, $0.hasField) }
+    }
+
     /// WebArea 里的真输入控件：网页里的 textarea/input 在 AX 树里是 AXTextArea/AXTextField，
     /// AXValue 直接有内容（Chromium 真机实测）。有它就优先用它 —— 整页静态文本当正文会查错地方。
     static func textField(in body: AXUIElement) -> AXUIElement? {
@@ -896,7 +946,15 @@ final class InlineController {
         case .keywindowEditable:
             el = keyEl!; picked = "keywindow-editable"; diag.lastPath = "keywindow-editable"
         case .windowBody:
-            el = wbEl!; picked = WebText.isWebBody(el) ? "web-body" : "window-body"
+            // Mail 这类窗口里同时有邮件列表和正文：取「含输入控件 / 文本最长」的那块，
+            // 不取第一个 WebArea（11-23 实测：第一个是列表，431 个 3 字块）
+            if let best = AXInline.bestWebBody(pid: pid) {
+                el = best.el
+                picked = best.hasField ? "web-body-with-field" : "web-body-longest"
+            } else {
+                el = wbEl!
+                picked = WebText.isWebBody(el) ? "web-body" : "window-body"
+            }
             diag.fallbackTextArea += 1
         case .none:
             diag.lastError = "没有焦点文本框"
@@ -916,14 +974,17 @@ final class InlineController {
         // 浏览器宿主已在上游 skip-browser；这里管的是其它 App 的只读正文（PDF / 预览 / 面板说明）。
         let isMailBody = WebText.isWebBody(el) && appName(pid) == "Mail"
         let hasEditableWebField = WebText.isWebBody(el) && AXInline.textField(in: el) != nil
+        let inEditableWindow = WebText.isWebBody(el) && AXInline.webAreaIsInEditableWindow(el, pid: pid)
         if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
                                    isWebBody: WebText.isWebBody(el),
                                    isMailBody: isMailBody,
                                    hasEditableWebField: hasEditableWebField,
-                                   checkReading: EnginePrefs.checkReading) {
+                                   checkReading: EnginePrefs.checkReading,
+                                   inEditableWindow: inEditableWindow) {
             // 证据必须能自证：是不是真的有可编辑控件被误判成只读？
             let elRole = attrString(el, kAXRoleAttribute as String) ?? "?"
-            let kind = AXInline.isEditable(el) ? "editable-but-unreadable" : "readonly"
+            let kind = AXInline.isEditable(el) ? "editable-but-unreadable"
+                     : (WebText.isWebBody(el) ? "readonly-web" : "readonly")
             emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: elRole,
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: kind, at: Date()))
@@ -1642,9 +1703,11 @@ enum InlineGate {
     /// 他说得对：Mail 阅读视图是别人的邮件，不是主场，还带来大量 skip-readonly。
     /// checkReading 保留开关（默认关），确要读信时再打开。
     static func shouldCheck(editable: Bool, isWebBody: Bool, isMailBody: Bool,
-                            hasEditableWebField: Bool, checkReading: Bool = false) -> Bool {
+                            hasEditableWebField: Bool, checkReading: Bool = false,
+                            inEditableWindow: Bool = false) -> Bool {
         if editable { return true }
         if isWebBody && hasEditableWebField { return true }
+        if isWebBody && inEditableWindow { return true }      // 写信窗口的正文区
         if checkReading && isWebBody && isMailBody { return true }
         return false
     }
