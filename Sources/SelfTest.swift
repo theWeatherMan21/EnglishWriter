@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2464,6 +2464,21 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 菜单上的引擎状态文案（用户不用猜为什么没线）
+extension SelfTest {
+    static func engineStatusTextTests() {
+        let a = EngineStatusText.describe(ltOn: true, ltOK: true, modelConfigured: false)
+        let b = EngineStatusText.describe(ltOn: true, ltOK: false, modelConfigured: true)
+        let c = EngineStatusText.describe(ltOn: true, ltOK: false, modelConfigured: false)
+        let d = EngineStatusText.describe(ltOn: false, ltOK: false, modelConfigured: false)
+        if a.contains("就绪") && b.contains("走模型接口") && c.contains("重试") && d.contains("未开启") {
+            ok("status: 四种引擎状态各有明说", "就绪 / 走模型 / 重试 / 未开启")
+        } else {
+            bad("status: 引擎状态文案", "\(a) | \(b) | \(c) | \(d)")
+        }
     }
 }
 

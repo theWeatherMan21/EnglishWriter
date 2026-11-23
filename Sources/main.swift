@@ -47,6 +47,17 @@ enum LocalEngineBootstrap {
     }
 }
 
+/// 菜单里那行引擎状态的文案（纯函数，可断言；不让用户猜「为什么没线」）
+enum EngineStatusText {
+    static func describe(ltOn: Bool, ltOK: Bool, modelConfigured: Bool) -> String {
+        if ltOK { return "检查引擎：就绪（本机 LanguageTool）" }
+        if ltOn && modelConfigured { return "检查引擎：本机未就绪，走模型接口" }
+        if ltOn { return "检查引擎：未就绪（点「重试连接引擎」）" }
+        if modelConfigured { return "检查引擎：模型接口" }
+        return "检查引擎：未开启（设置里启动引擎或填接口）"
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var model: AppModel!
@@ -55,6 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var realShotArgs: [String]?
     /// 改写候选菜单的暂存（点选后才应用）
     private var rewritePending: (cands: [RewriteCandidate], segment: String, segStart: Int)?
+    private var engineStatusItem: NSMenuItem!
+    private var engineStatusTimer: Timer?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // ★ 2026-11-18：常驻日志 + 检查事件落盘（读者是自检 cron / 婉宜，不是用户）。
@@ -86,6 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        // 引擎状态是「能不能用」的唯一可见答案：爹地 11-23 遇到「写什么都没线」，
+        // 界面上一句话都没有。这一行只显示、不可点，8 秒刷新。
+        engineStatusItem = NSMenuItem(title: "检查引擎：检测中…", action: nil, keyEquivalent: "")
+        engineStatusItem.isEnabled = false
+        menu.addItem(engineStatusItem)
+        menu.addItem(.separator())
+
         let editItem = NSMenuItem(title: "改选中文本", action: #selector(triggerAction), keyEquivalent: "")
         editItem.image = NSImage(systemSymbolName: "text.badge.checkmark", accessibilityDescription: nil)
         menu.addItem(editItem)
@@ -93,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(undoItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "立即检查当前段落", action: #selector(checkNowAction), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "重试连接引擎", action: #selector(retryEngineAction), keyEquivalent: ""))
         if Rewrite.isAvailable() {
             menu.addItem(NSMenuItem(title: "改写选中段落…", action: #selector(rewriteAction), keyEquivalent: ""))
         }
@@ -121,6 +142,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quitAction), keyEquivalent: "q"))
         for item in menu.items { item.target = self }
         statusItem.menu = menu
+
+        // 引擎状态刷新：读得到=就绪，读不到=未就绪（不画线）。用户不用猜「为什么没线」。
+        engineStatusTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let ltOn = EnginePrefs.ltEnabled()
+                var ltOK = false
+                if ltOn { ltOK = await LocalEngine.available() }
+                let cfg = SettingsStore.load()
+                self.engineStatusItem.title = EngineStatusText.describe(ltOn: ltOn, ltOK: ltOK,
+                                                                       modelConfigured: cfg.isComplete)
+            }
+        }
+        engineStatusTimer?.fire()
 
         // 菜单栏图标自证：--status-probe 打印 statusItem 的窗口与屏几何后退出。
         // 为什么需要：爹地 11-23 报「看不到图标」，光看代码没法区分
@@ -265,6 +300,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rewritePending = nil
     }
     @MainActor @objc private func clearAction() { InlineController.shared.clearUnderlines() }
+
+    /// 用户点「重试连接引擎」：绕过 120s 节流直接拉一次，并把状态翻过来
+    @MainActor @objc private func retryEngineAction() {
+        LocalEngineBootstrap.ensureRunning()
+        Task { @MainActor in
+            var ok = await LocalEngine.available(force: true)
+            if !ok {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)   // JVM 起要几秒
+                ok = await LocalEngine.available(force: true)
+            }
+            self.engineStatusItem.title = ok ? "检查引擎：就绪（本机 LanguageTool）"
+                                             : "检查引擎：仍未就绪（点这里再试）"
+            InlineController.shared.checkNow()
+        }
+    }
 
     @MainActor @objc private func demoAction() {
         let d = DemoController()
