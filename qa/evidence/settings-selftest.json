@@ -94,6 +94,11 @@
       "detail" : "EW_DEBUG=未设 → SettingsView.debugUI=false（诊断区此时不渲染）",
       "name" : "调试UI门控=EW_DEBUG",
       "pass" : true
+    },
+    {
+      "detail" : "totalMs=430 slow=2 收尾后 totalMs=430",
+      "name" : "AX记账·总量与慢计数",
+      "pass" : true
     }
   ],
   "check" : "settings-selftest",
@@ -106,7 +111,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-23T09:09:33Z",
+  "generatedAt" : "2026-11-23T11:00:57Z",
   "netStub" : {
     "emptyConfigHits" : 0,
     "how" : "URLProtocol 打桩计数（CountingProtocol）",

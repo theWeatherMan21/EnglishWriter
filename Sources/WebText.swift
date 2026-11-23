@@ -29,7 +29,7 @@ enum WebText {
         func walk(_ el: AXUIElement, depth: Int) {
             guard depth > 0, budget > 0 else { return }
             if Date() > until { budget = 0; return }
-            for c in attrChildren(el) {
+            for c in attrChildrenFast(el) {
                 budget -= 1
                 if budget <= 0 { return }
                 let role = attrString(c, kAXRoleAttribute as String) ?? ""
@@ -198,7 +198,7 @@ enum WebText {
                 if area >= bestArea { bestArea = area; best = el }
                 return      // 最外层可编辑节点就是正文容器，不再往下钻
             }
-            for c in attrChildren(el) { walk(c, depth: depth - 1) }
+            for c in attrChildrenFast(el) { walk(c, depth: depth - 1) }
         }
         walk(body, depth: 10)
         return best
@@ -257,7 +257,7 @@ enum WebText {
         func walk(_ el: AXUIElement, depth: Int) {
             guard depth > 0, budget > 0 else { return }
             if Date() > until { budget = 0; return }
-            for c in attrChildren(el) {
+            for c in attrChildrenFast(el) {
                 budget -= 1
                 if budget <= 0 { return }
                 let r0 = attrString(c, kAXRoleAttribute as String) ?? ""

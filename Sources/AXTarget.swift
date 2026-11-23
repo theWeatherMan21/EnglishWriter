@@ -274,8 +274,48 @@ func axRangeValue(_ location: Int, _ length: Int) -> AXValue? {
     return AXValueCreate(.cfRange, &r)
 }
 
-/// 慢 AX 调用记账：超过 100ms 就打一行（知澜 11-23 定的判据）。
-/// 卡顿不是 CPU/内存，是主线程同步 AX 阻塞；没有这个日志就只能靠猜。
+/// 一轮检查内的 AX 记账：总耗时 / 慢调用数 / 各属性次数 / 焦点元素复用。
+/// 卡顿不是 CPU/内存，是主线程同步 AX 阻塞（知澜 11-23 判据）。
+/// 只有逐个打日志看不出「这一轮到底卡在哪、卡了多久」，所以按轮汇总。
+final class AXRoundStats {
+    static let shared = AXRoundStats()
+    private(set) var totalMs = 0
+    private(set) var slowCount = 0
+    private(set) var focusedCalls = 0
+    private var byName: [String: Int] = [:]
+    private var byNameMs: [String: Int] = [:]
+    private var focused: [pid_t: AXUIElement] = [:]
+    private var active = false
+
+    func begin() {
+        totalMs = 0; slowCount = 0; focusedCalls = 0; byName = [:]; byNameMs = [:]; focused = [:]; active = true
+    }
+    func end(_ tag: String) {
+        guard active else { return }
+        active = false
+        let hot = byNameMs.sorted { $0.value > $1.value }.prefix(3)
+            .map { "\($0.key)=\($0.value)ms×\(byName[$0.key] ?? 0)" }.joined(separator: " ")
+        // INFO，不是 ERROR：慢调用是性能事实，不是故障。
+        AppLog.info("ax", "\(tag) axTotal=\(totalMs)ms slow=\(slowCount) focused=\(focusedCalls) \(hot)")
+    }
+    func add(_ name: String, _ ms: Int) {
+        guard active else { return }
+        totalMs += ms
+        byName[name, default: 0] += 1
+        byNameMs[name, default: 0] += ms
+        if ms >= 100 { slowCount += 1 }
+    }
+    /// 焦点元素一轮只取一次（每轮检查会问好几遍，每次都 100~1500ms）
+    func focusedElement(_ pid: pid_t, fetch: () -> AXUIElement?) -> AXUIElement? {
+        if let c = focused[pid] { return c }
+        focusedCalls += 1
+        let e = fetch()
+        if let e { focused[pid] = e }
+        return e
+    }
+}
+
+/// 慢 AX 调用记账（保留给老判据用；新聚合走 AXRoundStats）
 private var axSlowCount = 0
 func axSlowCountValue() -> Int { axSlowCount }
 
@@ -284,9 +324,11 @@ func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
     var out: CFTypeRef?
     let r = AXUIElementCopyAttributeValue(el, name as CFString, &out)
     let ms = Int(Date().timeIntervalSince(t0) * 1000)
+    AXRoundStats.shared.add(name, ms)
     if ms >= 100 {
         axSlowCount += 1
-        AppLog.error("ax", "slow attr=\(name) \(ms)ms（累计 \(axSlowCount)）")
+        // 降级为 INFO：慢不等于错，汇总行比单条更有用
+        AppLog.info("ax", "slow attr=\(name) \(ms)ms（累计 \(axSlowCount)）")
     }
     guard r == .success else { return nil }
     return out
@@ -296,6 +338,17 @@ func attrString(_ el: AXUIElement, _ name: String) -> String? { attr(el, name) a
 
 func attrChildren(_ el: AXUIElement) -> [AXUIElement] {
     (attr(el, kAXChildrenAttribute as String) as? [AXUIElement]) ?? []
+}
+
+/// 遍历用的取子节点：单次调用加 80ms 上限（知澜 11-23 判据）。
+/// 节点预算只能限制「取多少个」，限不住「一次调用等多久」——
+/// 实测 AXChildren 有 1500ms 的，一次就把主线程按住 1.5 秒。
+/// 超时当作空子树（宁可少画几块，也不能让界面顿住）。
+func attrChildrenFast(_ el: AXUIElement) -> [AXUIElement] {
+    AXUIElementSetMessagingTimeout(el, 0.08)
+    let kids = (attr(el, kAXChildrenAttribute as String) as? [AXUIElement]) ?? []
+    AXUIElementSetMessagingTimeout(el, 0.25)
+    return kids
 }
 
 let editableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXStaticText"]

@@ -95,6 +95,11 @@ enum AXInline {
     }
 
     static func focusedElement(pid: pid_t) -> AXUIElement? {
+        // 一轮检查内复用：每问一次 100~1500ms，问三遍就是白等三秒
+        return AXRoundStats.shared.focusedElement(pid) { focusedElementUncached(pid: pid) }
+    }
+
+    private static func focusedElementUncached(pid: pid_t) -> AXUIElement? {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.25)
         guard let f = attr(appEl, kAXFocusedUIElementAttribute as String) else { return nil }
@@ -342,7 +347,7 @@ enum AXInline {
     static func descendants(_ el: AXUIElement, depth: Int) -> [AXUIElement] {
         guard depth > 0 else { return [] }
         var out: [AXUIElement] = []
-        for c in attrChildren(el) {
+        for c in attrChildrenFast(el) {
             out.append(c)
             out.append(contentsOf: descendants(c, depth: depth - 1))
         }
@@ -940,6 +945,12 @@ final class InlineController {
 
     /// 指定 pid / 元素检查（真机验收器与悬停卡片都走这条：不信焦点判定，直接给元素）
     func checkNow(for pid: pid_t, element explicit: AXUIElement? = nil) {
+        AXRoundStats.shared.begin()
+        defer { AXRoundStats.shared.end("check-round") }
+        checkNowCore(for: pid, element: explicit)
+    }
+
+    private func checkNowCore(for pid: pid_t, element explicit: AXUIElement? = nil) {
         guard enabled else { return }
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
         guard pid > 0 else { return }

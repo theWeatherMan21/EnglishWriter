@@ -102,7 +102,7 @@ enum MailProbe {
             guard role == "AXWindow" || role == "AXGroup" || role == "AXToolbar" || role == "AXSplitGroup"
                     || role == "AXScrollArea" || role == "AXWebArea" || role == kAXButtonRole as String
                     || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String || role.isEmpty else { return }
-            for c in attrChildren(el) { walk(c, depth: depth - 1) }
+            for c in attrChildrenFast(el) { walk(c, depth: depth - 1) }
         }
         walk(front, depth: 8)
         if sendHit { return (true, "发送按钮") }

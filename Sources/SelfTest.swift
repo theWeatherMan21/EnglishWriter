@@ -1209,6 +1209,20 @@ enum SelfTest {
               SettingsView.debugUI == envDebug,
               "EW_DEBUG=\(envDebug ? "1" : "未设") → SettingsView.debugUI=\(SettingsView.debugUI)（诊断区此时\(SettingsView.debugUI ? "渲染" : "不渲染")）")
 
+        // 11.5) AX 一轮记账：汇总行必须能反映「这一轮卡了多久、慢了几次」。
+        //     知澜 11-23 判据：check-round axTotal 要能对上，slow 要能数。
+        let st = AXRoundStats.shared
+        st.begin()
+        st.add("AXChildren", 120)      // 慢
+        st.add("AXRole", 10)           // 快
+        st.add("AXValue", 300)         // 慢
+        let t1 = st.totalMs, s1 = st.slowCount
+        st.end("selftest")             // 收尾后 active=false，不该再累加
+        st.add("AXRole", 999)
+        check("AX记账·总量与慢计数",
+              t1 == 430 && s1 == 2 && st.totalMs == 430,
+              "totalMs=\(t1) slow=\(s1) 收尾后 totalMs=\(st.totalMs)")
+
         // 6) 证据落盘
         evidence["check"] = "settings-selftest"
         evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())
