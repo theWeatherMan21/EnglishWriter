@@ -181,6 +181,31 @@ enum M3Flow {
         var detail: String
     }
 
+    /// 读回补齐：宿主异步写回时，前几次读到的可能是旧文本。
+    /// 返回最后一次读到的内容（成功就早退，不为省时间而漏判）。
+    static func readBack(doc: M3Doc, expected: String, tries: Int = 8, gapUS: useconds_t = 50_000) -> String {
+        var last = doc.fullText
+        let want = normalize(expected)
+        var i = 0
+        while i < tries {
+            last = doc.fullText
+            if normalize(last) == want { return last }
+            usleep(gapUS)
+            i += 1
+        }
+        return last
+    }
+
+    /// 比较文本前先抹掉「肉眼看不见」的差异：NBSP、行尾空白、全角空格
+    static func normalize(_ s: String) -> String {
+        s.replacingOccurrences(of: "\u{00A0}", with: " ")
+         .replacingOccurrences(of: "\u{3000}", with: " ")
+         .split(separator: "\n", omittingEmptySubsequences: false)
+         .map { $0.replacingOccurrences(of: " +$", with: "", options: .regularExpression) }
+         .joined(separator: "\n")
+         .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// 接受一条：**只**替换这一条的 range（同一段其它建议不动），接受前把全文快照压栈
     static func accept(items: [DiffItem], only id: Int, in doc: M3Doc, stack: M3UndoStack) -> AcceptOutcome {
         let before = doc.fullText
@@ -205,9 +230,12 @@ enum M3Flow {
                                 snapshot: before, newText: expected, doc: doc, at: Date())
         stack.push(entry)
         let wrote = doc.replace(range: it.utf16Range, with: it.replacement)
-        let after = doc.fullText
+        // 读回校验：Mail / Word 这类宿主写回是异步的，立刻读会读到旧文本，
+        // 于是「写了但判定失败再回滚」—— 用户看到的就是「点了接受没反应」。
+        // 所以最多等 400ms 复读，并且比较前做空白归一（NBSP / 行尾空格）。
+        let after = doc.canReadBack ? readBack(doc: doc, expected: expected) : doc.fullText
         // 读不回正文的输入框（Chromium）：只信写回返回值，不比文本
-        let matches = doc.canReadBack ? (after == expected) : true
+        let matches = doc.canReadBack ? (Self.normalize(after) == Self.normalize(expected)) : true
         if !wrote || !matches {
             stack.pop()
             return AcceptOutcome(ok: false, expected: expected, actual: after,

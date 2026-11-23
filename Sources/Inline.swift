@@ -565,6 +565,7 @@ final class InlineController {
     /// 改写建议：把候选的逐条 diff 当作本次条目（不刷新 UI、不重查）
     func adoptForRewrite(_ newItems: [DiffItem]) {
         items = newItems
+        if !newItems.isEmpty { lastNonEmptyItems = newItems }
         itemBlock = newItems.map { _ in -1 }
     }
 
@@ -673,6 +674,17 @@ final class InlineController {
         let ballRect = FloatBall.shared.isVisible ? FloatBall.shared.frame : nil
         sb.present(items: items, score: score, at: ballRect)
     }
+
+    /// 取哪份列表去接受：当前列表为空就用存档（两段式点击期间的 refresh 会清空）
+    nonisolated static func itemsForAccept(_ items: [DiffItem], archive: [DiffItem]) -> [DiffItem] {
+        items.isEmpty ? archive : items
+    }
+
+    /// 最近一次非空的建议列表。卡片/侧栏是「点开后再点按钮」两段式，
+    /// 中间那一次 refresh 可能把 items 清空（宿主重排版、焦点跳走），
+    /// 此时按 id 取会「越界 id=0 items=0」——爹地 11-23 撞到两次。
+    /// 落地：拿最近这份存档做兜底，写回前仍会校验 range/original，不会写错地方。
+    private var lastNonEmptyItems: [DiffItem] = []
 
     /// 侧栏条目 → items 索引（侧栏点接受/忽略/跳转都要靠它对上号）
     enum ItemLocator {
@@ -1358,6 +1370,7 @@ final class InlineController {
             for r in rects { specs.append(UnderlineSpec(rect: r, kind: it.kind, itemID: id, ownerPid: pid)) }
         }
         items = kept
+        if !kept.isEmpty { lastNonEmptyItems = kept }
         itemBlock = keptMap
         if newItems.count > kept.count {
             emit(CheckEvent(kind: "truncated", pid: pid, app: appName(pid),
@@ -1407,13 +1420,21 @@ final class InlineController {
         // 四段日志：accept-begin → accept-write → accept-readback / accept-fail
         // 为什么这么细：爹地报过「点了接受没反应」，而日志里只有一条 ok=false，
         // 分不清是没点中、写不进去、还是写进去又回滚了。三段分开记，一眼看出卡在哪。
-        guard id >= 0, id < items.count else {
+        // items 被 refresh 清空时用存档兜底（写回前 M3Flow 仍校验 range/original）
+        let pool = Self.itemsForAccept(items, archive: lastNonEmptyItems)
+        guard id >= 0, id < pool.count else {
             emit(CheckEvent(kind: "accept-fail", pid: currentPid, app: appName(currentPid), role: "card",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
-                            elapsed: "-", err: "越界 id=\(id) items=\(items.count)", at: Date()))
+                            elapsed: "-", err: "越界 id=\(id) items=\(items.count) 存档=\(lastNonEmptyItems.count)", at: Date()))
             return false
         }
-        let it = items[id]
+        if items.isEmpty {
+            emit(CheckEvent(kind: "accept-begin", pid: currentPid, app: appName(currentPid), role: "card",
+                            textLen: 0, sentenceLen: 0, itemCount: id, rectCount: overlay.specs.count,
+                            elapsed: "-", err: "items 已清空，改用存档第 \(id) 条", at: Date()))
+        }
+        items = pool
+        let it = pool[id]
         emit(CheckEvent(kind: "accept-begin", pid: currentPid, app: appName(currentPid), role: "card",
                         textLen: 0, sentenceLen: 0, itemCount: id, rectCount: overlay.specs.count,
                         elapsed: "-", err: "range=\(it.start)+\(it.length) \"\(it.original)\"" , at: Date()))
@@ -1611,6 +1632,7 @@ final class InlineController {
             }
         }
         items = cleaned
+        if !cleaned.isEmpty { lastNonEmptyItems = cleaned }
         itemBlock = Array(repeating: -1, count: cleaned.count)
         diag.lastRectCount = specs.count
         guard !specs.isEmpty else { diag.lastError = "算不出屏幕矩形"; return }

@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2444,6 +2444,56 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 接受失败的两种真机形态（读回滞后 / items 被清空）
+extension SelfTest {
+    static func acceptRecoveryTests() {
+        // ① 空白归一：Mail 写回会带 NBSP 和行尾空格，逐字节比较必然判「不一致」
+        if M3Flow.normalize("I have sent\u{00A0}it. \n\n") == M3Flow.normalize("I have sent it.") {
+            ok("accept: 空白归一", "NBSP/行尾空格/末尾换行视为相同")
+        } else {
+            bad("accept: 空白归一", "归一后仍不相等")
+        }
+
+        // ② 读回滞后：前两次读到旧文本，第三次才对 —— 必须等到，不许回滚
+        final class LazyDoc: M3Doc {
+            var pid: pid_t = 1
+            var canReadBack = true
+            var text: String
+            var reads = 0
+            init(_ t: String) { text = t }
+            var fullText: String {
+                reads += 1
+                return reads <= 2 ? "I have send it." : text   // 前两次假装还没写完
+            }
+            func replace(range: NSRange, with t: String) -> Bool {
+                let ns = text as NSString
+                guard range.location >= 0, range.location + range.length <= ns.length else { return false }
+                text = ns.replacingCharacters(in: range, with: t)
+                return true
+            }
+            func writeFullText(_ t: String) -> Bool { text = t; return true }
+        }
+        let doc = LazyDoc("I have sent it.")
+        let item = DiffItem(start: 7, length: 4, original: "send", replacement: "sent",
+                            type: "grammar", reason: "完成时")
+        let out = M3Flow.accept(items: [item], only: 0, in: doc, stack: M3UndoStack())
+        if out.ok {
+            ok("accept: 读回滞后也能通过", "等了 \(doc.reads) 次读到正确文本")
+        } else {
+            bad("accept: 读回滞后被误判", out.detail)
+        }
+
+        // ③ 两段式点击：refresh 把 items 清空后，仍应按存档接受（否则「越界 id=0 items=0」）
+        let archived = [item]
+        if InlineController.itemsForAccept([], archive: archived).count == 1,
+           InlineController.itemsForAccept([item], archive: []).count == 1 {
+            ok("accept: items 被清空时用存档兜底", "1 条")
+        } else {
+            bad("accept: 存档兜底", "取不到条目")
+        }
     }
 }
 
