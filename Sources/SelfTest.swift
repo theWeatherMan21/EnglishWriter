@@ -2531,6 +2531,16 @@ extension SelfTest {
             } else { SelfTest.bad("sidebar: dismissed", "\(g.count) 组") }
         } else { SelfTest.bad("sidebar: dismissed 解析", "失败") }
 
+        // 语气：目标档位随 payload 下发（前端渲染按钮组），点哪档才发请求
+        let toneJSON = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [])
+        if let d = toneJSON.data(using: .utf8),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let targets = o["toneTargets"] as? [String] {
+            if !targets.isEmpty, targets == Rewrite.toneLabels {
+                SelfTest.ok("sidebar: 语气档位下发", "\(targets.count) 档 \(targets)")
+            } else { SelfTest.bad("sidebar: 语气档位", "\(targets)") }
+        } else { SelfTest.bad("sidebar: 语气档位解析", "失败") }
+
         // 改写三档进侧栏：默认空（点才发请求），有候选时按 label/text 原样下发
         let withRW = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [],
                                      rewrites: [.init(label: "更简洁", text: "We sent it.", note: "删冗余"),

@@ -61,7 +61,7 @@ const EW = {
     if (!groups.length) {
       document.getElementById('list').innerHTML =
         `<div class="empty"><div class="tick">✓</div><div>没有更多建议</div></div>`;
-      document.getElementById('tone').textContent = d.tone ? ('语气：' + d.tone) : '';
+      this.renderFoot(d);
       return;
     }
     document.getElementById('list').innerHTML = groups.map(g => `<div class="group">
@@ -76,7 +76,18 @@ const EW = {
           </div></div>`).join('')}
     </div>`).join('') || '<div class="foot">没有更多建议</div>';
 
-    document.getElementById('tone').textContent = d.tone ? ('语气：' + d.tone) : '';
+    this.renderFoot(d);
+  },
+
+  // 底部：当前语气 + 改写/语气动作。点哪一个才发请求（不自动烧钱）。
+  renderFoot(d) {
+    const el = document.getElementById('tone');
+    if (!el) return;
+    const cur = d.tone ? `<span class="tn">语气：${esc(d.tone)}</span>` : '';
+    const rw = `<button class="btn" onclick="EW.post({action:'rewrite'})">改写这一段</button>`;
+    const tones = (d.toneTargets || []).map(t =>
+      `<button class="btn" onclick="EW.post({action:'tone'})">${esc(t)}</button>`).join('');
+    el.innerHTML = cur + rw + tones;
   },
 
   // 接受：先在 200ms 内淡出这张卡，再通知 Swift（Swift 会重推新的计数与分数）

@@ -8,5 +8,6 @@ BIN="build/英文写作助手"
 mkdir -p qa/baseline
 "$BIN" --settings-snapshot qa/baseline/settings-panel.png >/dev/null
 "$BIN" --ball-snapshot qa/baseline/ball-states.png >/dev/null
+"$BIN" --sidebar-snapshot qa/baseline/sidebar-panel.png >/dev/null
 ls -l qa/baseline/*.png
 echo "基线已更新：记得 git add qa/baseline"

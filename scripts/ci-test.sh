@@ -111,13 +111,14 @@ echo "== 视觉基线 diff（改 CSS 就看得出跑没跑版）=="
 BASELINE="$PWD/qa/baseline"
 if [ -d "$BASELINE" ]; then
     # 先删再生成：生成失败时旧文件还在，会拿「旧证据 vs 基线」比出 0.000% 的假绿
-    rm -f "$PWD/qa/evidence/settings-panel.png" "$PWD/qa/evidence/ball-states.png"
+    rm -f "$PWD/qa/evidence/settings-panel.png" "$PWD/qa/evidence/ball-states.png" "$PWD/qa/evidence/sidebar-panel.png"
     "$BIN" --settings-snapshot "$PWD/qa/evidence/settings-panel.png" >/dev/null 2>&1 || true
     "$BIN" --ball-snapshot "$PWD/qa/evidence/ball-states.png" >/dev/null 2>&1 || true
-    for f in settings-panel ball-states; do
+    "$BIN" --sidebar-snapshot "$PWD/qa/evidence/sidebar-panel.png" >/dev/null 2>&1 || true
+    for f in settings-panel ball-states sidebar-panel; do
         [ -s "$PWD/qa/evidence/$f.png" ] || { echo "FAIL  快照生成失败：${f}.png"; exit 1; }
     done
-    for n in settings-panel ball-states; do
+    for n in settings-panel ball-states sidebar-panel; do
         if [ -s "$BASELINE/$n.png" ]; then
             "$BIN" --pngdiff "$BASELINE/$n.png" "$PWD/qa/evidence/$n.png" \
                 --threshold 0.001 --out "$PWD/qa/evidence/$n-diff.png" \

@@ -21,6 +21,7 @@ final class Sidebar: NSPanel {
     var onJump: ((DiffItem) -> Void)?
     var onAcceptAll: (() -> Void)?
     var onRewrite: (() -> Void)?
+    var onTone: (() -> Void)?
 
 
     private var web: WKWebView!
@@ -146,7 +147,8 @@ final class Sidebar: NSPanel {
 
     static func payload(items: [DiffItem], score: WritingScore, tone: String,
                         dismissed: Set<String>, rewrites: [RewriteOption] = [],
-                        rewriteBusy: Bool = false) -> String {
+                        rewriteBusy: Bool = false,
+                        toneTargets: [String] = Rewrite.toneLabels) -> String {
         let live = items.filter { !dismissed.contains(Self.key($0)) }
         func count(_ t: String?) -> Int {
             guard let t else { return live.count }
@@ -182,6 +184,8 @@ final class Sidebar: NSPanel {
             // 改写三档：默认空（点了才发请求，不许自动烧钱）
             "rewrites": rewrites.map { ["label": $0.label, "text": $0.text, "note": $0.note] },
             "rewriteBusy": rewriteBusy,
+            // 语气：目标档位给前端渲染成「改成 X」的按钮组；点哪档才发请求
+            "toneTargets": toneTargets,
         ]
         guard let d = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: d, encoding: .utf8) else { return "{}" }
@@ -224,6 +228,8 @@ extension Sidebar: WKScriptMessageHandler {
             if items.indices.contains(id) { onJump?(items[id]) }
         case "rewrite":
             onRewrite?()
+        case "tone":
+            onTone?()
         case "acceptAll":
             onAcceptAll?(); showSaved()
         case "close":
