@@ -78,6 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: "英文写作助手")
             button.image?.isTemplate = true
+            // 图标旁边加两个字母：细铅笔在一排菜单栏图标里几乎看不见，
+            // 爹地 11-23 因此以为 App 没起来（实测 statusItem 在屏上，只是认不出）。
+            button.title = " EW"
+            button.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
             button.toolTip = "英文写作助手（常驻检查，错误处自动画线）"
         }
 
