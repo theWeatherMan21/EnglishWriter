@@ -1247,9 +1247,32 @@ final class InlineController {
                             elapsed: "-", err: "上一轮块检查未结束，本轮合并", at: Date()))
             return
         }
+        // 先把「整块窗口」收窄到「真正在写的正文区」：
+        // Mail 窗口是一个 AXWebArea，左栏 Inbox/Drafts、邮件列表、正文全是它的子孙。
+        // 不收窄的后果（爹地 11-23 真机）：线画满整个窗口（左栏也画），
+        // 写回偏移按「整篇（含左栏）」算 → 位置对不上 → 点接受没反应。
+        let region = WebText.editableRegion(of: body)
+        let target = region ?? body
+        if region == nil {
+            emit(CheckEvent(kind: "no-editable-region", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "没找到可编辑正文区，退回整页并按左侧 20% 过滤", at: Date()))
+        }
         // 只查看得见的块：AXWebArea 代表整个文档，全量读出来能到 1477 块，
         // 一块一个 /v2/check 等于自己 DDoS 自己的引擎。
-        let visible = WebText.visibleBlocks(of: body, inWindow: WebText.windowFrame(of: body))
+        let win = WebText.windowFrame(of: body)
+        var visible = WebText.visibleBlocks(of: target, inWindow: win)
+        // 再按正文区筛一遍：线只允许落在「你在写的地方」
+        let frames = visible.map { WebText.frame($0.element) }
+        let filtered = WebText.filterOutsideNavigation(frames: frames,
+                                                       window: win,
+                                                       editableFrame: region.map { WebText.frame($0) })
+        if filtered.dropped > 0 {
+            visible = filtered.keep.map { visible[$0] }
+            emit(CheckEvent(kind: "drop-outside", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: filtered.dropped, rectCount: visible.count,
+                            elapsed: "-", err: "丢掉正文区外的 \(filtered.dropped) 块（左栏/列表/页脚）", at: Date()))
+        }
         let blks = Array(visible.prefix(webMaxBlocks))
         guard !blks.isEmpty else {
             diag.lastError = "Web 正文里没有可读文本块"

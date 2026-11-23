@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2444,6 +2444,41 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 只查「你在写的正文区」（Mail 左栏不许画线）
+extension SelfTest {
+    static func webRegionTests() {
+        let win = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        // 左栏导航（Inbox/Drafts/Sent）在 x<360，邮件列表 360..700，正文 700..1200
+        let nav = CGRect(x: 60, y: 100, width: 200, height: 20)
+        let list = CGRect(x: 420, y: 100, width: 200, height: 20)
+        let bodyBlock = CGRect(x: 760, y: 300, width: 300, height: 20)
+
+        let edited = CGRect(x: 700, y: 60, width: 500, height: 700)
+        let r1 = WebText.filterOutsideNavigation(frames: [nav, list, bodyBlock], window: win, editableFrame: edited)
+        if r1.keep == [2], r1.dropped == 2 {
+            ok("web: 只保留正文区的块", "左栏+列表被丢，正文留下")
+        } else {
+            bad("web: 正文区过滤", "keep=\(r1.keep) dropped=\(r1.dropped)")
+        }
+
+        // 找不到可编辑区时：退化为「丢掉窗口左侧 20%」
+        let r2 = WebText.filterOutsideNavigation(frames: [nav, list, bodyBlock], window: win, editableFrame: nil)
+        if r2.keep == [1, 2], r2.dropped == 1 {
+            ok("web: 没有可编辑区时丢弃左侧 20%", "只丢左栏")
+        } else {
+            bad("web: 左侧 20% 退化", "keep=\(r2.keep) dropped=\(r2.dropped)")
+        }
+
+        // 全在正文区里 → 一个都不许丢（防误杀）
+        let r3 = WebText.filterOutsideNavigation(frames: [bodyBlock], window: win, editableFrame: edited)
+        if r3.keep == [0], r3.dropped == 0 {
+            ok("web: 正文区内不误杀", "1 条保留")
+        } else {
+            bad("web: 误杀", "dropped=\(r3.dropped)")
+        }
     }
 }
 

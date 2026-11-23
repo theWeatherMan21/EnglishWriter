@@ -57,6 +57,60 @@ enum WebText {
         return frame(el)
     }
 
+    /// 是不是「能打字」的网页节点：有 AXEditable，或有 AXSelectedTextRange（能插光标）
+    static func isEditableNode(_ el: AXUIElement) -> Bool {
+        if AXInline.isEditable(el) { return true }
+        var raw: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, "AXSelectedTextRange" as CFString, &raw) == .success, raw != nil {
+            return true
+        }
+        return false
+    }
+
+    /// 在 AXWebArea 子树里找出**真正在写的正文容器**（最大面积的那个可编辑节点）。
+    ///
+    /// 为什么必须有这一层（11-23 真机事故）：Mail 窗口整块是一个 AXWebArea，
+    /// 左栏 Inbox/Drafts、邮件列表、正文全是它的子孙。直接按 body 取块，线会画满整个窗口，
+    /// 写回的偏移也是「整篇（含左栏）」口径 —— 于是「整体残留」+「点接受没反应」同一个根因。
+    static func editableRegion(of body: AXUIElement) -> AXUIElement? {
+        var best: AXUIElement?
+        var bestArea: CGFloat = 0
+        func walk(_ el: AXUIElement, depth: Int) {
+            guard depth > 0 else { return }
+            if isEditableNode(el) {
+                let f = frame(el)
+                let area = max(0, f.width) * max(0, f.height)
+                if area >= bestArea { bestArea = area; best = el }
+                return      // 最外层可编辑节点就是正文容器，不再往下钻
+            }
+            for c in attrChildren(el) { walk(c, depth: depth - 1) }
+        }
+        walk(body, depth: 10)
+        return best
+    }
+
+    /// 纯函数：按「正文区」筛块。
+    ///   · 有 editableFrame：只保留中心点落在正文区内（±2pt 容差）的块
+    ///   · 没找到正文区：退化为「丢掉窗口左侧 20%」——那里是导航栏，不可能是正文
+    /// 返回 (保留的索引, 丢掉的个数)
+    static func filterOutsideNavigation(frames: [CGRect], window: CGRect,
+                                        editableFrame: CGRect?) -> (keep: [Int], dropped: Int) {
+        guard window.width > 0, window.height > 0 else { return (Array(frames.indices), 0) }
+        var keep: [Int] = []
+        var dropped = 0
+        for (i, f) in frames.enumerated() {
+            let c = CGPoint(x: f.midX, y: f.midY)
+            if let e = editableFrame, e.width > 0, e.height > 0 {
+                let ok = c.x >= e.minX - 2 && c.x <= e.maxX + 2 && c.y >= e.minY - 2 && c.y <= e.maxY + 2
+                if ok { keep.append(i) } else { dropped += 1 }
+                continue
+            }
+            let navEdge = window.minX + window.width * 0.2
+            if c.x >= navEdge { keep.append(i) } else { dropped += 1 }
+        }
+        return (keep, dropped)
+    }
+
     /// 只保留「屏幕上看得见」的文本块（Grammarly 口径）。
     ///
     /// 为什么必须过滤（2026-11-23 实测事故）：AXWebArea 代表整个文档，
