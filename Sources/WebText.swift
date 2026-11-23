@@ -46,6 +46,12 @@ enum WebText {
         return out
     }
 
+    /// 现读一个块元素当前的文本（不要用构造时抓的快照：Mail 写回后快照是旧的）
+    static func liveText(of el: AXUIElement) -> String? {
+        if let v = attrString(el, kAXValueAttribute as String) { return v }
+        return nil
+    }
+
     /// 文本框是不是 WebKit 形态
     static func isWebBody(_ el: AXUIElement) -> Bool {
         (attrString(el, kAXRoleAttribute as String) ?? "") == "AXWebArea"

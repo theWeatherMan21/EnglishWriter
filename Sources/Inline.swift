@@ -1491,8 +1491,11 @@ final class InlineController {
         let bi = itemBlock.indices.contains(id) ? itemBlock[id] : -1
         if bi >= 0, bi < blocks.count {
             let block = blocks[bi]
+            // read 必须现读 AX：构造时的 block.text 是快照，写回后再读还是旧值，
+            // 于是「明明写进去了」被判定成「写回后文本与期望不一致」并回滚（爹地 15:11 实测三次）。
+            let el = block.element
             return ClosureDoc(pid: currentPid,
-                              read: { block.text },
+                              read: { WebText.liveText(of: el) ?? block.text },
                               writeRange: { r, t in WebText.replace(range: r, with: t, in: block) },
                               writeFull: { t in
                                   WebText.replace(range: NSRange(location: 0, length: (block.text as NSString).length),
@@ -1521,17 +1524,21 @@ final class InlineController {
         Audit.write("Inline.accept")
         if AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success {
             Diag.shared.applyMethod = "AX 写回"
+            AppLog.info("m3", "write-layer=AXSelectedText range=\(range.location)+\(range.length)")
             return true
         }
-        // Chromium 网页字段：AXValue / AXSelectedText 实测都写不进（2026-11-16 探测）→ 剪贴板兜底
+        // Chromium / Mail 网页正文：AXValue / AXSelectedText 实测都写不进（11-16、11-23 两次探测）→ 剪贴板兜底
         _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
         if pasteViaClipboard(text, to: pid) {
             usleep(450_000)
-            if (attrString(el, kAXValueAttribute as String) ?? "").contains(text) {
-                Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
-                return true
-            }
+            // 这里**不再**用 el 的 AXValue 自证：WebArea 的 AXValue 恒空，
+            // 拿它判会「粘贴成功也判失败」再回滚（11-23 实测三次 accept-fail）。
+            // 写没写进去统一交给 M3Flow 的 readBack（现读块文本、带重试与空白归一）判。
+            Diag.shared.applyMethod = "剪贴板 ⌘V 兜底"
+            AppLog.info("m3", "write-layer=clipboard range=\(range.location)+\(range.length) len=\(text.count)")
+            return true
         }
+        AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（AX 与剪贴板都失败）")
         return false
     }
 

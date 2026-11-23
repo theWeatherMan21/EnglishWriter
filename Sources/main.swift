@@ -336,6 +336,12 @@ if argv.contains("--keywin") {
     exit(KeyWinProbe.run(argv))
 }
 
+// 真机闭环核对：把日志算成一条结论（出线 / 点中 / 写回 / 失败原因）
+if let i = argv.firstIndex(of: "--e2e-report") {
+    let mins = (i + 1 < argv.count) ? (Int(argv[i + 1]) ?? 10) : 10
+    exit(E2EReport.run(minutes: mins))
+}
+
 // 画线率 KPI（rectCount / 有建议次数），按 App 汇总 check-log
 if argv.contains("--kpi") {
     exit(KPI.run(argv))
@@ -457,7 +463,7 @@ if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--
 // MARK: 单实例 & 模式判定
 // 两个实例同时跑 = 两个全局点击监听抢同一批点击（11-19 实测：第一次被空 specs 的实例接住，
 // 第二次谁都没接到）。所以：常驻模式用一个文件锁，抢不到锁就退出。
-let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--keywin", "--quality", "--realshot", "--axdump", "--axprobe",
+let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--e2e-report", "--keywin", "--quality", "--realshot", "--axdump", "--axprobe",
                 "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome",
                 "--sidebar-snapshot", "--settings-snapshot", "--ball-snapshot", "--status-probe"]
 let isCLIMode = argv.contains { cliFlags.contains($0) }
