@@ -2728,6 +2728,16 @@ extension SelfTest {
             } else { SelfTest.bad("sidebar: 语气档位", "\(targets)") }
         } else { SelfTest.bad("sidebar: 语气档位解析", "失败") }
 
+        // 侧栏条目数必须等于引擎条数（不多不少，否则侧栏在骗人）
+        let totalInPayload = (try? JSONSerialization.jsonObject(with: payloadJSON.data(using: .utf8) ?? Data()) as? [String: Any])
+            .flatMap { $0?["groups"] as? [[String: Any]] }
+            .map { g in g.reduce(0) { $0 + (($1["items"] as? [[String: Any]])?.count ?? 0) } } ?? -1
+        if totalInPayload == sideItems.count {
+            SelfTest.ok("sidebar: 条目数与引擎一致", "\(totalInPayload) == \(sideItems.count)")
+        } else {
+            SelfTest.bad("sidebar: 条目数不一致", "payload=\(totalInPayload) 引擎=\(sideItems.count)")
+        }
+
         // 改写三档进侧栏：默认空（点才发请求），有候选时按 label/text 原样下发
         let withRW = Sidebar.payload(items: sideItems, score: score, tone: "正式", dismissed: [],
                                      rewrites: [.init(label: "更简洁", text: "We sent it.", note: "删冗余"),
