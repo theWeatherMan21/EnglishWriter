@@ -241,7 +241,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else if args.contains("--probe-mail"), args.contains("--wait-english") {
                         let ok = await MailProbe.waitForEnglish(args); exit(ok ? 0 : 1)
                     }
-                    else if args.contains("--probe-mail") { let ok = await MailProbe.run(args); exit(ok ? 0 : 1) }
+                    else if args.contains("--probe-mail") {
+                        // 自己带表：探针 9 秒必须自退（不许靠外部 timeout 收尸）。
+                        // 11-23 两次实测：AX/Mail 不响应时探针会卡住，外面只能强杀。
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+                            print("RESULT: TIMEOUT —— 探针 9 秒未完成，自己退出（卡在 AX 或引擎等待）")
+                            exit(2)
+                        }
+                        let ok = await MailProbe.run(args); exit(ok ? 0 : 1)
+                    }
                     else { await AXCheck.run(args) }
                 }
             } else {

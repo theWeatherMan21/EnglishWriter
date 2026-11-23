@@ -151,9 +151,18 @@ enum WebText {
     static func body(in window: AXUIElement) -> AXUIElement? {
         var web: AXUIElement?
         var area: (el: AXUIElement, size: CGFloat)?
+        // 有界：Mail 窗口 2000+ 节点，每个 attrChildren 都是一次 IPC。
+        // 无界递归在 Mail 不响应时会把调用方卡死（11-23 实测探针 >25s 不返回）。
+        var budget = 600
+        let until = Date().addingTimeInterval(0.8)
         func walk(_ el: AXUIElement, depth: Int) {
-            guard depth > 0 else { return }
+            guard depth > 0, budget > 0 else { return }
+            if Date() > until { budget = 0; return }
             for c in attrChildren(el) {
+                budget -= 1
+                if budget <= 0 { return }
+                let r0 = attrString(c, kAXRoleAttribute as String) ?? ""
+                if r0 == "AXMenuBar" || r0 == "AXMenu" || r0 == "AXMenuItem" { continue }
                 let role = attrString(c, kAXRoleAttribute as String) ?? ""
                 let f = frame(c)
                 if role == "AXWebArea", web == nil { web = c }

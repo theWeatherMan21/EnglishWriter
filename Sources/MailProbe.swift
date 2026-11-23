@@ -189,6 +189,9 @@ enum MailProbe {
             return false
         }
         let pid = app.processIdentifier
+        // 探针一律用短超时：Mail 不响应时每个 AX 调用 1.5s 的默认值会把探针拖死
+        // （11-23 实测：窗口=1 时 >25s 不返回，连主线程都出不来，watchdog 也救不了）。
+        AXUIElementSetMessagingTimeout(AXUIElementCreateApplication(pid), 0.25)
         let wins = windows(pid)
         print("  \(bundle) pid=\(pid) 窗口=\(wins.count)")
         // 没窗口是环境状态，不是产品缺陷：Mail 最小化 / 全部关闭都会这样。
@@ -366,7 +369,7 @@ enum MailProbe {
 
     private static func windows(_ pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(appEl, 1.5)
+        AXUIElementSetMessagingTimeout(appEl, 0.25)
         var raw: CFTypeRef?
         if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success,
            let wins = raw as? [AXUIElement], !wins.isEmpty {
@@ -407,16 +410,30 @@ enum MailProbe {
         return found
     }
 
-    private static func descendants(_ el: AXUIElement, depth: Int) -> [AXUIElement] {
-        guard depth > 0 else { return [] }
+    /// 有界遍历：菜单栏整棵跳过（几十上百项，每项一次 IPC），
+    /// 节点预算 400、截止 0.8s。11-23 现场：Mail 有窗口时这个无界递归把探针卡死 >25s，
+    /// 主线程都出不来（watchdog 也救不了）。
+    private static func descendants(_ el: AXUIElement, depth: Int,
+                                    budget: Int = 400, deadline: TimeInterval = 0.8) -> [AXUIElement] {
         var out: [AXUIElement] = []
-        var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &raw) == .success,
-              let kids = raw as? [AXUIElement] else { return [] }
-        for c in kids {
-            out.append(c)
-            out.append(contentsOf: descendants(c, depth: depth - 1))
+        var left = budget
+        let until = Date().addingTimeInterval(deadline)
+        func walk(_ node: AXUIElement, _ d: Int) {
+            guard d > 0, left > 0 else { return }
+            if Date() > until { left = 0; return }
+            var raw: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(node, kAXChildrenAttribute as CFString, &raw) == .success,
+                  let kids = raw as? [AXUIElement] else { return }
+            for c in kids {
+                left -= 1
+                if left <= 0 { return }
+                let role = (str(c, kAXRoleAttribute) ?? "")
+                if role == "AXMenuBar" || role == "AXMenu" || role == "AXMenuItem" { continue }
+                out.append(c)
+                walk(c, d - 1)
+            }
         }
+        walk(el, depth)
         return out
     }
 
