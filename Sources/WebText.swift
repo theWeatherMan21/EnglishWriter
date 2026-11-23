@@ -105,6 +105,16 @@ enum WebText {
     /// 键盘兜底用：在一段全文里把 original 换掉一次（纯函数，可断言）。
     /// 为什么需要它：Mail 的正文没有任何可编辑 AX 容器（host=无），
     /// 只能走「⌘A 全选 → 在全文里改 → ⌘V 覆盖」这条不依赖 AX 写权限的路。
+    /// 键盘全选替换的安全闸（纯函数，可断言）。
+    /// 全选覆盖会把富文本拍成纯文本：正文越长、行越多，毁掉格式/引用的代价越大。
+    /// 所以只在「短邮件」上允许走这条路，超了就拒绝并写日志（宁可不改，也不毁稿）。
+    static func allowFullReplace(fullText: String, maxChars: Int = 2000, maxLines: Int = 30) -> Bool {
+        if fullText.isEmpty { return false }
+        if fullText.count > maxChars { return false }
+        let lines = fullText.split(separator: "\n", omittingEmptySubsequences: false).count
+        return lines <= maxLines
+    }
+
     /// 出现次数（纯函数）：键盘兜底改全文前必须确认这一段只出现一次，
     /// 否则「第一次出现」可能改到引用里、签名里，改错地方比不改更糟。
     static func occurrences(of needle: String, in hay: String) -> Int {

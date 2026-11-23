@@ -2499,6 +2499,18 @@ extension SelfTest {
             ok("webwrite: 键盘兜底能在全文里改一处", "have send → have sent")
         } else { bad("webwrite: 键盘兜底替换算错", "replaceOnce") }
 
+        if WebText.allowFullReplace(fullText: "Hi,\nI have send the file.\nThanks") {
+            ok("webwrite: 短邮件允许整段覆盖", "2 行 30 字")
+        } else { bad("webwrite: 短邮件被拦", "allowFullReplace 太严") }
+
+        if !WebText.allowFullReplace(fullText: String(repeating: "x", count: 3000)) {
+            ok("webwrite: 超长正文拒绝整段覆盖", "宁可不改也不毁格式")
+        } else { bad("webwrite: 超长正文也敢覆盖", "会毁格式") }
+
+        if !WebText.allowFullReplace(fullText: String(repeating: "line\n", count: 60)) {
+            ok("webwrite: 行数过多拒绝整段覆盖", ">30 行")
+        } else { bad("webwrite: 行数过多也覆盖", "引用历史会被拍平") }
+
         if WebText.replaceOnce(fullText: "have send ... have send", original: "have send", replacement: "have sent") == nil {
             ok("webwrite: 同一段出现多次就拒绝改", "改错地方比不改更糟")
         } else { bad("webwrite: 多处出现还改了", "可能改到引用/签名里") }

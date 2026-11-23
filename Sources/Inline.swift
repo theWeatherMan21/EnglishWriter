@@ -1605,6 +1605,7 @@ final class InlineController {
             let original = (block.text as NSString).substring(with: range)
             pressSelectAll(to: pid)
             if let full = selectedText(of: pid),
+               WebText.allowFullReplace(fullText: full),
                let newFull = WebText.replaceOnce(fullText: full, original: original, replacement: text),
                newFull != full, pasteViaClipboard(newFull, to: pid) {
                 usleep(500_000)
@@ -1617,7 +1618,8 @@ final class InlineController {
                 }
                 AppLog.info("m3", "write-layer=keyboard-all 但读回不一致（字数 \(back.count) vs \(newFull.count)）")
             } else {
-                AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 / 原文不在选区里）")
+                let n = selectedText(of: pid)?.count ?? 0
+                AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 \(n) 字 / 原文不唯一 / 正文超长拒绝覆盖）")
             }
         }
         AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（容器定位失败 / AX 与剪贴板都不成功）")
