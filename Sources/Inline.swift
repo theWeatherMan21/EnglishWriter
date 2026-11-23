@@ -642,8 +642,7 @@ final class InlineController {
         let score = Scorer.score(text: lastText, items: items, formality: GoalsStore.load().formality)
         let sb = Sidebar.shared
         sb.onAccept = { [weak self] it in
-            guard let self, let id = self.items.firstIndex(where: { $0.start == it.start && $0.length == it.length })
-            else { return }
+            guard let self, let id = ItemLocator.id(for: it, in: self.items) else { return }
             _ = self.accept(itemID: id)
         }
         sb.onDismiss = { [weak self] it in
@@ -654,9 +653,7 @@ final class InlineController {
         }
         sb.onJump = { [weak self] it in
             Task { @MainActor in
-                guard let self,
-                      let id = self.items.firstIndex(where: { $0.start == it.start && $0.length == it.length })
-                else { return }
+                guard let self, let id = ItemLocator.id(for: it, in: self.items) else { return }
                 self.focusItem(id: id)
             }
         }
@@ -671,6 +668,13 @@ final class InlineController {
         }
         let ballRect = FloatBall.shared.isVisible ? FloatBall.shared.frame : nil
         sb.present(items: items, score: score, at: ballRect)
+    }
+
+    /// 侧栏条目 → items 索引（侧栏点接受/忽略/跳转都要靠它对上号）
+    enum ItemLocator {
+        static func id(for it: DiffItem, in items: [DiffItem]) -> Int? {
+            items.firstIndex { $0.start == it.start && $0.length == it.length }
+        }
     }
 
     /// 侧栏开着时，每次新检查结果都要推进去（Grammarly 的栏是实时跟着字变的，

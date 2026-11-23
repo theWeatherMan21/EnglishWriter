@@ -2480,6 +2480,20 @@ extension SelfTest {
             SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
         }
 
+        // 侧栏条目回指：start/length 必须能对回原条目（点接受/跳转全靠它）
+        let locItems = [
+            DiffItem(start: 2, length: 9, original: "have send", replacement: "have sent", type: "grammar", reason: ""),
+            DiffItem(start: 40, length: 12, original: "in order to", replacement: "to", type: "clarity", reason: ""),
+        ]
+        if InlineController.ItemLocator.id(for: locItems[1], in: locItems) == 1,
+           InlineController.ItemLocator.id(for: locItems[0], in: locItems) == 0 {
+            SelfTest.ok("sidebar: 条目回指原索引", "0/1 正确")
+        } else { SelfTest.bad("sidebar: 回指", "错位") }
+        let stranger = DiffItem(start: 99, length: 3, original: "x", replacement: "y", type: "style", reason: "")
+        if InlineController.ItemLocator.id(for: stranger, in: locItems) == nil {
+            SelfTest.ok("sidebar: 找不到就返回 nil", "nil")
+        } else { SelfTest.bad("sidebar: 找不到", "返回了错误索引") }
+
         // 侧栏 payload：分组 / id 指向原条目 / dismissed 过滤（点球看全部问题的数据源）
         let sideItems = [
             DiffItem(start: 2, length: 9, original: "have send", replacement: "have sent", type: "grammar", reason: "完成时"),
