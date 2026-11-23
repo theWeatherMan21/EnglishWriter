@@ -10,8 +10,9 @@
 
 | 项 | 实测值 |
 |---|---|
-| HEAD | 见 `git log -1`（本节随每次交付更新） |
-| 自检 | `--selftest` → **PASS 191 / FAIL 0**（含侧栏摆位 6 条 / 适配表 9 条 / 隐私 / 命中 / 坐标） |
+| HEAD | `22c6499`（本节随每次交付更新） |
+| 一条命令 | `bash scripts/ci-test.sh` → EXIT=0（编译 + 自测 + 规则 + Mail 块 + WebUI + 隐私 74 + 改写 9 + 接受闭环 11 + 点击几何 7 + deep 100% + 视觉基线 + 崩溃防线 + 阈值防线 + 扩展 E2E） |
+| 自检 | `--selftest` 45 / `--selftest --style` 64 / `--ui` 61 / `--privacy` 74（全 FAIL 0） |
 | 装机 | `/Applications/Selfmade/英文写作助手.app`，二进制 18:00:39，sha256 `aada87ac23509dd3`，`SOALedger Dev` 签名，install-check SYNC |
 | 侧栏 | `--sidebar-snapshot` → `qa/evidence/sidebar-panel.png`（360×620）与 `sidebar-panel-full.png`（360×955 整栏） |
 | 适配表 | 9 条：TextEdit / Mail / Telegram 启用；Word / Notes / Outlook / WPS / Pages / Slack 关闭并写明「未探明」 |
@@ -67,7 +68,11 @@
 - 每个 pid 一个 `AXObserver`；app 级 `AXFocusedUIElementChanged`，元素级 `AXValueChanged` / `AXSelectedTextChanged`。
 - 去抖 800ms（DispatchWorkItem），同一 pid 同一句 hash 不重复请求，无轮询 Timer。
 - 只检查光标所在句（`Sentence.around`）；句子结束符 `. ! ? \n 。！？`。
-- 语言门控：CJK 占比 > 0.40 → 零请求。
+- 语言门控：CJK 占比 > `LanguageGate.cjkGate`（**0.30，全局唯一来源**；DocScan / Engine / MailProbe / LocalAPI 全部引用它，CI 有 grep 硬拦重复副本）→ 零请求。
+- 只查「你正在写的」：可编辑输入框、网页里的可编辑控件、**写信窗口的正文区**（判据：该 AXWebArea 所在窗口里存在可编辑控件）。阅读别人的邮件（`[reading]`）默认不查，`EnginePrefs.checkReading` 可开。
+- Web 正文只查看得见的块（`WebText.visibleBlocks`），单轮 ≤ 40 块、≤ 8000 字，**合并成一次** `/v2/check`，match 按偏移映射回块（`BlockBatch`）；上一轮没跑完只记 `skip-busy` 并合并补跑。
+- 去重键 = 「块号 + 原文小写」（跨段同词各报一次；同一块内重复只留一条）。
+- `skip-readonly` **不清线**：线的存活只由「宿主切换」与 TTL 决定。
 
 ### 3.3 引擎（双通道，同一 `[DiffItem]` 出口）
 - **本地 LanguageTool**（`http://127.0.0.1:8081`，en-GB，picky）优先：热态 15–27ms。App 启动时调 `scripts/languagetool-up.sh` 静默拉起。
@@ -186,3 +191,23 @@ bash scripts/settings-selftest.sh        # 断言 + 静态不变量 + 面板截�
 ```
 
 面板截图为离屏合成（窗口坐标 -6000, -6000，不 orderFront、不 screencapture），固定浅色外观。
+
+
+---
+
+## 5. 与 Grammarly 的差距（2026-11-23 实测口径）
+
+| 能力 | 状态 | 证据 / 判据 |
+|---|---|---|
+| 行内下划线（四类） | 已有 | `--demo-selfcheck`、Mail `render item>0 rect>0` |
+| 点击出卡片 → 接受/忽略/词典 | 部分 | 离屏闭环 `--acceptflow` 11/0；**真机 click-hit 仍缺** |
+| 改写三档（简洁/正式/清晰） | 已有（后端+UI 入口） | `--live-rewrite` 5 句×3 轮 5/5 · ~4.2s；扩展「候选 3 条」 |
+| 语气检测 + 调整 | 后端已有，UI 未验 | `--live-tone` |
+| 侧栏全文报告 | 已有骨架 | `--sidebar-snapshot`；实时刷新 `syncSidebarIfOpen` |
+| 总体评分四维 | 已有 | `--selftest --score` |
+| 个人词典管理界面 | 存储有，界面薄 | 设置面板内「个人词典」列表（仅增删，无导入导出） |
+| 浏览器覆盖 | Chrome/Edge/Brave/Chromium/Firefox = 扩展；**Safari = App 自己画**（无 .appex） | `browserBundleIDs` + 断言 |
+| 原生 App 覆盖 | TextEdit / Mail / Telegram 启用；Word/Pages/Outlook/WPS/Slack 未适配 | `PROJECT.md` 适配表 9 条 |
+| 性能护栏 | 已有 | 单轮 1 次请求、在飞 ≤2、java 空闲 0% |
+
+**唯一硬缺口**：真机「点线 → 卡片 → 接受 → 文字变」这一段从未在真机跑通（所有相关断言都是离屏的）。
