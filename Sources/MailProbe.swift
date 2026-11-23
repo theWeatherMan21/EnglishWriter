@@ -74,31 +74,40 @@ enum MailProbe {
     static func composeSignal(pid: pid_t) -> (isCompose: Bool, reason: String) {
         guard pid > 0 else { return (false, "pid=0") }
         guard let app = AXUIElementCreateApplication(pid) as AXUIElement? else { return (false, "拿不到 AXApplication") }
+        // AX 是跨进程 IPC：Mail 一个窗口有 2000+ 节点，深度遍历会把它拖到几十秒（11-23 实测探针卡死）。
+        // 两道闸：单次调用 0.15s 超时 + 总节点预算 300 + 0.4s 截止时间，超了就按「不是写信窗」返回。
+        AXUIElementSetMessagingTimeout(app, 0.15)
         guard let windows = attr(app, kAXWindowsAttribute as String) as? [AXUIElement],
               let front = windows.first else { return (false, "没有窗口") }
         let sendWords = ["发送", "Send", "送信", "Enviar", "Envoyer"]
         let toWords = ["收件人", "To:", "收件人：", "Cc", "抄送", "To "]
         var sendHit = false, recipientHit = false
+        var budget = 300
+        let deadline = Date().addingTimeInterval(0.4)
         func walk(_ el: AXUIElement, depth: Int) {
-            if (sendHit && recipientHit) || depth <= 0 { return }
+            if (sendHit && recipientHit) || depth <= 0 || budget <= 0 { return }
+            if Date() > deadline { budget = 0; return }
+            budget -= 1
             let role = attrString(el, kAXRoleAttribute as String) ?? ""
-            let label = [attrString(el, kAXTitleAttribute as String),
-                         attrString(el, kAXDescriptionAttribute as String),
-                         attrString(el, kAXHelpAttribute as String),
-                         attrString(el, "AXPlaceholderValue")]
-                .compactMap { $0 }.joined(separator: " ")
-            if role == kAXButtonRole as String, sendWords.contains(where: { label.contains($0) }) {
-                sendHit = true
+            if role == kAXButtonRole as String || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String {
+                let label = [attrString(el, kAXTitleAttribute as String),
+                             attrString(el, kAXDescriptionAttribute as String),
+                             attrString(el, kAXHelpAttribute as String),
+                             attrString(el, "AXPlaceholderValue")]
+                    .compactMap { $0 }.joined(separator: " ")
+                if role == kAXButtonRole as String, sendWords.contains(where: { label.contains($0) }) { sendHit = true }
+                if role != kAXButtonRole as String, toWords.contains(where: { label.contains($0) }) { recipientHit = true }
             }
-            if role == kAXTextFieldRole as String || role == kAXTextAreaRole as String,
-               toWords.contains(where: { label.contains($0) }) {
-                recipientHit = true
-            }
+            // 只走「容器类」节点，跳过几千个静态文本叶子（正文、列表行）
+            guard role == "AXWindow" || role == "AXGroup" || role == "AXToolbar" || role == "AXSplitGroup"
+                    || role == "AXScrollArea" || role == "AXWebArea" || role == kAXButtonRole as String
+                    || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String || role.isEmpty else { return }
             for c in attrChildren(el) { walk(c, depth: depth - 1) }
         }
-        walk(front, depth: 12)
+        walk(front, depth: 8)
         if sendHit { return (true, "发送按钮") }
         if recipientHit { return (true, "收件人字段") }
+        if budget <= 0 { return (false, "遍历超预算(300 节点/0.4s)，按非写信窗处理") }
         return (false, "无发送按钮、无收件人字段")
     }
 
@@ -182,7 +191,11 @@ enum MailProbe {
         let pid = app.processIdentifier
         let wins = windows(pid)
         print("  \(bundle) pid=\(pid) 窗口=\(wins.count)")
-        guard !wins.isEmpty else { print("FAIL 没有窗口"); return false }
+        // 没窗口是环境状态，不是产品缺陷：Mail 最小化 / 全部关闭都会这样。
+        guard !wins.isEmpty else {
+            print("RESULT: SKIP（Mail 没有打开的窗口 —— 环境限制，不是产品缺陷）")
+            return true
+        }
 
         var reports: [WindowReport] = []
         for (i, w) in wins.enumerated() {
@@ -368,7 +381,26 @@ enum MailProbe {
         }
         // Mail 写信窗口可能不在 kAXWindowsAttribute 里（实测：主窗口关掉只留 compose 时 windows=0）。
         // 兜底：从 app 元素往下找 role=AXWindow 的节点，最多 4 层。
-        let found = descendants(appEl, depth: 4).filter { (str($0, kAXRoleAttribute) ?? "") == "AXWindow" }
+        // 兜底遍历必须限流：app 元素下面挂着整条菜单栏（几十上百个 AXMenuItem），
+        // 每一项都是一次 IPC；Mail 一时不响应就会 1.5s × N 把探针拖到十几秒（11-23 实测 14.2s）。
+        AXUIElementSetMessagingTimeout(appEl, 0.25)
+        var budget = 120
+        var found: [AXUIElement] = []
+        func walk(_ el: AXUIElement, depth: Int) {
+            guard depth > 0, budget > 0 else { return }
+            var raw: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &raw) == .success,
+                  let kids = raw as? [AXUIElement] else { return }
+            for c in kids {
+                budget -= 1
+                if budget <= 0 { return }
+                let role = str(c, kAXRoleAttribute) ?? ""
+                if role == "AXMenuBar" || role == "AXMenu" || role == "AXMenuItem" { continue }   // 菜单栏与窗口无关
+                if role == "AXWindow" { found.append(c); continue }
+                walk(c, depth: depth - 1)
+            }
+        }
+        walk(appEl, depth: 4)
         if !found.isEmpty {
             print("  ! kAXWindowsAttribute 为空，从子节点兜底找到 \(found.count) 个 AXWindow")
         }

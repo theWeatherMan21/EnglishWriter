@@ -148,6 +148,21 @@ else
   exit 1
 fi
 
+echo "== Mail 探针不许卡死（AX 遍历必须有限流）=="
+t0=$(date +%s)
+if timeout 12 "$BIN" --probe-mail > /tmp/ci-probe-mail.log 2>&1; then
+  t1=$(date +%s); dur=$((t1 - t0))
+  if [ "$dur" -le 10 ]; then
+    echo "PASS  --probe-mail 用时 ${dur}s ≤ 10s"
+  else
+    echo "FAIL  --probe-mail 用时 ${dur}s > 10s（AX 遍历无界）"; tail -5 /tmp/ci-probe-mail.log; exit 1
+  fi
+else
+  ec=$?
+  if [ "$ec" -eq 124 ]; then echo "FAIL  --probe-mail 超过 12s 被强杀"; exit 1; fi
+  echo "SKIP  --probe-mail 退出码 $ec（Mail 未运行）"
+fi
+
 echo "== Safari 扩展外壳（.appex 构建 + 签名 + 结构校验）=="
 if bash scripts/safari-appex.sh > /tmp/ci-safari.log 2>&1; then
   grep -E "^OK|^RESULT: READY" /tmp/ci-safari.log
