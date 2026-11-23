@@ -873,22 +873,44 @@ final class InlineController {
             return
         }
         _ = AXInline.enableWebAX(pid)
+        // 选元素顺序（与 attachObserver 保持一致，知澜 11-19 抓到的反例）：
+        //   ① 显式传入 / 焦点元素且**可读**
+        //   ② key window 里的可编辑元素（原生 App 的正路，确定性，不猜）
+        //   ③ 前台窗口正文（只对 Web 宿主有意义：Mail 邮件正文 / 网页，AXValue 恒空）
+        // 顺序反了的话，窗口正文会先把 cand 占住（TextEdit 的窗口正文是 AXImage），
+        // keyWindowEditable 永远轮不到 → 只能记 skip-readonly，Mail/TextEdit 就再也没线。
+        let focusedEl = explicit ?? AXInline.focusedElement(pid: pid)
+        let focusedReadable = focusedEl.map { AXInline.fullText(of: $0) != nil || WebText.isWebBody($0) } ?? false
+        let keyEl = AXInline.keyWindowEditable(pid: pid)
+        let keyReadable = keyEl.map { AXInline.fullText(of: $0) != nil || WebText.isWebBody($0) } ?? false
+        let wbEl = AXInline.frontWindowBody(pid: pid)
+        // 顺序由 ElementPick 决定（纯函数，--ui 里有 4 条断言钉住）
+        let pick = ElementPick.choose(focusedReadable: focusedReadable,
+                                      keyEditableReadable: keyReadable,
+                                      windowBodyExists: wbEl != nil)
         var el: AXUIElement
-        if let e = explicit ?? AXInline.focusedElement(pid: pid) {
-            el = e
-        } else if let wb = AXInline.frontWindowBody(pid: pid) {
-            el = wb                       // 没有焦点元素（Chromium 冷启）：直接接前台窗口正文
+        var picked = ""
+        switch pick {
+        case .focused:
+            el = focusedEl!; picked = "focused"
+        case .keywindowEditable:
+            el = keyEl!; picked = "keywindow-editable"; diag.lastPath = "keywindow-editable"
+        case .windowBody:
+            el = wbEl!; picked = WebText.isWebBody(el) ? "web-body" : "window-body"
             diag.fallbackTextArea += 1
-        } else if let kw = AXInline.keyWindowEditable(pid: pid) {
-            el = kw
-            diag.lastPath = "keywindow-editable"
-            emit(CheckEvent(kind: "fallback-keywindow", pid: pid, app: appName(pid),
-                            role: attrString(el, kAXRoleAttribute as String) ?? "?",
+        case .none:
+            diag.lastError = "没有焦点文本框"
+            emit(CheckEvent(kind: "no-element", pid: pid, app: appName(pid), role: "-",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
-                            elapsed: "-", err: "没有焦点元素 → 当前 key window 里第一个可编辑元素", at: Date()))
-        } else {
-            diag.lastError = "没有焦点文本框"; return
+                            elapsed: "-", err: "焦点不可读 / 无 key 可编辑元素 / 无窗口正文", at: Date()))
+            return
         }
+        // 选路证据：哪一级接上的，一眼可见（爹地问「Mail 为什么不画线」时直接看这行）
+        emit(CheckEvent(kind: picked == "focused" ? "attach-el" : "fallback-el",
+                        pid: pid, app: appName(pid),
+                        role: attrString(el, kAXRoleAttribute as String) ?? "?",
+                        textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                        elapsed: "-", err: picked, at: Date()))
         // P0 硬门槛：只读文本一个字都不读、一条线都不画。
         // 唯一例外：Mail 的邮件正文（宿主是 Mail 且元素是 AXWebArea）。
         // 浏览器宿主已在上游 skip-browser；这里管的是其它 App 的只读正文（PDF / 预览 / 面板说明）。
@@ -1535,6 +1557,17 @@ final class InlineController {
         }
         logBall("show", reason: "unknown/\(anchor.source)", pid: pid, rect: anchor.rect)
         FloatBall.shared.update(.init(phase: .unknown, count: 0, severity: .grammar, pid: pid, anchor: anchor.rect))
+    }
+
+    /// 选元素顺序（纯函数，可离屏断言）：焦点可读 → key 可编辑 → 窗口正文
+    enum ElementPick: String {
+        case focused, keywindowEditable, windowBody, none
+        static func choose(focusedReadable: Bool, keyEditableReadable: Bool, windowBodyExists: Bool) -> ElementPick {
+            if focusedReadable { return .focused }
+            if keyEditableReadable { return .keywindowEditable }
+            if windowBodyExists { return .windowBody }
+            return .none
+        }
     }
 
     /// 每个 pid 上一次算出来的有效锚点：焦点一丢就 hide 是错的

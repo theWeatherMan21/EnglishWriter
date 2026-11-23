@@ -2454,5 +2454,17 @@ extension SelfTest {
             SelfTest.bad("ball: 往返", "(\(backQ.x), \(backQ.y))")
         }
 
+        // 选元素顺序：焦点 → key window 可编辑 → 窗口正文（顺序反了 Mail/TextEdit 永远无线）
+        let picks: [(String, Bool, Bool, Bool, InlineController.ElementPick)] = [
+            ("焦点可读 → focused",              true,  true,  true,  .focused),
+            ("焦点不可读 → key 可编辑",          false, true,  true,  .keywindowEditable),
+            ("只有窗口正文 → windowBody",        false, false, true,  .windowBody),
+            ("什么都没有 → none",                false, false, false, .none),
+        ]
+        for (name, f, k, w, want) in picks {
+            let got = InlineController.ElementPick.choose(focusedReadable: f, keyEditableReadable: k, windowBodyExists: w)
+            if got == want { SelfTest.ok("pick: " + name, got.rawValue) }
+            else { SelfTest.bad("pick: " + name, "期望 \(want.rawValue) 实际 \(got.rawValue)") }
+        }
     }
 }
