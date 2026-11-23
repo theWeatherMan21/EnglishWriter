@@ -41,6 +41,42 @@ enum WebText {
         (attrString(el, kAXRoleAttribute as String) ?? "") == "AXWebArea"
     }
 
+    /// 元素所在的窗口矩形（视口）。WebArea 的 AXFrame 常是整个文档高度，
+    /// 拿它当窗口会把屏外块全算成可见 —— 必须往上找到 AXWindow 本身。
+    static func windowFrame(of el: AXUIElement) -> CGRect {
+        var cur: AXUIElement? = el
+        var hops = 0
+        while let c = cur, hops < 10 {
+            if (attrString(c, kAXRoleAttribute as String) ?? "") == "AXWindow" { return frame(c) }
+            guard let raw = attr(c, kAXParentAttribute as String) else { break }
+            let cf = raw as CFTypeRef
+            guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
+            cur = (cf as! AXUIElement)
+            hops += 1
+        }
+        return frame(el)
+    }
+
+    /// 只保留「屏幕上看得见」的文本块（Grammarly 口径）。
+    ///
+    /// 为什么必须过滤（2026-11-23 实测事故）：AXWebArea 代表整个文档，
+    /// 一个网页读出来 1477 块；旧代码把每一块单独送 /v2/check，
+    /// 再叠上每秒一次的全量轮询 → 数千并发请求把 JVM 打到 370% CPU、单请求 15.8s。
+    /// 屏外块用户看不见，检查它没有任何价值，只会烧 CPU。
+    static func visibleBlocks(of body: AXUIElement, inWindow window: CGRect? = nil) -> [Block] {
+        let all = blocks(of: body)
+        let win = window ?? windowFrame(of: body)
+        guard win.width > 0, win.height > 0 else { return all }
+        let padded = win.insetBy(dx: -2, dy: -2)
+        return all.filter { b in
+            let own = frame(b.element)
+            if own.width > 0, own.height > 0 { return padded.intersects(own) }
+            // AXFrame 全 0（WebKit 常见）→ 退回 AXBoundsForRange 判一次
+            let ns = NSRange(location: 0, length: (b.text as NSString).length)
+            return lineRects(for: ns, in: b).contains { padded.intersects($0) }
+        }
+    }
+
     /// 在窗口里找正文容器：优先 AXWebArea，其次最大的 AXTextArea
     static func body(in window: AXUIElement) -> AXUIElement? {
         var web: AXUIElement?

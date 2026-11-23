@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2413,5 +2413,46 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 悬浮球坐标（多屏）
+extension SelfTest {
+    static func ballGeometryTests() {
+        // 悬浮球多屏换算：必须用全局 topOffset（主屏高度），不能用球所在屏的高度
+        // 爹地 11-19 实报「悬浮点到处乱飘」就是这里手写换算写错了基准
+        let ballP = CGPoint(x: 1500, y: 200), ballSize: CGFloat = 22
+        let mainH: CGFloat = 900          // 主屏高 900
+        let secondaryH: CGFloat = 800     // 副屏（在右侧）高 800
+        let good = FloatBall.appKitFrame(ballTopLeft: ballP, size: ballSize, topOffset: mainH)
+        if good.minX == 1500, good.minY == mainH - (200 + 22), good.width == 22, good.height == 22 {
+            SelfTest.ok("ball: 副屏球按主屏高换算", "y=\(good.minY)")
+        } else {
+            SelfTest.bad("ball: 副屏换算", "\(good)")
+        }
+        // 反向证据：若误用副屏高度，会得到不同的 y —— 这条断言防回潮
+        let wrong = FloatBall.appKitFrame(ballTopLeft: ballP, size: ballSize, topOffset: secondaryH)
+        if wrong.minY != good.minY {
+            SelfTest.ok("ball: 用错基准结果不同（断言有意义）", "wrong=\(wrong.minY) vs good=\(good.minY)")
+        } else {
+            SelfTest.bad("ball: 基准判据失效", "两种高度算出同一结果")
+        }
+        // 副屏在「上方」：Quartz y 为负，换算后 AppKit y 必须为正
+        let aboveP = CGPoint(x: 300, y: -700)
+        let above = FloatBall.appKitFrame(ballTopLeft: aboveP, size: ballSize, topOffset: mainH)
+        if above.minY == mainH + 700 - 22, above.minY > 0 {
+            SelfTest.ok("ball: 上方副屏球落在正 y", "y=\(above.minY)")
+        } else {
+            SelfTest.bad("ball: 上方副屏", "y=\(above.minY)")
+        }
+        // 往返：球的 AppKit frame 中心换回 Quartz，必须等于放球点 + 半个球
+        let centerAppKit = CGPoint(x: good.midX, y: good.midY)
+        let backQ = ScreenGeom.pointToQuartz(centerAppKit, topOffset: mainH)
+        if abs(backQ.x - (ballP.x + 11)) < 0.01, abs(backQ.y - (ballP.y + 11)) < 0.01 {
+            SelfTest.ok("ball: 换算往返一致", "(\(backQ.x), \(backQ.y))")
+        } else {
+            SelfTest.bad("ball: 往返", "(\(backQ.x), \(backQ.y))")
+        }
+
     }
 }

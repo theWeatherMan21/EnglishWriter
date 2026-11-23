@@ -226,8 +226,14 @@ enum LocalEngine {
         return req
     }
 
+    /// 全局在飞请求上限：任何调用方（标签页/多宿主/定时器）堆叠都不许超过 2 个
+    /// —— 11-23 实测事故：1477 块各发一个 /v2/check，JVM 打到 370% CPU、单请求 15.8s。
+    private static let inFlight = LTSemaphore(limit: 2)
+
     static func review(text: String, language: String = "en-GB",
                        session: URLSession = .shared) async throws -> InlineOutcome {
+        await inFlight.acquire()
+        defer { inFlight.release() }
         guard let req = checkRequest(text: text, language: language), let url = req.url else {
             throw ReviewFailure.notConfigured
         }
@@ -296,5 +302,29 @@ enum LocalEngine {
         case "CONFUSED_WORDS", "MISC": return .clarity
         default: return .grammar
         }
+    }
+}
+
+/// 极简异步信号量：限住在飞请求数，避免把本地 JVM 打成饱和
+final class LTSemaphore: @unchecked Sendable {
+    private let limit: Int
+    private var used = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let lock = NSLock()
+
+    init(limit: Int) { self.limit = max(1, limit) }
+
+    func acquire() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if used < limit { used += 1; lock.unlock(); c.resume() }
+            else { waiters.append(c); lock.unlock() }
+        }
+    }
+
+    func release() {
+        lock.lock()
+        if let next = waiters.first { waiters.removeFirst(); lock.unlock(); next.resume() }
+        else { used = max(0, used - 1); lock.unlock() }
     }
 }

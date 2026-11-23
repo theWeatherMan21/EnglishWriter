@@ -203,7 +203,7 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let winRect = textView.convert(screen, to: nil)
         guard let win = window else { return }
         let screenRect = win.convertToScreen(winRect)
-        var anchor = CGRect(x: screenRect.minX, y: NSScreen.screens[0].frame.height - screenRect.minY,
+        var anchor = CGRect(x: screenRect.minX, y: ScreenGeom.topOffset - screenRect.minY,
                             width: max(8, screenRect.width), height: max(8, screenRect.height))
         anchor.origin.y += anchor.height
         let kind: UnderlineKind = it.type == "spelling" ? .spelling : (it.type == "grammar" ? .grammar : (it.type == "clarity" ? .clarity : .style))

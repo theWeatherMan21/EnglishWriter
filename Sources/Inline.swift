@@ -361,6 +361,11 @@ final class InlineController {
     /// Chromium AX 树异步出现 → 挂载失败后的重试计数（每个 pid 独立，成功即清零）
     private var attachRetries: [pid_t: Int] = [:]
     private var pending: DispatchWorkItem?
+    /// 网页块检查重入闸门：1s 轮询 × 单次几十秒 = 请求无限堆叠（11-23 事故）
+    private var webCheckRunning = false
+    private var webCheckDirty = false
+    /// 单次检查的块数上限：可见区再大也不许超过这个数（一屏正常 < 40 块）
+    private let webMaxBlocks = 40
     private var lastHash: [pid_t: String] = [:]
     private var focusObserver: Any?
     private var suppressing = false
@@ -555,7 +560,9 @@ final class InlineController {
                 // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
                 let t: String?
                 if WebText.isWebBody(el) {
-                    let blks = WebText.blocks(of: el)
+                    // 只比「看得见的部分」：全量遍历整个文档（实测 1477 块）每秒一次，
+                    // 光 AX 读取就能吃满一个核，而且文本一滚就整篇算「变了」→ 无限重查。
+                    let blks = WebText.visibleBlocks(of: el)
                     let joined = blks.map(\.text).joined(separator: "\n")
                     // 轮询自己也要留证据：Web 正文到底读出几块、几个字（没声音时靠这行判断）
                     self.emit(CheckEvent(kind: "web-poll", pid: self.lastFocusPid,
@@ -1114,13 +1121,31 @@ final class InlineController {
             overlay.clear(); items = []; blocks = []; itemBlock = []
             return
         }
-        let blks = WebText.blocks(of: body)
+        // 闸门：上一次块检查还没跑完 → 只记一笔并把「跑完再补一次」标记上。
+        // 没有这道闸，1s 轮询会让几十秒的检查无限叠加（11-23 实测：370% CPU、单请求 15.8s）。
+        if webCheckRunning {
+            webCheckDirty = true
+            emit(CheckEvent(kind: "skip-busy", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "上一轮块检查未结束，本轮合并", at: Date()))
+            return
+        }
+        // 只查看得见的块：AXWebArea 代表整个文档，全量读出来能到 1477 块，
+        // 一块一个 /v2/check 等于自己 DDoS 自己的引擎。
+        let visible = WebText.visibleBlocks(of: body, inWindow: WebText.windowFrame(of: body))
+        let blks = Array(visible.prefix(webMaxBlocks))
         guard !blks.isEmpty else {
             diag.lastError = "Web 正文里没有可读文本块"
             overlay.clear(); items = []; blocks = []; itemBlock = []
             return
         }
+        if visible.count > blks.count {
+            emit(CheckEvent(kind: "truncated-blocks", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "可见块 \(visible.count) > 上限 \(webMaxBlocks)，本轮只查 \(blks.count) 块", at: Date()))
+        }
         blocks = blks
+        webCheckRunning = true
         lastText = blks.map(\.text).joined(separator: "\n")
         diag.lastTextLen = (lastText as NSString).length
         diag.lastPath = "statictext(块\(blks.count))"
@@ -1129,6 +1154,8 @@ final class InlineController {
         let sigMarkers = SpanGuard.signatureMarkers
         Task { [weak self] in
             guard let self else { return }
+            // 无论走哪条出口都必须放闸，否则一次异常就永久不再检查
+            defer { Task { @MainActor in self.finishWebCheck() } }
             let ltOK = await LocalEngine.available()
             if !ltOK { LocalEngineBootstrap.ensureRunningThrottled() }   // 闲置退出后按需拉回（节流 120s）
             var all: [DiffItem] = []
@@ -1173,6 +1200,18 @@ final class InlineController {
                 }
                 self.applyWeb(items: all, blockMap: map, blocks: blks, pid: pid)
             }
+        }
+    }
+
+    /// 放开 web 检查闸。用 defer 调到它：任何出口（含抛异常/提前 return）都必须放闸，
+    /// 否则一次异常就永久不再检查（另一个会话留下的半成品，这里补齐定义）。
+    @MainActor
+    private func finishWebCheck() {
+        webCheckRunning = false
+        // 检查期间被闸掉的轮询合并成一次补跑：既不让 1s 轮询叠加，也不丢最后一次改动
+        if webCheckDirty {
+            webCheckDirty = false
+            scheduleQuickCheck(after: 0.4)
         }
     }
 
@@ -1452,8 +1491,16 @@ final class InlineController {
         guard !UnderlineOverlay.globallySilent else { return }   // 被动模式一个像素都不上
         // anchor 必须是「当前聚焦的那个文本框」，不是 513 块拼出来的并集
         // （并集每次检查都在变，球就满屏乱跳 —— 爹地原话）
-        let box = ballAnchor(pid: pid, fallback: el)
-        guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
+        guard let anchor = ballAnchor(pid: pid, fallback: el) else {
+            // 真的一个锚点都没有（换 App / 窗口关了）：只有这时才允许消失
+            let front = ScreenGeom.frontmostWindowPID(excluding: ProcessInfo.processInfo.processIdentifier)
+            if front != pid { lastBallAnchor[pid] = nil }
+            logBall("hide", reason: "noanchor", pid: pid, rect: nil)
+            FloatBall.shared.hide()
+            return
+        }
+        let box = anchor.rect
+        logBall("show", reason: anchor.source, pid: pid, rect: box)
         let worst = items.map { CategoryPrefsSeverity($0.kind) }.max() ?? 0
         let sev: UnderlineKind = items.first(where: { CategoryPrefsSeverity($0.kind) == worst })?.kind ?? .grammar
         let phase = FloatBall.phase(textLen: (lastText as NSString).length, itemCount: items.count)
@@ -1464,18 +1511,43 @@ final class InlineController {
     private func floatUnknown(pid: pid_t, element el: AXUIElement?) {
         guard !UnderlineOverlay.globallySilent else { return }
         guard let el else { return }
-        let box = ballAnchor(pid: pid, fallback: el)
-        guard !box.isNull, box.width > 0 else { FloatBall.shared.hide(); return }
-        FloatBall.shared.update(.init(phase: .unknown, count: 0, severity: .grammar, pid: pid, anchor: box))
+        guard let anchor = ballAnchor(pid: pid, fallback: el) else {
+            logBall("hide", reason: "noanchor", pid: pid, rect: nil)
+            FloatBall.shared.hide()
+            return
+        }
+        logBall("show", reason: "unknown/\(anchor.source)", pid: pid, rect: anchor.rect)
+        FloatBall.shared.update(.init(phase: .unknown, count: 0, severity: .grammar, pid: pid, anchor: anchor.rect))
     }
 
-    /// 球的锚点：优先当前聚焦元素（正在打字的框），拿不到才退回传入的容器
-    private func ballAnchor(pid: pid_t, fallback el: AXUIElement) -> CGRect {
+    /// 每个 pid 上一次算出来的有效锚点：焦点一丢就 hide 是错的
+    /// （和 attach-el-fail 清线同一个病：这一轮没读到 ≠ 用户不需要）
+    private var lastBallAnchor: [pid_t: CGRect] = [:]
+
+    /// 球的锚点：聚焦元素 → key window 可编辑框 → 传入容器 → 上次有效锚点
+    /// 全都拿不到才返回 nil（调用方据此 hide 并记原因）
+    private func ballAnchor(pid: pid_t, fallback el: AXUIElement) -> (rect: CGRect, source: String)? {
         if let focused = AXInline.focusedElement(pid: pid) {
             let f = elementRectQuartz(focused)
-            if f.width > 0, f.height > 0 { return f }
+            if f.width > 0, f.height > 0 { lastBallAnchor[pid] = f; return (f, "focused") }
         }
-        return elementRectQuartz(el)
+        if let kw = AXInline.keyWindowEditable(pid: pid) {
+            let f = elementRectQuartz(kw)
+            if f.width > 0, f.height > 0 { lastBallAnchor[pid] = f; return (f, "keywindow") }
+        }
+        let f = elementRectQuartz(el)
+        if f.width > 0, f.height > 0 { lastBallAnchor[pid] = f; return (f, "element") }
+        if let cached = lastBallAnchor[pid] { return (cached, "lastAnchor") }
+        return nil
+    }
+
+    /// 球的每一次显隐都落一行日志：爹地说「有时候不显示」时，不用靠猜
+    private func logBall(_ action: String, reason: String, pid: pid_t, rect: CGRect?) {
+        let r = rect.map { "[\(Int($0.minX)),\(Int($0.minY)),\(Int($0.width)),\(Int($0.height))]" } ?? "[-]"
+        emit(CheckEvent(kind: "ball", pid: pid, app: appName(pid), role: action,
+                        textLen: 0, sentenceLen: 0,
+                        itemCount: 0, rectCount: rect == nil ? 0 : 1,
+                        elapsed: "-", err: reason, at: Date(), path: r))
     }
 
     /// 清线之后的补偿检查：宁可闪一下重画，也不许留残影

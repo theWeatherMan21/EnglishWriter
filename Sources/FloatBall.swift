@@ -85,6 +85,13 @@ final class FloatBall: NSPanel {
         orderOut(nil)
     }
 
+    /// 球（Quartz 左上原点）→ AppKit 窗口 frame。
+    /// 必须用**全局** topOffset（主屏高度），不能用球所在那块屏的高度：
+    /// 单屏时两者相等看不出来，一接副屏球就越跑越偏（爹地 11-19 实报「到处乱飘」）。
+    static func appKitFrame(ballTopLeft p: CGPoint, size: CGFloat, topOffset: CGFloat) -> NSRect {
+        ScreenGeom.toAppKit(CGRect(x: p.x, y: p.y, width: size, height: size), topOffset: topOffset)
+    }
+
     private func place(near q: CGRect) {
         // 用 anchor 所在那块屏（不是永远主屏），并按可见区夹紧
         let screen = NSScreen.screens.first { s in
@@ -92,9 +99,9 @@ final class FloatBall: NSPanel {
         } ?? NSScreen.main
         let visible = ScreenGeom.toQuartz(screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
         let p = BallPlacement.resolve(anchor: q, screenVisible: visible, size: size)
-        // Quartz（左上原点）→ AppKit：用该屏的坐标系换算
-        let h = screen?.frame.height ?? 900
-        setFrame(NSRect(x: p.x, y: h - p.y - size, width: size, height: size), display: false)
+        // Quartz（左上原点）→ AppKit：一律走全局口径（主屏高度），不手写换算
+        setFrame(FloatBall.appKitFrame(ballTopLeft: p, size: size, topOffset: ScreenGeom.topOffset),
+                 display: false)
     }
 
     // MARK: 交互
@@ -215,6 +222,23 @@ enum BallArt {
                                          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        // 外观固定成浅色：系统一进深色模式，windowBackgroundColor 会变黑，
+        // 同一份代码渲出来的图就不同 —— 视觉基线因此会「无故变红」（11-19 夜实测）
+        let forced = NSAppearance(named: .aqua)
+        forced?.performAsCurrentDrawingAppearance {
+            renderStates(states, cell: cell)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        guard let data = rep.representation(using: .png, properties: [:]) else { return false }
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        return (try? data.write(to: url)) != nil
+    }
+
+    private static func renderStates(_ states: [(FloatBall.Phase, Int, UnderlineKind)],
+                                     cell: CGFloat) {
+        let w = CGFloat(states.count) * cell, h = cell
         NSColor.white.setFill()
         NSRect(x: 0, y: 0, width: w, height: h).fill()
         for (i, st) in states.enumerated() {
@@ -228,11 +252,5 @@ enum BallArt {
             BallArt.draw(in: NSRect(x: 0, y: 0, width: 22, height: 22), phase: st.0, count: st.1, severity: st.2)
             NSGraphicsContext.current?.restoreGraphicsState()
         }
-        NSGraphicsContext.restoreGraphicsState()
-        guard let data = rep.representation(using: .png, properties: [:]) else { return false }
-        let url = URL(fileURLWithPath: path)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        return (try? data.write(to: url)) != nil
     }
 }

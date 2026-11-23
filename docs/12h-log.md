@@ -39,3 +39,5 @@
    `~/Library/Logs/DiagnosticReports/`（我按 `.ips` 直接读，不用你描述）。
 
 **没做的（不是缺口）**：Chrome 商店安装路径（还没打算发布）、锁屏期间的点击样本（环境限制，不算质量结论）。
+2026-11-19 22:36 | EXIT 0 | 自测45 / 本地规则64 / Mail块6 / WebUI16 / 隐私74 / 改写9 / acceptflow11 / clickdiag7 全 PASS 0 FAIL；deep PASS 召回100%(10/10) 零误报8句 2443ms/句；pngdiff 0.000%+0.000%；零新崩溃；装机 SYNC | 无异常；屏幕锁定未取真机 click-hit 证据
+2026-11-19 23:22 | EXIT 0 | 自测45 / 本地规则64 / Mail块6 / WebUI16 / 隐私74 / 改写9 / acceptflow11 / clickdiag7 全 PASS 0 FAIL；扩展端到端 3+2 PASS；deep PASS 召回100%(10/10) 零误报8句 2003ms/句；pngdiff 0.000%+0.000%；KPI PASS 日志5426行全可解析；零新崩溃；装机 SYNC(sha 81dc7ee)；HEAD ab59e5b ahead 0 | 无异常；屏幕锁定(CGSSessionScreenIsLocked=true)未取真机 click-hit / render path=keywindow-editable 证据

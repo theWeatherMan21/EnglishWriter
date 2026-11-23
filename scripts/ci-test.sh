@@ -83,18 +83,35 @@ if [ -n "$BAD_AI" ]; then
 fi
 echo "PASS  运行路径零 assumeIsolated"
 
+echo "== 坐标口径防线：除 Geometry.swift 外不许手写坐标换算 =="
+# 爹地 11-19 实报「悬浮点到处乱飘」：FloatBall 自己写了 h - p.y - size，
+# 用的是球所在屏的高度而不是全局 topOffset，单屏看不出来、接副屏必飘。
+BAD_GEO=$(grep -rnE '(frame\.height|screens\[0\]\.frame\.height)[[:space:]]*[-+]' Sources/*.swift \
+    | grep -v 'Sources/Geometry.swift' || true)
+if [ -n "$BAD_GEO" ]; then
+    echo "$BAD_GEO"
+    echo "手写坐标换算：请改用 ScreenGeom.toAppKit / toQuartz（全局 topOffset 口径）"
+    exit 1
+fi
+echo "PASS  坐标换算只走 ScreenGeom"
+
 echo "== 视觉基线 diff（改 CSS 就看得出跑没跑版）=="
 BASELINE="$PWD/qa/baseline"
 if [ -d "$BASELINE" ]; then
+    # 先删再生成：生成失败时旧文件还在，会拿「旧证据 vs 基线」比出 0.000% 的假绿
+    rm -f "$PWD/qa/evidence/settings-panel.png" "$PWD/qa/evidence/ball-states.png"
     "$BIN" --settings-snapshot "$PWD/qa/evidence/settings-panel.png" >/dev/null 2>&1 || true
     "$BIN" --ball-snapshot "$PWD/qa/evidence/ball-states.png" >/dev/null 2>&1 || true
+    for f in settings-panel ball-states; do
+        [ -s "$PWD/qa/evidence/$f.png" ] || { echo "FAIL  快照生成失败：${f}.png"; exit 1; }
+    done
     for n in settings-panel ball-states; do
         if [ -s "$BASELINE/$n.png" ]; then
             "$BIN" --pngdiff "$BASELINE/$n.png" "$PWD/qa/evidence/$n.png" \
                 --threshold 0.001 --out "$PWD/qa/evidence/$n-diff.png" \
-                || { echo "视觉基线变化：$n（差异图 qa/evidence/$n-diff.png；确认是预期改动就 bash scripts/baseline.sh 更新）"; exit 1; }
+                || { echo "视觉基线变化：${n}（差异图 qa/evidence/$n-diff.png；确认是预期改动就 bash scripts/baseline.sh 更新）"; exit 1; }
         else
-            echo "SKIP  视觉基线 $n 不存在（先跑 bash scripts/baseline.sh 建基线）"
+            echo "SKIP  视觉基线 ${n} 不存在（先跑 bash scripts/baseline.sh 建基线）"
         fi
     done
 else
