@@ -14,6 +14,23 @@
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
+
+# 单实例锁：两个 watcher 同时跑会重复 dump、重复键击（11-23 实际发生过，34531 + 36549）。
+# 拿不到锁就直接退出——宁可不动，也不能两个人同时改同一封草稿。
+# macOS 没有 flock（util-linux 才有）。用 mkdir 的原子性做锁；
+# 锁里放 pid，发现持有者已经死了就接管，避免死锁。
+LOCKDIR=/tmp/ew-unlock-watch.lockdir
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+    OLD=$(cat "$LOCKDIR/pid" 2>/dev/null || echo 0)
+    if [ "$OLD" != "0" ] && kill -0 "$OLD" 2>/dev/null; then
+        echo "已有 watcher 在跑(pid=$OLD)，本实例退出"
+        exit 0
+    fi
+    rm -rf "$LOCKDIR"
+    mkdir "$LOCKDIR" 2>/dev/null || { echo "拿不到锁，退出"; exit 0; }
+fi
+echo $$ > "$LOCKDIR/pid"
+trap 'rm -rf "$LOCKDIR"' EXIT INT TERM
 BIN=./build/英文写作助手
 FIX=/tmp/draft-fix
 EVID=qa/evidence
