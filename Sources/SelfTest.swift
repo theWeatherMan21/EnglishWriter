@@ -1967,7 +1967,7 @@ extension SelfTest {
         let cases: [(String, Bool, Bool, Bool, Bool, Bool)] = [
             ("原生输入框可编辑 → 查",        true,  false, false, false, true),
             ("只读正文（PDF/预览/面板）→ 不查", false, false, false, false, false),
-            ("Mail 邮件正文（只读但例外）→ 查", false, true,  true,  false, true),
+            ("Mail 阅读视图（别人写的）→ 默认不查", false, true,  true,  false, false),
             ("网页里有可编辑控件 → 查",       false, true,  false, true,  true),
             ("非 Mail 的网页正文 → 不查",     false, true,  false, false, false),
             ("可编辑元素即使不是 web → 查",   true,  false, false, false, true),
@@ -2452,6 +2452,52 @@ extension SelfTest {
             SelfTest.ok("ball: 换算往返一致", "(\(backQ.x), \(backQ.y))")
         } else {
             SelfTest.bad("ball: 往返", "(\(backQ.x), \(backQ.y))")
+        }
+
+        // 可见块拼一次请求：偏移必须能原样映射回块内（java 爆炸的修复靠这个不跑偏）
+        let bj = BlockBatch.join(["We was late today.", "I have send the file."], blockIndexes: [7, 9])
+        if bj.segs.count == 2, bj.segs[0].start == 0, bj.segs[0].length == 18,
+           bj.segs[1].start == 20, bj.text.hasPrefix("We was late today.\n\n") {
+            SelfTest.ok("batch: 拼接偏移正确", "\(bj.segs.map { $0.start })")
+        } else {
+            SelfTest.bad("batch: 拼接偏移", "\(bj.segs.map { $0.start }) textLen=\((bj.text as NSString).length)")
+        }
+        let fakeIn = [DiffItem(start: 3, length: 3, original: "was", replacement: "were", type: "grammar", reason: "x"),
+                      DiffItem(start: 23, length: 4, original: "send", replacement: "sent", type: "grammar", reason: "y"),
+                      DiffItem(start: 17, length: 6, original: "o.\n\nI", replacement: "X", type: "style", reason: "cross")]
+        let mapped = BlockBatch.map(fakeIn, in: bj)
+        if mapped.count == 2, mapped[0].blockIndex == 7, mapped[0].item.start == 3,
+           mapped[1].blockIndex == 9, mapped[1].item.start == 3 {
+            SelfTest.ok("batch: 映射回块内偏移 + 跨块丢弃", "\(mapped.map { "\($0.blockIndex):\($0.item.start)" })")
+        } else {
+            SelfTest.bad("batch: 映射", "\(mapped.map { "\($0.blockIndex):\($0.item.start)" })")
+        }
+        let cut = BlockBatch.join([String(repeating: "a", count: 60), String(repeating: "b", count: 60)],
+                                  blockIndexes: [0, 1], charLimit: 80)
+        if cut.segs.count == 1 {
+            SelfTest.ok("batch: 超上限截断", "只拼 1 块")
+        } else {
+            SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
+        }
+
+        // 只查「你在写的」，不查「别人写的」：reading 视图默认不查
+        if !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                   hasEditableWebField: false, checkReading: false) {
+            SelfTest.ok("gate: 阅读别人的邮件默认不查", "false")
+        } else {
+            SelfTest.bad("gate: 阅读邮件", "被当成要查")
+        }
+        if InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                  hasEditableWebField: false, checkReading: true) {
+            SelfTest.ok("gate: 显式开 checkReading 才查", "true")
+        } else {
+            SelfTest.bad("gate: checkReading 开关", "开关无效")
+        }
+        if InlineGate.shouldCheck(editable: true, isWebBody: false, isMailBody: false,
+                                  hasEditableWebField: false, checkReading: false) {
+            SelfTest.ok("gate: 可编辑输入框一律查", "true")
+        } else {
+            SelfTest.bad("gate: 可编辑输入框", "被抓错")
         }
 
         // 选元素顺序：焦点 → key window 可编辑 → 窗口正文（顺序反了 Mail/TextEdit 永远无线）

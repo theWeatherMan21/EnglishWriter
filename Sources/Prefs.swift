@@ -24,6 +24,14 @@ enum EnginePrefs {
         ("en-NZ", "新西兰 en-NZ"),
     ]
 
+    /// 阅读别人的内容（Mail 阅读视图）要不要也查：默认关。
+    /// 主管道只查「你正在写的输入框」——爹地 11-23 的原话：
+    /// 「我们 App 检查的不是自己写的内容吗，和看邮件有什么关系」。
+    static var checkReading: Bool {
+        get { UserDefaults.standard.object(forKey: "checkReading") as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: "checkReading") }
+    }
+
     private static func trimmed(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespacesAndNewlines)
     }

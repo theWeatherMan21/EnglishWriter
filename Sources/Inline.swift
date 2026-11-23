@@ -919,7 +919,8 @@ final class InlineController {
         if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
                                    isWebBody: WebText.isWebBody(el),
                                    isMailBody: isMailBody,
-                                   hasEditableWebField: hasEditableWebField) {
+                                   hasEditableWebField: hasEditableWebField,
+                                   checkReading: EnginePrefs.checkReading) {
             // 证据必须能自证：是不是真的有可编辑控件被误判成只读？
             let elRole = attrString(el, kAXRoleAttribute as String) ?? "?"
             let kind = AXInline.isEditable(el) ? "editable-but-unreadable" : "readonly"
@@ -1189,9 +1190,9 @@ final class InlineController {
         var ltMs: Double = 0
         // 整篇一次请求：块之间用 "\n\n" 拼接，记下每块起始偏移，回来再按偏移映射。
         // 一块一个请求是 11-23 java 爆炸的直接原因（1477 块 → JVM 饱和、单请求 32s）。
-        var segs: [(bi: Int, start: Int, len: Int)] = []
-        var joined = ""
-        let joinLimit = 8000                      // 单次请求字符上限，压住最坏延迟
+        var texts: [String] = []
+        var idxs: [Int] = []
+        let joinLimit = 8000
         for (bi, b) in blks.enumerated() {
             let t = b.text
             let blen = (t as NSString).length
@@ -1200,28 +1201,22 @@ final class InlineController {
             if !LanguageGate.isEnglish(t) { cjkSkipped += 1; continue }
             let lowered = t.lowercased()
             if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
-            if (joined as NSString).length + blen > joinLimit { break }
-            let off = (joined as NSString).length
-            joined += t + "\n\n"
-            segs.append((bi, off, blen))
+            texts.append(t); idxs.append(bi)
         }
-        if segs.isEmpty {
+        let batch = BlockBatch.join(texts, blockIndexes: idxs, charLimit: joinLimit)
+        if batch.isEmpty {
             // 全是中文 / 噪声块：一个请求都不发
         } else if !ltOK {
             firstError = "本地引擎未启动"
         } else {
             do {
                 let t0 = Date()
-                let out = try await LocalEngine.review(text: joined, language: EnginePrefs.language())
+                let out = try await LocalEngine.review(text: batch.text, language: EnginePrefs.language())
                 ltMs += Date().timeIntervalSince(t0) * 1000
                 await MainActor.run { self.diag.lastElapsed = String(format: "%.0fms", ltMs) }
-                for var it in out.items {
-                    // 落在哪一块里（块与块之间用 \n\n 隔开，跨块的一律丢）
-                    guard let seg = segs.last(where: { $0.start <= it.start }) else { continue }
-                    guard it.start + it.length <= seg.start + seg.len else { continue }
-                    it.start -= seg.start
+                for (it, bi) in BlockBatch.map(out.items, in: batch) {
                     all.append(it)
-                    map.append(seg.bi)
+                    map.append(bi)
                 }
             } catch {
                 firstError = "LT: \(error)"
@@ -1642,11 +1637,15 @@ final class InlineController {
 /// 规则：可编辑元素才检查；只读正文唯一例外是 Mail 的邮件正文；
 /// 网页里存在可编辑输入控件时也放行（随后会切到那个控件）。
 enum InlineGate {
+    /// 只查「你正在写的东西」（Grammarly 主场），阅读别人的内容默认不查。
+    /// 11-23 爹地质问「我们检查的不是自己写的内容吗，和看邮件有什么关系」——
+    /// 他说得对：Mail 阅读视图是别人的邮件，不是主场，还带来大量 skip-readonly。
+    /// checkReading 保留开关（默认关），确要读信时再打开。
     static func shouldCheck(editable: Bool, isWebBody: Bool, isMailBody: Bool,
-                            hasEditableWebField: Bool) -> Bool {
+                            hasEditableWebField: Bool, checkReading: Bool = false) -> Bool {
         if editable { return true }
-        if isWebBody && isMailBody { return true }
         if isWebBody && hasEditableWebField { return true }
+        if checkReading && isWebBody && isMailBody { return true }
         return false
     }
 }

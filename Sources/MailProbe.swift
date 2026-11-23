@@ -270,10 +270,18 @@ enum MailProbe {
         //   PASS      = 取到可见文本 + 矩形全在窗口内 + 命中数 > 0
         //   PARTIAL   = 取到可见文本 + 矩形全在窗口内 + 命中 0（可见内容是中文/本身没错误）
         //   FAIL      = 取不到文本，或矩形越界
-        let readOK = reports.contains { $0.chars > 0 && $0.rectsInsideWindow }
-        let anyItems = reports.contains { $0.itemCount > 0 }
+        // 判据只认 compose（你正在写的邮件）；阅读视图是别人的内容，不是验收对象。
+        // 爹地 11-23：「我们检查的不是自己写的内容吗，和看邮件有什么关系」。
+        let composeReports = reports.filter { $0.kind == "compose" }
+        if composeReports.isEmpty && !argv.contains("--include-reading") {
+            print("RESULT: SKIP（没有写信窗口 —— 阅读视图不是验收对象；要查阅读请加 --include-reading）")
+            return true
+        }
+        let judged = composeReports.isEmpty ? reports : composeReports
+        let readOK = judged.contains { $0.chars > 0 && $0.rectsInsideWindow }
+        let anyItems = judged.contains { $0.itemCount > 0 }
         // LANG-GUARD：命中的「错词」里非 ASCII 超 20% = 外语漏进英文通道，直接 FAIL
-        let allOriginals = reports.flatMap { $0.items.compactMap { $0["original"]?.value } }
+        let allOriginals = judged.flatMap { $0.items.compactMap { $0["original"]?.value } }
         let (leak, ratio) = LanguageGate.looksLikeForeignLeak(allOriginals)
         if leak { print("  ! LANG-GUARD FAIL：命中词非 ASCII 占比 \(Int(ratio*100))% → 外语漏进英文通道") }
         let verdict = readOK
