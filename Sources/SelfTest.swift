@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); webRecoverTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2464,6 +2464,21 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - Web 正文读回复核（宿主换节点时的补救）
+extension SelfTest {
+    static func webRecoverTests() {
+        if InlineController.webReadbackRecovered(fresh: "I have sent the file.", replacement: "sent") {
+            ok("web: 整树里出现替换文本即判成功", "sent 在")
+        } else { bad("web: 整树复核漏判", "sent 明明在") }
+        if !InlineController.webReadbackRecovered(fresh: "I have send the file.", replacement: "sent") {
+            ok("web: 没写进去仍然判失败", "原文里没有 sent")
+        } else { bad("web: 整树复核误判成功", "原文含 sent 子串？") }
+        if !InlineController.webReadbackRecovered(fresh: "anything", replacement: "") {
+            ok("web: 空替换文本不算成功", "拒绝")
+        } else { bad("web: 空替换文本被判成功", "误判") }
     }
 }
 

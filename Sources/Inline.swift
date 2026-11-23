@@ -675,6 +675,14 @@ final class InlineController {
         sb.present(items: items, score: score, at: ballRect)
     }
 
+    /// Web 正文写回的整树复核（纯函数，可断言）：
+    /// 宿主把 AXStaticText 换成新节点时，抓着旧元素复读永远读不回，
+    /// 但整棵树重新走一遍能看见替换后的文本。看见了就算写进去。
+    nonisolated static func webReadbackRecovered(fresh: String, replacement: String) -> Bool {
+        guard !replacement.isEmpty else { return false }
+        return fresh.contains(replacement)
+    }
+
     /// 取哪份列表去接受：当前列表为空就用存档（两段式点击期间的 refresh 会清空）
     nonisolated static func itemsForAccept(_ items: [DiffItem], archive: [DiffItem]) -> [DiffItem] {
         items.isEmpty ? archive : items
@@ -1473,7 +1481,18 @@ final class InlineController {
                         textLen: 0, sentenceLen: 0, itemCount: id, rectCount: overlay.specs.count,
                         elapsed: "-", err: "range=\(it.start)+\(it.length) \"\(it.original)\"" , at: Date()))
         let doc = docFor(itemID: id)
-        let out = M3Flow.accept(items: items, only: id, in: doc, stack: M3UndoStack.shared)
+        var out = M3Flow.accept(items: items, only: id, in: doc, stack: M3UndoStack.shared)
+        // Web 正文的读回不可靠：Mail 写回后会把 AXStaticText 换成新节点，
+        // 抓着旧元素复读永远是旧文本 → 判「写回后文本与期望不一致」再回滚（11-23 实测）。
+        // 补救：整棵树重新走一遍，只要正文里出现了替换后的文本，就算写进去了。
+        if !out.ok, currentElement != nil, itemBlock.indices.contains(id), itemBlock[id] >= 0 {
+            let fresh = WebText.blocks(of: currentElement!).map(\.text).joined(separator: "\n")
+            if Self.webReadbackRecovered(fresh: fresh, replacement: it.replacement) {
+                AppLog.info("m3", "accept readback 复核：整树已含「\(it.replacement)」，判成功")
+                out = M3Flow.AcceptOutcome(ok: true, expected: out.expected, actual: fresh,
+                                           detail: "整树复核：已写入（读回元素被宿主替换）")
+            }
+        }
         if out.ok {
             emit(CheckEvent(kind: "accept-write", pid: currentPid, app: appName(currentPid), role: "card",
                             textLen: 0, sentenceLen: 0, itemCount: id, rectCount: 0,
