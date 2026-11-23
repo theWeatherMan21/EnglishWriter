@@ -52,6 +52,32 @@ enum MailProbe {
     /// --wait-english：后台等一封英文邮件出现（不催用户、不造假）
     /// 每 30 秒查一次；英文可见块 ≥5 就跑全套；超时退出并如实记 no-english-message-found
     @MainActor
+    /// 前台窗口是不是「写信窗」：找得到「发送 / Send」按钮就算。
+    /// 为什么用这个信号：Mail 的阅读窗和写信窗都是 AXWebArea、都有可编辑节点（搜索框），
+    /// 只看「有没有可编辑控件」会把阅读视图当成在写 —— 爹地 11-23 截图里左栏那些线就是这么来的。
+    /// 这条不按尺寸打分（尺寸阈值会把小窗口的写信区误杀），只看「有没有发送按钮」。
+    static func isComposeWindow(pid: pid_t) -> Bool {
+        guard let app = AXUIElementCreateApplication(pid) as AXUIElement? else { return false }
+        guard let windows = attr(app, kAXWindowsAttribute as String) as? [AXUIElement],
+              let front = windows.first else { return false }
+        let words = ["发送", "Send", "送信", "Enviar", "Envoyer"]
+        var found = false
+        func walk(_ el: AXUIElement, depth: Int) {
+            if found || depth <= 0 { return }
+            let role = attrString(el, kAXRoleAttribute as String) ?? ""
+            if role == kAXButtonRole as String {
+                let label = [attrString(el, kAXTitleAttribute as String),
+                             attrString(el, kAXDescriptionAttribute as String),
+                             attrString(el, kAXHelpAttribute as String)]
+                    .compactMap { $0 }.joined(separator: " ")
+                if words.contains(where: { label.contains($0) }) { found = true; return }
+            }
+            for c in attrChildren(el) { walk(c, depth: depth - 1) }
+        }
+        walk(front, depth: 12)
+        return found
+    }
+
     static func waitForEnglish(_ argv: [String]) async -> Bool {
         setvbuf(stdout, nil, _IONBF, 0)
         var timeout: Double = 2 * 3600

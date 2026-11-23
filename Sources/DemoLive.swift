@@ -320,12 +320,37 @@ final class DemoLive: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let idx = tv.characterIndexForInsertion(at: p)
         let hit = items.first(where: { idx >= $0.start && idx < $0.start + max(1, $0.length) })
         let hitIdx = hit.flatMap { h in items.firstIndex(where: { (it: DiffItem) -> Bool in it.start == h.start }) }
+        // 诊断必须带数：点在哪、线在哪、差几像素。只记「miss」等于什么都没记
+        // （爹地 11-23：「rect=3 说明线在、点没中，缺的就是差几像素这个数」）
+        let win = tv.window?.frame ?? .zero
+        let topOffset = NSScreen.screens.first?.frame.maxY ?? 0
+        var specs: [UnderlineSpec] = []
+        for (i, it) in items.enumerated() {
+            let r = tv.firstRect(forCharacterRange: NSRange(location: it.start, length: max(1, it.length)),
+                                 actualRange: nil)
+            guard r.width > 0, r.height > 0 else { continue }
+            // firstRect 是屏幕坐标（AppKit），与 nearestLine 用的 Quartz 口径一致化
+            let local = CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height)
+            let q = CGRect(x: local.minX, y: topOffset - local.maxY,
+                           width: local.width, height: local.height)
+            _ = win
+            specs.append(UnderlineSpec(rect: q, kind: it.kind, itemID: i))
+        }
+        let mp = NSEvent.mouseLocation
+        let mq = CGPoint(x: mp.x, y: topOffset - mp.y)
+        let near = HoverCoordinator.nearestLine(specs, at: mq)
+        let diag = String(format: "x=%.1f y=%.1f | nearest=%.1f dx=%.1f dy=%.1f item=%d rect=[%.0f,%.0f,%.0f,%.0f]",
+                          mq.x, mq.y,
+                          near.hit ? 0 : (near.dx * near.dx + near.dy * near.dy).squareRoot(),
+                          near.dx, near.dy, near.item,
+                          near.rect.isNull ? 0 : near.rect.minX, near.rect.isNull ? 0 : near.rect.minY,
+                          near.rect.isNull ? 0 : near.rect.width, near.rect.isNull ? 0 : near.rect.height)
         CheckLog.append(.init(kind: hit == nil ? "click-miss" : "click-hit",
                               pid: ProcessInfo.processInfo.processIdentifier,
                               app: "英文写作助手", role: "NSTextView",
                               textLen: (textView.string as NSString).length, sentenceLen: 0,
                               itemCount: hitIdx ?? -1,
-                              rectCount: items.count, elapsed: "-", err: "-", at: Date()))
+                              rectCount: items.count, elapsed: "-", err: diag, at: Date()))
         guard let hit else { return }
         Sidebar.shared.select(start: hit.start)
         focusItem(hit)

@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); bodySizeTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2100,7 +2100,27 @@ extension SelfTest {
         let b = HoverCoordinator.nearestLine(specs, at: CGPoint(x: 780, y: 190))
         if b.hit && b.dx == 0 && b.dy == 0 {
             SelfTest.ok("clickdiag: 线上命中", "hit=\(b.hit)")
-        } else { SelfTest.bad("clickdiag: 线上", "\(b)") }
+    
+        // 三条线，各自中心点击必须命中（防止「只有第一条能点」这种偏）
+        var allHit = true
+        for (i, sp) in specs.enumerated() {
+            let c = CGPoint(x: sp.rect.midX, y: sp.rect.midY)
+            let r = HoverCoordinator.nearestLine(specs, at: c)
+            if !r.hit || r.item != i { allHit = false; SelfTest.bad("clickdiag: 第 \(i) 条中心未命中", "\(r)") }
+        }
+        if allHit { SelfTest.ok("clickdiag: 三条线中心都命中", "3/3") }
+
+        // 离线 30pt：必须 miss，且 dx 要算出 30（日志里得有这个数）
+        if let first = specs.first {
+            let off = CGPoint(x: first.rect.maxX + 30, y: first.rect.midY)
+            let r = HoverCoordinator.nearestLine(specs, at: off)
+            if !r.hit && abs(r.dx - 30) < 0.6 {
+                SelfTest.ok("clickdiag: 离线 30pt 判 miss 且 dx=30", "dx=\(String(format: "%.1f", r.dx))")
+            } else {
+                SelfTest.bad("clickdiag: 离线 30pt", "hit=\(r.hit) dx=\(r.dx)")
+            }
+        }
+    } else { SelfTest.bad("clickdiag: 线上", "\(b)") }
 
         // 3) 点在右侧 10pt（x 超出 maxX=813 → 790 其实在内侧；用 823 验证 dx=10）
         let c = HoverCoordinator.nearestLine(specs, at: CGPoint(x: 823, y: 190))
@@ -2447,30 +2467,27 @@ extension SelfTest {
     }
 }
 
-// MARK: - 搜索框不算正文（阅读视图不许被当写信区）
+// MARK: - Mail 阅读窗不查（按「有没有发送按钮」判定，不按尺寸）
 extension SelfTest {
-    static func bodySizeTests() {
-        let win = CGRect(x: 0, y: 0, width: 1200, height: 800)
-        let searchBox = CGRect(x: 600, y: 780, width: 240, height: 24)      // ≈0.6% 面积
-        let compose = CGRect(x: 700, y: 60, width: 500, height: 700)       // ≈36% 面积
-        if !WebText.isBodySized(editable: searchBox, window: win) {
-            ok("gate: 搜索框不算正文区", "面积 0.6% < 25%")
-        } else { bad("gate: 搜索框被当正文", "误判") }
-        if WebText.isBodySized(editable: compose, window: win) {
-            ok("gate: 写信正文区算正文", "面积 36% ≥ 25%")
-        } else { bad("gate: 正文区被判太小", "误杀") }
-        // 阅读视图：有搜索框但没正文区 → 不该被查
+    static func mailReadingGateTests() {
+        // 阅读窗：element 层看着「可编辑」，但窗口没有发送按钮 → 不查
         if !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
-                                   hasEditableWebField: WebText.isBodySized(editable: searchBox, window: win),
-                                   checkReading: false, inEditableWindow: false) {
-            ok("gate: 阅读视图不查", "搜索框不足以触发")
-        } else { bad("gate: 阅读视图被查", "仍是 true") }
-        // 写信窗口：正文区够大 → 要查
+                                   hasEditableWebField: true, checkReading: false,
+                                   inEditableWindow: false, mailReading: true) {
+            ok("gate: Mail 阅读窗不查", "无发送按钮 → 跳过")
+        } else { bad("gate: Mail 阅读窗被查", "仍为 true") }
+        // 写信窗：有发送按钮（mailReading=false）→ 要查
         if InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
-                                  hasEditableWebField: WebText.isBodySized(editable: compose, window: win),
-                                  checkReading: false, inEditableWindow: false) {
-            ok("gate: 写信正文要查", "正文区足够大")
-        } else { bad("gate: 写信正文没查", "被误杀") }
+                                  hasEditableWebField: true, checkReading: false,
+                                  inEditableWindow: false, mailReading: false) {
+            ok("gate: Mail 写信窗要查", "有发送按钮 → 查")
+        } else { bad("gate: Mail 写信窗没查", "被误杀") }
+        // 显式打开 checkReading：阅读窗也要查
+        if InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                  hasEditableWebField: true, checkReading: true,
+                                  inEditableWindow: false, mailReading: true) {
+            ok("gate: checkReading 开时阅读窗要查", "显式开关优先")
+        } else { bad("gate: checkReading 开关失效", "仍跳过") }
     }
 }
 

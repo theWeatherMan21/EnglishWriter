@@ -993,18 +993,21 @@ final class InlineController {
         // 唯一例外：Mail 的邮件正文（宿主是 Mail 且元素是 AXWebArea）。
         // 浏览器宿主已在上游 skip-browser；这里管的是其它 App 的只读正文（PDF / 预览 / 面板说明）。
         let isMailBody = WebText.isWebBody(el) && appName(pid) == "Mail"
-        // 必须「正文尺寸」的可编辑区才算在写：阅读视图里的搜索框也能编辑，
-        // 面积只有窗口的零点几，按它判定就会去查整封别人的邮件（11-23 爹地截图）。
-        let hasEditableWebField = WebText.isWebBody(el)
-            && AXInline.textField(in: el) != nil
-            && WebText.hasBodySizedEditable(in: el)
+        // 门控只管「这个 App 要不要看」，不在门控上按尺寸打分（11-23 退回）：
+        // 面积刻度会把真正的写信窗也判成「不够大」；正文收窄交给
+        // WebText.filterOutsideNavigation（按几何丢块，不误伤）。
+        let hasEditableWebField = WebText.isWebBody(el) && AXInline.textField(in: el) != nil
+        // Mail 的阅读窗也有可编辑节点（搜索框），所以要问「前台窗口有没有发送按钮」。
+        // 这条不按尺寸打分：小窗口的写信区会被面积阈值误杀（11-23 退回那条阈值）。
+        let mailReading = (appName(pid) == "Mail") && !MailProbe.isComposeWindow(pid: pid)
         let inEditableWindow = WebText.isWebBody(el) && AXInline.webAreaIsInEditableWindow(el, pid: pid)
         if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
                                    isWebBody: WebText.isWebBody(el),
                                    isMailBody: isMailBody,
                                    hasEditableWebField: hasEditableWebField,
                                    checkReading: EnginePrefs.checkReading,
-                                   inEditableWindow: inEditableWindow) {
+                                   inEditableWindow: inEditableWindow,
+                                   mailReading: mailReading) {
             // 证据必须能自证：是不是真的有可编辑控件被误判成只读？
             let elRole = attrString(el, kAXRoleAttribute as String) ?? "?"
             let kind = AXInline.isEditable(el) ? "editable-but-unreadable"
@@ -1799,7 +1802,10 @@ enum InlineGate {
     /// checkReading 保留开关（默认关），确要读信时再打开。
     static func shouldCheck(editable: Bool, isWebBody: Bool, isMailBody: Bool,
                             hasEditableWebField: Bool, checkReading: Bool = false,
-                            inEditableWindow: Bool = false) -> Bool {
+                            inEditableWindow: Bool = false, mailReading: Bool = false) -> Bool {
+        // Mail 阅读窗一律不查（除非显式打开了 checkReading）：那里的可编辑节点是搜索框，
+        // 不是你在写的东西（爹地 11-23：左栏画线 / 检查别人的邮件）
+        if isMailBody && mailReading && !checkReading { return false }
         if editable { return true }
         if isWebBody && hasEditableWebField { return true }
         if isWebBody && inEditableWindow { return true }      // 写信窗口的正文区
