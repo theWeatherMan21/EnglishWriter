@@ -8,31 +8,31 @@
       "badRects" : [
 
       ],
-      "blocks" : 0,
-      "chars" : 0,
-      "englishBlocks" : 0,
+      "blocks" : 4,
+      "chars" : 103,
+      "englishBlocks" : 2,
       "itemCount" : 0,
       "items" : [
 
       ],
       "kind" : "reading",
       "langSkippedBlocks" : 0,
-      "note" : "这个窗口里没有 AXWebArea \/ AXTextArea",
+      "note" : "可见 4 块 \/ 屏幕外 0 块；其中中文块 2（69 字，按设计跳过）、英文块 2 → 本次命中 0",
       "offscreenBlocks" : 0,
       "rectsInsideWindow" : true,
-      "skippedCjkBlocks" : 0,
-      "skippedCjkChars" : 0,
-      "staticTexts" : 0,
-      "textAreas" : 0,
-      "title" : "Mail",
-      "totalChars" : 0,
-      "visibleBlocks" : 0,
-      "webAreaFound" : false,
+      "skippedCjkBlocks" : 2,
+      "skippedCjkChars" : 69,
+      "staticTexts" : 4001,
+      "textAreas" : 1,
+      "title" : "Inbox – Network Management – 3,597 messages, 30 unread",
+      "totalChars" : 103,
+      "visibleBlocks" : 4,
+      "webAreaFound" : true,
       "windowRect" : [
-        0,
-        0,
-        0,
-        0
+        61,
+        30,
+        1859,
+        1050
       ]
     }
   ]
