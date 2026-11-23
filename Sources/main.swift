@@ -398,8 +398,16 @@ if argv.contains("--keywin") {
 if argv.contains("--lt-ready") {
     let sem = DispatchSemaphore(value: 0)
     var ok = false
+    let ensure = argv.contains("--ensure")
     Task {
         ok = await LocalEngine.available(force: true)
+        if !ok && ensure {
+            LocalEngineBootstrap.ensureRunningThrottled()      // 自愈：按需拉起本机引擎
+            for _ in 0..<12 {                                   // 最多等 6 秒（JVM 启动）
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if await LocalEngine.available(force: true) { ok = true; break }
+            }
+        }
         sem.signal()
     }
     sem.wait()

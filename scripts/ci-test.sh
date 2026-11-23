@@ -148,6 +148,20 @@ else
   exit 1
 fi
 
+echo "== 引擎自愈：杀掉本机引擎后 --lt-ready --ensure 必须自己拉起 =="
+pkill -f languagetool-server.jar 2>/dev/null || true
+sleep 2
+if "$BIN" --lt-ready --ensure > /tmp/ci-lt-heal.log 2>&1; then
+  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8081/v2/languages)
+  if [ "$code" = "200" ]; then
+    echo "PASS  引擎被杀后自愈（$(cat /tmp/ci-lt-heal.log | tail -1) · curl $code）"
+  else
+    echo "FAIL  --lt-ready --ensure 说就绪但 curl=$code（假就绪）"; exit 1
+  fi
+else
+  echo "FAIL  引擎被杀后没有自愈"; cat /tmp/ci-lt-heal.log; exit 1
+fi
+
 echo "== 引擎就绪状态必须与实际一致（不许缓存死）=="
 if curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://127.0.0.1:8081/v2/languages 2>/dev/null | grep -q 200; then
   if "$BIN" --lt-ready > /tmp/ci-lt.log 2>&1; then
