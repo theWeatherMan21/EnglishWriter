@@ -102,9 +102,48 @@ enum WebText {
         return found.location == NSNotFound ? nil : found
     }
 
+    /// 键盘兜底用：在一段全文里把 original 换掉一次（纯函数，可断言）。
+    /// 为什么需要它：Mail 的正文没有任何可编辑 AX 容器（host=无），
+    /// 只能走「⌘A 全选 → 在全文里改 → ⌘V 覆盖」这条不依赖 AX 写权限的路。
+    static func replaceOnce(fullText: String, original: String, replacement: String) -> String? {
+        guard !original.isEmpty else { return nil }
+        let ns = fullText as NSString
+        let r = ns.range(of: original)
+        guard r.location != NSNotFound else { return nil }
+        return ns.replacingCharacters(in: r, with: replacement)
+    }
+
+    /// 整段替换后的容器全文（纯函数，可断言）。
+    /// 用于最后的兜底路径：容器不接受「区间选区」时，选中全文整体粘贴。
+    static func replacedFullText(hostText: String, mapped: NSRange, replacement: String) -> String? {
+        let ht = hostText as NSString
+        guard mapped.location >= 0, mapped.length > 0,
+              mapped.location + mapped.length <= ht.length else { return nil }
+        return ht.replacingCharacters(in: mapped, with: replacement)
+    }
+
     /// 块元素往上找**能打字的容器**（Mail 写回必须落在正文容器上，写 AXStaticText 没用）。
     /// 11-23 现场：accept 走的 WebText.replace 把 AXSelectedText 打到 static text 上，
     /// 恒失败、且没有兜底 —— 于是 write-layer 一条日志都没有，write=0。
+    /// 诊断用：块元素往上 6 层的 role 列表（真机日志里能看出容器到底叫什么）
+    static func parentRoles(of el: AXUIElement, depth: Int = 6) -> [String] {
+        var out: [String] = []
+        var cur: AXUIElement? = el
+        var hops = 0
+        while let c = cur, hops < depth {
+            let role = attrString(c, kAXRoleAttribute as String) ?? "?"
+            let sub = attrString(c, kAXSubroleAttribute as String) ?? ""
+            let ed = isEditableNode(c) ? "E" : "-"
+            out.append("\(role)\(sub.isEmpty ? "" : "(\(sub))")\(ed)")
+            guard let raw = attr(c, kAXParentAttribute as String) else { break }
+            let cf = raw as CFTypeRef
+            guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
+            cur = (cf as! AXUIElement)
+            hops += 1
+        }
+        return out
+    }
+
     static func editableAncestor(of el: AXUIElement) -> AXUIElement? {
         var cur: AXUIElement? = el
         var hops = 0

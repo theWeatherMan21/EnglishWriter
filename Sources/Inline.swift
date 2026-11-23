@@ -1550,10 +1550,19 @@ final class InlineController {
     /// 所以「AX 返回 success」不算写成功，只有读回看到替换后的文本才算。
     private func writeWebBlock(range: NSRange, text: String, in block: WebText.Block, pid: pid_t) -> Bool {
         // 换到能打字的容器 + 容器坐标（块内偏移 ≠ 容器偏移）
-        let host = WebText.editableAncestor(of: block.element)
+        // 三级找容器：块元素父链 → 当前 web 正文里最大的可编辑节点 → 当前 web area 本身
+        var host = WebText.editableAncestor(of: block.element)
+        var hostSrc = "父链"
+        if host == nil, let cur = currentElement {
+            host = WebText.editableRegion(of: cur)
+            if host == nil { host = cur; hostSrc = "webarea" } else { hostSrc = "正文区" }
+        }
         let hostText = host.flatMap { AXInline.fullText(of: $0) } ?? ""
         let mapped = host != nil ? WebText.mapRange(blockText: block.text, range: range, hostText: hostText) : nil
-        AppLog.info("m3", "web-write host=\(host != nil ? "有" : "无") map=\(mapped.map { "\($0.location)+\($0.length)" } ?? "nil") block=\(range.location)+\(range.length)")
+        AppLog.info("m3", "web-write host=\(host != nil ? hostSrc : "无") map=\(mapped.map { "\($0.location)+\($0.length)" } ?? "nil") hostLen=\(hostText.count) block=\(range.location)+\(range.length)")
+        if host == nil {
+            AppLog.info("m3", "web-write chain=\(WebText.parentRoles(of: block.element).joined(separator: " ← "))")
+        }
 
         // ① 容器上 AXSelectedText（坐标已换算）
         if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
@@ -1577,6 +1586,40 @@ final class InlineController {
                 return true
             }
         }
+        // ③ 暴力兜底：选中容器全文 + 粘贴「整段替换后的文本」
+        //    （容器不接受区间选区时唯一还能走的路；不改别的，只改这一段）
+        if let h = host, let m = mapped,
+           let full = WebText.replacedFullText(hostText: AXInline.fullText(of: h) ?? "", mapped: m, replacement: text),
+           let all = axRangeValue(0, (full as NSString).length) {
+            _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, all)
+            if pasteViaClipboard(full, to: pid) {
+                usleep(450_000)
+                Diag.shared.applyMethod = "整段替换（剪贴板）"
+                AppLog.info("m3", "write-layer=clipboard-full len=\(full.count)（区间写不进，改整段）")
+                return true
+            }
+        }
+        // ④ 键盘兜底：Mail 正文没有任何可编辑 AX 容器（11-23 真机 host=无）
+        //    ⌘A 全选 → 读全文 → 本地改一处 → ⌘V 覆盖 → 再 ⌘A 读回验证
+        if host == nil {
+            let original = (block.text as NSString).substring(with: range)
+            pressSelectAll(to: pid)
+            if let full = selectedText(of: pid),
+               let newFull = WebText.replaceOnce(fullText: full, original: original, replacement: text),
+               newFull != full, pasteViaClipboard(newFull, to: pid) {
+                usleep(500_000)
+                pressSelectAll(to: pid)
+                let back = selectedText(of: pid) ?? ""
+                if back == newFull {
+                    Diag.shared.applyMethod = "键盘全选替换"
+                    AppLog.info("m3", "write-layer=keyboard-all len=\(newFull.count)（正文无可编辑 AX 容器）")
+                    return true
+                }
+                AppLog.info("m3", "write-layer=keyboard-all 但读回不一致（字数 \(back.count) vs \(newFull.count)）")
+            } else {
+                AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 / 原文不在选区里）")
+            }
+        }
         AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（容器定位失败 / AX 与剪贴板都不成功）")
         return false
     }
@@ -1586,6 +1629,32 @@ final class InlineController {
         let ht = hostText as NSString
         guard mapped.location >= 0, mapped.length >= 0, mapped.location + mapped.length <= ht.length else { return false }
         return ht.substring(with: mapped) == replacement
+    }
+
+    /// 合成 ⌘A（给键盘兜底用）：Mail 正文没有可编辑 AX 容器时，只能靠键击
+    private func pressSelectAll(to pid: pid_t) {
+        guard pid > 0 else { return }
+        let src = CGEventSource(stateID: .combinedSessionState)
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: 0x00, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: 0x00, keyDown: false) else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.postToPid(pid)
+        up.postToPid(pid)
+        usleep(150_000)
+    }
+
+    /// 当前选区文本（键盘兜底读回用）
+    private func selectedText(of pid: pid_t) -> String? {
+        let sys = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let f = focused else { return nil }
+        let el = f as! AXUIElement
+        var sel: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextAttribute as CFString, &sel) == .success,
+              let t = sel as? String, !t.isEmpty else { return nil }
+        return t
     }
 
     /// 写回四层降级（原位替换）：AX text operation → 选区 + AXSelectedText → 剪贴板 ⌘V（用完恢复剪贴板）

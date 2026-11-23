@@ -28,6 +28,8 @@ enum E2EReport {
         var layerAX = 0
         var layerClip = 0
         var layerNone = 0
+        var layerFull = 0
+        var layerKey = 0
         var lastFailReason = ""
         var lastDiag = ""
         var verdict = ""
@@ -71,6 +73,8 @@ enum E2EReport {
             if s.contains("kind=accept-write") { v.acceptWrite += 1 }
             if s.contains("write-layer=AXSelectedText") { v.layerAX += 1 }
             if s.contains("write-layer=clipboard") { v.layerClip += 1 }
+            if s.contains("write-layer=clipboard-full") { v.layerFull += 1 }
+            if s.contains("write-layer=keyboard-all") { v.layerKey += 1 }
             if s.contains("write-layer=none") { v.layerNone += 1 }
             if s.contains("kind=accept-fail") {
                 v.acceptFail += 1
@@ -83,7 +87,7 @@ enum E2EReport {
         print("  画线次数     \(v.lines)   (render 且 items>0 且 rects>0)")
         print("  点中线/点空  hit=\(v.clickHit) miss=\(v.clickMiss)")
         print("  接受序列     begin=\(v.acceptBegin) write=\(v.acceptWrite) fail=\(v.acceptFail)")
-        print("  写入层       AX=\(v.layerAX) clipboard=\(v.layerClip) none=\(v.layerNone)")
+        print("  写入层       AX=\(v.layerAX) clipboard=\(v.layerClip) 整段=\(v.layerFull) 键盘=\(v.layerKey) none=\(v.layerNone)")
 
         if v.acceptFail > 0 {
             print("RESULT: FAIL —— 接受失败：\(v.lastFailReason)")
@@ -106,7 +110,7 @@ enum E2EReport {
             print("RESULT: 等待 —— 点中线了，但还没走到写回（卡片里的「接受」点了吗）")
             return 0
         }
-        if v.layerAX + v.layerClip == 0 {
+        if v.layerAX + v.layerClip + v.layerFull + v.layerKey == 0 {
             print("RESULT: FAIL —— 有 accept-write 但查不到 write-layer（写回路径没记录，判据不可信）")
             return 1
         }

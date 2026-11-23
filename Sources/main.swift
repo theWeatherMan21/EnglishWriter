@@ -394,6 +394,11 @@ if argv.contains("--keywin") {
     exit(KeyWinProbe.run(argv))
 }
 
+// AX 树 dump（只读诊断：Mail 正文到底有没有可编辑容器）
+if argv.contains("--axdump-mail") {
+    exit(AXTreeDump.run())
+}
+
 // 引擎就绪状态（给 CI 对账：curl 说通、App 也必须说通）
 if argv.contains("--lt-ready") {
     let sem = DispatchSemaphore(value: 0)

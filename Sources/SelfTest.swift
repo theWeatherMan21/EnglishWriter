@@ -2494,6 +2494,24 @@ extension SelfTest {
             ok("webwrite: 读回是替换后文本才算成功", "sent")
         } else { bad("webwrite: 读回验证漏判", "明明已经是 sent") }
 
+        if WebText.replaceOnce(fullText: "Hi,\nI have send the file.\nThanks", original: "have send", replacement: "have sent")
+            == "Hi,\nI have sent the file.\nThanks" {
+            ok("webwrite: 键盘兜底能在全文里改一处", "have send → have sent")
+        } else { bad("webwrite: 键盘兜底替换算错", "replaceOnce") }
+
+        if WebText.replaceOnce(fullText: "nothing", original: "have send", replacement: "have sent") == nil {
+            ok("webwrite: 键盘兜底原文不在就返回 nil", "不乱改")
+        } else { bad("webwrite: 键盘兜底找不到还改了", "会改错") }
+
+        let full = WebText.replacedFullText(hostText: "I have send the file.", mapped: sent, replacement: "sent")
+        if full == "I have sent the file." {
+            ok("webwrite: 整段替换文本算对", "暴力兜底用")
+        } else { bad("webwrite: 整段替换算错", "\(String(describing: full))") }
+
+        if WebText.replacedFullText(hostText: "abc", mapped: NSRange(location: 1, length: 99), replacement: "x") == nil {
+            ok("webwrite: 整段替换越界返回 nil", "不写坏")
+        } else { bad("webwrite: 整段替换没拦越界", "会写坏") }
+
         if !InlineController.webWriteVerified(hostText: "I have send the file.", mapped: sent, replacement: "sent") {
             ok("webwrite: AX 报 success 但文本没变 → 判失败", "会去落剪贴板")
         } else { bad("webwrite: 文本没变却判成功", "又把没写当写成") }
