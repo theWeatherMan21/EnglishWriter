@@ -544,7 +544,28 @@ final class HoverCoordinator {
                               textLen: 0, sentenceLen: 0, itemCount: itemID,
                               rectCount: ctrl0.items.count, elapsed: "-",
                               err: "item=\(itemID) of \(ctrl0.items.count)", at: Date()))
-        if usingWebCard { openWeb(itemID: itemID, rect: rect); return }
+        if usingWebCard {
+            openWeb(itemID: itemID, rect: rect)
+            // Web 卡片要等 WKWebView 载入；300ms 后还不可见就回落原生卡片，
+            // 不许出现「点了没反应」这种既无界面又无日志的状态（11-23 定的规矩）
+            let id = itemID, r = rect
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self else { return }
+                if CardWeb.shared.isVisible { return }
+                CheckLog.append(.init(kind: "card-fail", pid: InlineController.shared.currentPid,
+                                      app: appName(InlineController.shared.currentPid), role: "web",
+                                      textLen: 0, sentenceLen: 0, itemCount: id,
+                                      rectCount: InlineController.shared.items.count, elapsed: "-",
+                                      err: "web 卡片 300ms 未上屏 → 回落原生面板", at: Date()))
+                self.showNative(itemID: id, rect: r)
+            }
+            return
+        }
+        showNative(itemID: itemID, rect: rect)
+    }
+
+    /// 原生面板（Web 卡片不可用时的回落；--m3 自测也走这条）
+    private func showNative(itemID: Int, rect: CGRect) {
         let ctrl = InlineController.shared
         guard itemID >= 0, itemID < ctrl.items.count else {
             CheckLog.append(.init(kind: "card-fail", pid: ctrl.currentPid,
