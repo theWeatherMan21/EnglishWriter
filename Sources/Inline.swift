@@ -1644,17 +1644,46 @@ final class InlineController {
         usleep(150_000)
     }
 
-    /// 当前选区文本（键盘兜底读回用）
+    /// 目标进程里的选区文本（键盘兜底读回用）。
+    /// 必须取**那个进程**的焦点元素：点接受时焦点在我们自己的卡片窗口上，
+    /// 用 SystemWide 读到的会是卡片，永远读不到 Mail 的选区（11-23 自查纠正）。
     private func selectedText(of pid: pid_t) -> String? {
-        let sys = AXUIElementCreateSystemWide()
+        guard pid > 0 else { return nil }
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 0.3)
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let f = focused else { return nil }
-        let el = f as! AXUIElement
-        var sel: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextAttribute as CFString, &sel) == .success,
-              let t = sel as? String, !t.isEmpty else { return nil }
-        return t
+        var el: AXUIElement?
+        if AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+           let f = focused, CFGetTypeID(f as CFTypeRef) == AXUIElementGetTypeID() {
+            el = (f as! AXUIElement)
+        }
+        if el == nil {
+            var winRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &winRef) == .success,
+               let w = winRef, CFGetTypeID(w as CFTypeRef) == AXUIElementGetTypeID() {
+                el = (w as! AXUIElement)
+            }
+        }
+        guard var el else { return nil }
+        // 选区可能挂在焦点元素的祖先上（Mail 的 web 正文就是这样）：
+        // 依次读 AXSelectedText，再退到 AXValue，最多上溯 4 层
+        for _ in 0..<5 {
+            var sel: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, kAXSelectedTextAttribute as CFString, &sel) == .success,
+               let t = sel as? String, !t.isEmpty {
+                return t
+            }
+            var val: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &val) == .success,
+               let t = val as? String, !t.isEmpty {
+                return t
+            }
+            guard let raw = attr(el, kAXParentAttribute as String) else { break }
+            let cf = raw as CFTypeRef
+            guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
+            el = (cf as! AXUIElement)
+        }
+        return nil
     }
 
     /// 写回四层降级（原位替换）：AX text operation → 选区 + AXSelectedText → 剪贴板 ⌘V（用完恢复剪贴板）
