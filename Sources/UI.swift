@@ -1,6 +1,15 @@
 // UI.swift — 菜单栏面板（非激活）、设置窗口、状态模型
 
 import AppKit
+import WebKit
+
+/// 卡片与侧栏都是「不抢焦点」的浮层：窗口 canBecomeKey=false 或不激活。
+/// 这种情况下 WKWebView 默认把第一次点击当成「激活窗口」吃掉，
+/// 用户点按钮毫无反应（爹地 11-23 报「点击接受无反应」）。
+/// 视图层重写 acceptsFirstMouse，第一下才落到元素上。
+final class FirstMouseWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
 import SwiftUI
 
 // MARK: - 诊断计数

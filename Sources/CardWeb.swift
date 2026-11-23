@@ -40,7 +40,7 @@ final class CardWeb: NSPanel {
 
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(self, name: "bridge")
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: CardWeb.cardWidth, height: 140), configuration: cfg)
+        web = FirstMouseWebView(frame: NSRect(x: 0, y: 0, width: CardWeb.cardWidth, height: 140), configuration: cfg)
         web.setValue(false, forKey: "drawsBackground")
         if let dir = Self.cardDir() {
             web.loadFileURL(dir.appendingPathComponent("index.html"), allowingReadAccessTo: dir)
@@ -50,6 +50,7 @@ final class CardWeb: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
 
     func show(category: String, color: String, before: String, original: String,
               replacement: String, after: String, reason: String = "", anchor: CGRect,

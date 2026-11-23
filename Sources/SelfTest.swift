@@ -64,7 +64,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -2444,6 +2444,24 @@ extension SelfTest {
 
         print("\n=== 汇总：PASS \(pass) / FAIL \(fail) / SKIP \(skipped) ===")
         return fail == 0 ? 0 : 1
+    }
+}
+
+// MARK: - 第一次点击（卡片/侧栏不抢焦点，但必须吃第一下）
+extension SelfTest {
+    static func firstClickTests() {
+        let probe = FirstMouseWebView(frame: .zero)
+        _ = CardWeb.shared; _ = Sidebar.shared
+        if probe.acceptsFirstMouse(for: nil) {
+            ok("click: 卡片吃第一次点击", "acceptsFirstMouse=true")
+        } else {
+            bad("click: 卡片第一次点击被系统吃掉", "acceptsFirstMouse=false")
+        }
+        if probe.acceptsFirstMouse(for: nil) {
+            ok("click: 侧栏吃第一次点击", "acceptsFirstMouse=true")
+        } else {
+            bad("click: 侧栏第一次点击被系统吃掉", "acceptsFirstMouse=false")
+        }
     }
 }
 

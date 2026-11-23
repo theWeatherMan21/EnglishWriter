@@ -52,7 +52,7 @@ final class Sidebar: NSPanel {
 
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(self, name: "bridge")
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 620), configuration: cfg)
+        web = FirstMouseWebView(frame: NSRect(x: 0, y: 0, width: width, height: 620), configuration: cfg)
         web.setValue(false, forKey: "drawsBackground")
         // 真文件加载（web/sidebar/*），与浏览器扩展共用同一套 CSS/JS
         if let dir = Self.webDir() {
@@ -64,6 +64,7 @@ final class Sidebar: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
 
     // MARK: 对外（与旧 AppKit 侧栏同签名，调用方不用改）
 
