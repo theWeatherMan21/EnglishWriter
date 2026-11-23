@@ -33,17 +33,8 @@ extension String {
 
 // MARK: - 语言门控
 
-/// 非空白字符里 CJK 码点所占比例
-func cjkRatio(_ s: String) -> Double {
-    var total = 0
-    var cjk = 0
-    for u in s.unicodeScalars {
-        if CharacterSet.whitespacesAndNewlines.contains(u) { continue }
-        total += 1
-        if isCJK(u) { cjk += 1 }
-    }
-    return total == 0 ? 0 : Double(cjk) / Double(total)
-}
+/// 非空白字符里 CJK 码点所占比例（口径统一到 LanguageGate，别各写一份）
+func cjkRatio(_ s: String) -> Double { LanguageGate.cjkRatio(s) }
 
 func isCJK(_ u: Unicode.Scalar) -> Bool {
     switch u.value {
@@ -59,7 +50,7 @@ func isCJK(_ u: Unicode.Scalar) -> Bool {
     }
 }
 
-let cjkGateThreshold = 0.40
+let cjkGateThreshold = LanguageGate.cjkGate
 
 /// 门控：中文占比超阈值就不介入（不取全文、不发请求）
 func shouldSkipAsChinese(_ s: String) -> Bool { cjkRatio(s) > cjkGateThreshold }

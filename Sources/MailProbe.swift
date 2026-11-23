@@ -175,7 +175,7 @@ enum MailProbe {
             // 中文块与英文块分开数：K=0 时能分清「没英文」和「检查坏了」
             for b in blks {
                 let n = (b.text as NSString).length
-                if cjkRatio(b.text) >= 0.30 { r.skippedCjkBlocks += 1; r.skippedCjkChars += n }
+                if cjkRatio(b.text) >= LanguageGate.cjkGate { r.skippedCjkBlocks += 1; r.skippedCjkChars += n }
                 else if !LanguageGate.isEnglish(b.text) { r.langSkippedBlocks += 1 }
                 else if n >= 8 { r.englishBlocks += 1 }
             }

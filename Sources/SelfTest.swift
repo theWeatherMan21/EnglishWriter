@@ -2480,6 +2480,30 @@ extension SelfTest {
             SelfTest.bad("batch: 截断", "\(cut.segs.count) 块")
         }
 
+        // CJK 阈值只有一个来源：三条路径 + 语言门控必须给出同一个判定
+        let cjkSamples = [
+            "We was late because there is many problems.",
+            "总经理应虹于11月23日休假一天。",
+            "Please confirm the ETD and B/L copy.",
+            "张三：货已装船，预计11月25日到港。",
+        ]
+        var agree = 0
+        for t in cjkSamples {
+            let gate = LanguageGate.cjkRatio(t) > LanguageGate.cjkGate
+            let engine = shouldSkipAsChinese(t)
+            let ratioSame = abs(DocScan.cjkRatio(t) - LanguageGate.cjkRatio(t)) < 0.0001
+            let lang = !LanguageGate.isEnglish(t)
+            if gate == engine, ratioSame, gate == lang { agree += 1 }
+            else {
+                print("  不一致: gate=\(gate) engine=\(engine) lang=\(lang) ratioSame=\(ratioSame) ← \(t.prefix(20))")
+            }
+        }
+        if agree == cjkSamples.count {
+            SelfTest.ok("cjk: 三条路径判定一致", "\(agree)/\(cjkSamples.count)（阈值 \(LanguageGate.cjkGate)）")
+        } else {
+            SelfTest.bad("cjk: 路径一致", "\(agree)/\(cjkSamples.count)")
+        }
+
         // skip-* 的负例：每个「跳过」都要能区分「该跳」和「误伤」
         let lang: [(String, String, Bool)] = [
             ("英文业务句 → 查",            "We was late because there is many problems.", true),

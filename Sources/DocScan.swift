@@ -40,12 +40,7 @@ enum DocScan {
         return out
     }
 
-    static func cjkRatio(_ s: String) -> Double {
-        let scalars = s.unicodeScalars
-        guard !scalars.isEmpty else { return 0 }
-        let cjk = scalars.filter { $0.value >= 0x4E00 && $0.value <= 0x9FFF }.count
-        return Double(cjk) / Double(scalars.count)
-    }
+    static func cjkRatio(_ s: String) -> Double { LanguageGate.cjkRatio(s) }
 
     /// 整篇扫描。engine 可注入（测试用桩；生产传 LT+规则）
     static func scan(_ text: String,
@@ -60,7 +55,7 @@ enum DocScan {
         for r in ranges.prefix(maxSentences) {
             let sentence = ns.substring(with: r)
             guard sentence.trimmingCharacters(in: .whitespacesAndNewlines).count > 2 else { continue }
-            if cjkRatio(sentence) > 0.40 { res.skippedCJK += 1; continue }
+            if cjkRatio(sentence) > LanguageGate.cjkGate { res.skippedCJK += 1; continue }
             let local = await engine(sentence)
             for var it in local {
                 // S2：偏移是句内的，回填全文；越界的直接丢，绝不让它画到别处

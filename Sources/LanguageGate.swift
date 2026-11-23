@@ -15,6 +15,21 @@ import Foundation
 import NaturalLanguage
 
 enum LanguageGate {
+    /// 中文占比阈值：全局唯一（11-23 知澜指出 DocScan 0.40 / Engine 0.40 / MailProbe 0.30 三个数，
+    /// 中文被当英文送进 LT 就是这种「每处各写一个」的产物）。改这一处，全链路跟着变。
+    static let cjkGate = 0.30
+
+    /// 非空白字符里 CJK 码点所占比例（含汉字/假名/韩文/全角/CJK 标点）
+    static func cjkRatio(_ s: String) -> Double {
+        var total = 0, cjk = 0
+        for u in s.unicodeScalars {
+            if CharacterSet.whitespacesAndNewlines.contains(u) { continue }
+            total += 1
+            if isCJK(u) { cjk += 1 }
+        }
+        return total == 0 ? 0 : Double(cjk) / Double(total)
+    }
+
 
     /// 变音字符集合（拉丁扩展 A/B + 常见西欧）
     private static let accented: Set<Character> = Set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻäöüßÄÖÜàáâãåçèéêëìíîïñòóôõùúûýÿÀÁÂÃÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÙÚÛÝ")
@@ -52,7 +67,7 @@ enum LanguageGate {
             default: break
             }
         }
-        if cjk >= 2, scalars > 0, Double(cjk) / Double(scalars) > 0.2 { return false }
+        if cjk >= 2, scalars > 0, Double(cjk) / Double(scalars) > cjkGate { return false }
 
         // 1) 变音字符比例
         var total = 0, marked = 0
