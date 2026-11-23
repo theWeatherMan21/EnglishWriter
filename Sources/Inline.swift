@@ -1564,6 +1564,10 @@ final class InlineController {
             AppLog.info("m3", "web-write chain=\(WebText.parentRoles(of: block.element).joined(separator: " ← "))")
         }
 
+        // 先抢回正文焦点：没有焦点，下面每一层都是空放（11-23 真机四层全败的原因）
+        let focused = returnFocusToBody(pid: pid, element: currentElement ?? host)
+        AppLog.info("m3", "focus-return=\(focused ? "ok" : "fail")")
+
         // ① 容器上 AXSelectedText（坐标已换算）
         if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
             _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, v)
@@ -1707,6 +1711,31 @@ final class InlineController {
         down.postToPid(pid)
         up.postToPid(pid)
         usleep(150_000)
+    }
+
+    /// 把键盘焦点交回正文（点接受时焦点在我们自己的卡片上，所有键击都会落空）。
+    /// 顺序：raise 窗口 → 给正文元素设 AXFocused → 用「设一个 1 字选区并读回」验证焦点真的到了。
+    /// 这一步不成立，后面 ⌘A/⌘V 全是空放。
+    @discardableResult
+    private func returnFocusToBody(pid: pid_t, element: AXUIElement?) -> Bool {
+        guard pid > 0, let el = element else { return false }
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 0.3)
+        var winsRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
+           let wins = winsRef as? [AXUIElement], let w = wins.first {
+            AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+        }
+        _ = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if let region = WebText.editableRegion(of: el) {
+            _ = AXUIElementSetAttributeValue(region, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
+        // 验证：设 1 字选区能读回来，说明焦点/可写性都在
+        if let v = axRangeValue(0, 1) {
+            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
+            if let r = axSelection(el), r.length == 1 { return true }
+        }
+        return false
     }
 
     /// 目标进程里的选区文本（键盘兜底读回用）。
