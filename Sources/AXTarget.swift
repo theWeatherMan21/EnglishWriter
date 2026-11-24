@@ -334,9 +334,16 @@ final class AXRoundStats {
 private var axSlowCount = 0
 func axSlowCountValue() -> Int { axSlowCount }
 
+/// AX 调用的统一闸：每次调用前把该元素的 messaging timeout 压到 150ms。
+/// 为什么必须逐个元素设（知澜 11-24 sample 88781 硬证据）：
+/// 主线程 1750 个样本里 1731 个卡在 AXUIElementCopyAttributeValue → mach_msg 等 Mail 回复，
+/// 设过 app 元素的超时对这些**子元素**不生效，Mail 忙起来就无限等，界面直接冻住。
+/// 150ms 足够正常的同步请求（实测 <40ms），异常时宁可当作「读不到」也不冻界面。
+let axCallTimeout: Float = 0.15
 func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
     let t0 = Date()
     var out: CFTypeRef?
+    AXUIElementSetMessagingTimeout(el, axCallTimeout)
     let r = AXUIElementCopyAttributeValue(el, name as CFString, &out)
     let ms = Int(Date().timeIntervalSince(t0) * 1000)
     AXRoundStats.shared.add(name, ms)

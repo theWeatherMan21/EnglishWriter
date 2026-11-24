@@ -850,7 +850,20 @@ final class InlineController {
         var role = cand.map { attrString($0, kAXRoleAttribute as String) ?? "" } ?? ""
         let textRole = (role == "AXTextArea" || role == "AXTextField" || role == "AXWebArea")
         let readable = cand.map { AXInline.fullText(of: $0) != nil || WebText.isWebBody($0) } ?? false
-        if cand == nil || !textRole || !readable {
+        // Mail 优先：用 MailProbe 定位写信窗正文（与 checkNow / --probe-mail 同一口径）。
+        // 知澜 11-24 实测：后台走通用 attach 路径 → 取到前台窗口正文（textLen=0、不检查），
+        // 而 CLI 走 MailProbe 能读到「可见块[6字] Dear,」——两个口径必须合一。
+        var mailPicked = false
+        if appName(pid) == "Mail", let best = AXInline.bestWebBody(pid: pid), WebText.isWebBody(best.el) {
+            mailPicked = true
+            cand = best.el
+            role = attrString(best.el, kAXRoleAttribute as String) ?? ""
+            emit(CheckEvent(kind: "attach-mail-body", pid: pid, app: appName(pid), role: role,
+                            textLen: (AXInline.fullText(of: best.el) ?? "").count, sentenceLen: 0,
+                            itemCount: 0, rectCount: 0, elapsed: "-",
+                            err: best.hasField ? "mail-compose-with-field" : "mail-compose-longest", at: Date()))
+        }
+        if !mailPicked, cand == nil || !textRole || !readable {
             // 顺序很关键（知澜 11-19 抓到的反例）：
             //   ① 先找 key window 里的**可编辑**元素（原生 App 的正路，确定性，不猜）
             //   ② 再考虑前台窗口正文（只对 Web 宿主有意义：Mail 写信 / WebArea 外层 AXValue 恒空）
