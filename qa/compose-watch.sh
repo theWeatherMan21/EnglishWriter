@@ -17,6 +17,7 @@ cd "$(dirname "$0")/.." || exit 1
 BIN=./build/英文写作助手
 EVID=qa/evidence
 OUT="$EVID/compose-watch.log"
+NEEDLE="${EW_WATCH_NEEDLE:-have send the file}"
 mkdir -p "$EVID"
 
 LOCKDIR=/tmp/ew-compose-watch.lockdir
@@ -37,19 +38,24 @@ echo "== compose-watch 开始 $(date '+%F %T') ==" >> "$OUT"
 for i in $(seq 1 1440); do
     if locked; then sleep 30; continue; fi
     probe=$("$BIN" --probe-mail 2>&1)
-    if echo "$probe" | grep -q "compose 判定" && echo "$probe" | grep -q "have send"; then
+    if echo "$probe" | grep -q "信号=true" && echo "$probe" | grep -q "have send"; then
         sleep 3     # 等爹地停手
         TS=$(date '+%Y%m%d-%H%M%S')
-        echo "--- 命中写信窗含 have send @ $TS ---" >> "$OUT"
+        echo "--- 命中写信窗含「${NEEDLE}」 @ ${TS} ---" >> "$OUT"
         "$BIN" --axdump-mail > "$EVID/axdump-mail-$TS.txt" 2>&1
         tail -1 "$EVID/axdump-mail-$TS.txt" >> "$OUT"
-        "$BIN" --accept-now 0 --expect "send" > "$EVID/accept-now-$TS.log" 2>&1
-        tail -6 "$EVID/accept-now-$TS.log" >> "$OUT"
+        RUN="$EVID/accept-now-$TS.log"
+        "$BIN" --accept-now 0 --expect "$NEEDLE" > "$RUN" 2>&1
+        tail -6 "$RUN" >> "$OUT"
+        # 先判成功（此时 RUN 里只有本次输出），再追加历史日志——
+        # 反过来会命中历史行里的旧 ok，10:17 就是这么假成功的。
+        SUCCESS=0
+        grep -q "accept(itemID: 0) → ok" "$RUN" && SUCCESS=1
         grep -a "accept-\|web-write\|write-layer\|focus-return\|clipboard 前置\|整段替换前置\|keyboard-all" \
             ~/Library/Logs/EnglishWriter/app.log | tail -12 >> "$EVID/accept-now-$TS.log"
         # 成功判据：accept 真返回 ok（写回并读回通过）。没成就不退出，继续等下一次——
         # 窗口在他手里开开关关，抢到一次失败就收工等于白等（09:14 那次就是这样）。
-        if grep -q "accept(itemID: 0) → ok" "$EVID/accept-now-$TS.log"; then
+        if [ "$SUCCESS" = "1" ]; then
             echo "== 成功，结束 $(date '+%F %T') ==" >> "$OUT"
             exit 0
         fi
