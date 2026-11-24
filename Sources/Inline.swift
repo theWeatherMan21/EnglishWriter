@@ -1874,7 +1874,17 @@ final class InlineController {
 
         let blockRange = (wholeBody as NSString).range(of: blockText)
         let rInBlock = (blockText as NSString).range(of: original)
-        guard blockRange.location != NSNotFound, rInBlock.location != NSNotFound else { return (false, false) }
+        if blockRange.location == NSNotFound {
+            // 静默失败点（11-24 知澜实测）：正文被 AppleScript/宿主重设过之后，块文本与整篇对不上，
+            // 旧代码在这里一声不响地 return，用户看到的是「点了没反应，也没任何提示」。
+            let head = { (t: String) -> String in String(t.prefix(40)).replacingOccurrences(of: "\n", with: "⏎") }
+            AppLog.info("m3", "keyboard-word 放弃：块文本在整篇里找不到（块 \(blockText.count) 字 / 全文 \(wholeBody.count) 字）块首40=\"\(head(blockText))\" 全文首40=\"\(head(wholeBody))\"")
+            return (false, false)
+        }
+        if rInBlock.location == NSNotFound {
+            AppLog.info("m3", "keyboard-word 放弃：目标词 \"\(original)\" 不在块文本里（块 \(blockText.count) 字）")
+            return (false, false)
+        }
         let absOffset = blockRange.location + rInBlock.location
         let len = original.count
         guard absOffset <= 4000 else {
