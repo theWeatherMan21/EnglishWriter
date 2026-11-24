@@ -20,6 +20,7 @@
   // 划线与建议的对应关系（键盘 ←/→ 切换要用同一份，不能靠再查一遍 DOM）
   let anchors = [];
   let activeIndex = -1;
+  const nav = { i: -1 };   // 独立于 hideCard：卡片重建/隐藏都不清它，←/→ 靠它定位
   let lastTarget = null;
   let lastAccept = null;
   let ignoreList = new Set();
@@ -289,9 +290,9 @@
   }
 
   function showCard(edit, anchor, index) {
-    if (typeof index === 'number') activeIndex = index;
     ensureLayer();
-    hideCard();
+    hideCard();                       // hideCard 会把 activeIndex 清成 -1，必须先清再记
+    if (typeof index === 'number') { activeIndex = index; nav.i = index; }
     card = document.createElement('div');
     card.className = 'card';
     const typeCn = { spelling: '拼写', grammar: '语法', clarity: '清晰度', style: '风格' }[edit.type] || '语法';
@@ -485,7 +486,7 @@
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       if (!anchors.length) return;
       const step = e.key === 'ArrowRight' ? 1 : -1;
-      const cur = activeIndex < 0 ? 0 : activeIndex;
+      const cur = nav.i >= 0 ? nav.i : (activeIndex < 0 ? 0 : activeIndex);
       const next = (cur + step + anchors.length) % anchors.length;
       const a = anchors[next];
       if (a) { a.el.scrollIntoView({ block: 'nearest' }); showCard(a.edit, a.el, next); }

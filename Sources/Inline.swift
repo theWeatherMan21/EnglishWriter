@@ -222,16 +222,35 @@ enum AXInline {
             }
         }
         wins.append(contentsOf: (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? [])
-        var best: (el: AXUIElement, len: Int, hasField: Bool, score: Int)?
-        for w in wins {
-            for node in descendants(w, depth: 12) where WebText.isWebBody(node) {
-                let len = WebText.blocks(of: node).reduce(0) { $0 + ($1.text as NSString).length }
-                if len < 20 { continue }
-                let hasField = textField(in: node) != nil
-                let score = (hasField ? 1_000_000 : 0) + len
-                if best == nil || score > best!.score { best = (node, len, hasField, score) }
+        func scan() -> (el: AXUIElement, len: Int, hasField: Bool, score: Int)? {
+            var best: (el: AXUIElement, len: Int, hasField: Bool, score: Int)?
+            var wins2: [AXUIElement] = []
+            for key in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+                if let v = attr(appEl, key as String), CFGetTypeID(v) == AXUIElementGetTypeID() {
+                    wins2.append(v as! AXUIElement)
+                }
             }
+            wins2.append(contentsOf: (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? [])
+            for w in wins2 {
+                for node in descendants(w, depth: 12) where WebText.isWebBody(node) {
+                    let len = WebText.blocks(of: node).reduce(0) { $0 + ($1.text as NSString).length }
+                    if len < 20 { continue }
+                    let hasField = textField(in: node) != nil
+                    let score = (hasField ? 1_000_000 : 0) + len
+                    if best == nil || score > best!.score { best = (node, len, hasField, score) }
+                }
+            }
+            return best
         }
+        var best = scan()
+        // 稳定性（知澜 11-24：同一封邮件 3 秒内 198 → 0）：取不到就重试，别一次取样就判「没有正文」。
+        var tries = 1
+        while best == nil, tries < 3 {
+            usleep(150_000)
+            best = scan()
+            tries += 1
+        }
+        _ = wins
         return best.map { ($0.el, $0.len, $0.hasField) }
     }
 
@@ -858,10 +877,11 @@ final class InlineController {
             mailPicked = true
             cand = best.el
             role = attrString(best.el, kAXRoleAttribute as String) ?? ""
+            let bodyBlocks = WebText.blocks(of: best.el)
             emit(CheckEvent(kind: "attach-mail-body", pid: pid, app: appName(pid), role: role,
-                            textLen: (AXInline.fullText(of: best.el) ?? "").count, sentenceLen: 0,
+                            textLen: best.len, sentenceLen: bodyBlocks.count,
                             itemCount: 0, rectCount: 0, elapsed: "-",
-                            err: best.hasField ? "mail-compose-with-field" : "mail-compose-longest", at: Date()))
+                            err: "\(best.hasField ? "mail-compose-with-field" : "mail-compose-longest") 块\(bodyBlocks.count)", at: Date()))
         }
         if !mailPicked, cand == nil || !textRole || !readable {
             // 顺序很关键（知澜 11-19 抓到的反例）：
@@ -1368,6 +1388,7 @@ final class InlineController {
                 // 立刻强探一次：LT 可能刚起来，负结果只缓存 2 秒，这一轮就能翻过来
                 ltOK = await LocalEngine.available(force: true)
             }
+            var engineItems = 0        // 引擎实际回传条数（过滤前）
             var all: [DiffItem] = []
             var map: [Int] = []
             var cjkSkipped = 0
@@ -1402,6 +1423,7 @@ final class InlineController {
                 let out = try await LocalEngine.review(text: batch.text, language: EnginePrefs.language())
                 ltMs += Date().timeIntervalSince(t0) * 1000
                 await MainActor.run { self.diag.lastElapsed = String(format: "%.0fms", ltMs) }
+                engineItems += out.items.count
                 AppLog.info("m3", "引擎回传 items=\(out.items.count) → 映射后 \(BlockBatch.map(out.items, in: batch).count)")
                 var acronymSkipped = 0
                 for (it, bi) in BlockBatch.map(out.items, in: batch) {
@@ -1422,7 +1444,15 @@ final class InlineController {
             await MainActor.run {
                 if let e = firstError { self.diag.lastError = e } else { self.diag.lastError = "-" }
                 // 语言门控留痕：块全是中文 → 一个引擎请求都没发
-                if all.isEmpty, cjkSkipped > 0, firstError == nil {
+                if all.isEmpty, engineItems > 0, firstError == nil {
+                    // 引擎确实回了，但全被过滤掉（缩写/去重）。旧日志把它写成「中文块 N · 0 请求」，
+                    // 读起来像「整轮被语言门控拦了」——11-24 就是这样误判的。分开留痕。
+                    self.emit(CheckEvent(kind: "filtered-all", pid: pid, app: appName(pid), role: "web",
+                                         textLen: (self.lastText as NSString).length, sentenceLen: 0,
+                                         itemCount: 0, rectCount: 0, elapsed: "-",
+                                         err: "引擎回传 \(engineItems) 条 → 缩写/去重过滤后 0 条（跳过中文块 \(cjkSkipped)）",
+                                         at: Date()))
+                } else if all.isEmpty, cjkSkipped > 0, firstError == nil {
                     self.diag.skippedChinese += 1
                     self.emit(CheckEvent(kind: "skip-lang", pid: pid, app: appName(pid), role: "web",
                                          textLen: (self.lastText as NSString).length, sentenceLen: 0,
