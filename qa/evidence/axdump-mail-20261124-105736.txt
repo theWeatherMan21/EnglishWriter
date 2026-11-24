@@ -1,0 +1,213 @@
+== Mail AX 树（只读）== 窗口 3 个
+AXWindow(AXDialog) edit=0 selRange=0 valLen=0 frame=84x77@100,135
+ AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=29x25@128,161
+AXWindow(AXStandardWindow) edit=0 selRange=0 valLen=0 frame=436x949@92,80
+ AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=436x949@92,80
+  AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=436x949@92,80
+   AXScrollArea edit=0 selRange=0 valLen=0 selSet=谎 frame=436x613@92,416
+    AXWebArea edit=0 selRange=0 valLen=0 selSet=谎 frame=436x682@92,416
+     AXGroup(AXEmptyGroup) edit=0 selRange=0 valLen=0 selSet=谎 frame=388x16@116,428
+     AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=388x16@116,444
+      AXStaticText edit=0 selRange=0 valLen=38 selSet=谎 frame=223x18@116,443
+     AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=388x45@116,492
+      AXStaticText edit=0 selRange=0 valLen=58 selSet=谎 frame=323x15@116,507
+      AXStaticText edit=0 selRange=0 valLen=16 selSet=谎 frame=97x15@116,522
+     AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=388x15@116,537
+      AXStaticText edit=0 selRange=0 valLen=3 selSet=谎 frame=36x15@116,537
+     AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=388x60@116,552
+      AXStaticText edit=0 selRange=0 valLen=35 selSet=谎 frame=230x15@116,552
+      AXStaticText edit=0 selRange=0 valLen=31 selSet=谎 frame=189x15@116,567
+      AXStaticText edit=0 selRange=0 valLen=29 selSet=谎 frame=185x15@116,582
+      AXStaticText edit=0 selRange=0 valLen=17 selSet=谎 frame=100x15@116,597
+     AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=388x15@116,612
+      AXStaticText edit=0 selRange=0 valLen=13 selSet=谎 frame=148x15@116,612
+     AXImage edit=0 selRange=0 valLen=0 selSet=谎 frame=388x239@116,642
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=24x24@480,642
+     AXImage edit=0 selRange=0 valLen=0 selSet=谎 frame=350x131@116,880
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=24x25@442,880
+     AXImage edit=0 selRange=0 valLen=0 selSet=谎 frame=140x72@116,1010
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=24x25@232,1010
+    AXScrollBar edit=0 selRange=0 valLen=0 selSet=谎 frame=17x613@511,752
+ AXStaticText edit=0 selRange=1 valLen=3 selSet=谎 frame=21x18@115,141
+ AXTextField edit=0 selRange=1 valLen=0 frame=350x21@139,141
+ AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=20x13@485,145
+ AXStaticText edit=0 selRange=1 valLen=3 selSet=谎 frame=23x18@115,181
+ AXTextField edit=0 selRange=1 valLen=0 selSet=谎 frame=348x21@141,181
+ AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=20x13@485,185
+ AXStaticText edit=0 selRange=1 valLen=9 selSet=谎 frame=58x18@115,221
+ AXTextField edit=0 selRange=1 valLen=0 selSet=谎 frame=312x21@177,221
+ AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=20x13@485,225
+ AXStaticText edit=0 selRange=1 valLen=8 selSet=谎 frame=52x18@115,261
+ AXTextField edit=0 selRange=1 valLen=0 selSet=谎 frame=276x18@171,261
+ AXPopUpButton edit=0 selRange=0 valLen=15 selSet=谎 frame=56x26@449,259
+ AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=436x44@92,372
+  AXPopUpButton edit=0 selRange=0 valLen=14 selSet=谎 frame=122x26@115,381
+  AXPopUpButton edit=0 selRange=0 valLen=7 selSet=谎 frame=122x26@243,381
+  AXPopUpButton edit=0 selRange=0 valLen=2 selSet=谎 frame=62x26@371,381
+  AXButton edit=0 selRange=0 valLen=5 selSet=谎 frame=26x26@439,381
+  AXButton edit=0 selRange=0 valLen=5 selSet=谎 frame=26x26@471,381
+  AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=99x26@503,381
+   AXCheckBox(AXSegment) edit=0 selRange=0 valLen=0 frame=25x24@504,383
+   AXCheckBox(AXSegment) edit=0 selRange=0 valLen=0 frame=24x24@529,383
+   AXCheckBox(AXSegment) edit=0 selRange=0 valLen=0 frame=25x24@553,383
+   AXCheckBox(AXSegment) edit=0 selRange=0 valLen=0 frame=25x24@578,383
+ AXStaticText edit=0 selRange=1 valLen=5 selSet=谎 frame=37x18@115,301
+ AXPopUpButton edit=0 selRange=0 valLen=38 selSet=谎 frame=141x26@154,297
+ AXStaticText edit=0 selRange=1 valLen=10 selSet=谎 frame=64x18@297,303
+ AXPopUpButton edit=0 selRange=0 valLen=7 selSet=谎 frame=142x26@363,299
+ AXStaticText edit=0 selRange=1 valLen=11 selSet=谎 frame=72x18@293,343
+ AXPopUpButton edit=0 selRange=0 valLen=11 selSet=谎 frame=138x26@367,339
+ AXStaticText edit=0 selRange=1 valLen=13 selSet=谎 frame=90x18@115,343
+ AXStaticText edit=0 selRange=1 valLen=5 selSet=谎 frame=39x18@207,343
+ AXToolbar edit=0 selRange=0 valLen=0 selSet=谎 frame=436x52@92,80
+  AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=37x52@197,80
+  AXRadioButton edit=0 selRange=0 valLen=0 selSet=谎 frame=39x52@234,80
+  AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=41x52@273,80
+  AXMenuButton edit=0 selRange=0 valLen=0 selSet=谎 frame=57x52@314,80
+  AXMenuButton edit=0 selRange=0 valLen=0 selSet=谎 frame=52x52@371,80
+  AXMenuButton edit=0 selRange=0 valLen=0 selSet=谎 frame=48x52@423,80
+  AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=40x52@484,80
+ AXButton(AXCloseButton) edit=0 selRange=0 valLen=0 selSet=谎 frame=16x16@110,98
+ AXButton(AXFullScreenButton) edit=0 selRange=0 valLen=0 selSet=谎 frame=16x16@156,98
+  AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=14x14@157,99
+   AXGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=14x14@157,99
+ AXButton(AXMinimizeButton) edit=0 selRange=0 valLen=0 selSet=谎 frame=16x16@133,98
+AXWindow(AXStandardWindow) edit=0 selRange=0 valLen=0 frame=1859x1050@61,30
+ AXSplitGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=1859x1050@61,30
+  AXScrollArea edit=0 selRange=0 valLen=0 selSet=谎 frame=198x998@61,82
+   AXOutline edit=0 selRange=0 valLen=0 selSet=谎 frame=200x1041@60,81
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x19@61,82
+     AXCell edit=0 selRange=0 valLen=0 frame=178x19@71,82
+      AXStaticText edit=0 selRange=1 valLen=10 selSet=谎 frame=164x16@78,83
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,101
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,101
+      AXStaticText edit=0 selRange=1 valLen=7 selSet=谎 frame=104x18@116,108
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=18x20@226,107
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,133
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,133
+      AXStaticText edit=0 selRange=1 valLen=4 selSet=谎 frame=126x18@116,140
+      AXDisclosureTriangle edit=0 selRange=0 valLen=0 selSet=谎 frame=15x34@72,132
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x19@61,178
+     AXCell edit=0 selRange=0 valLen=0 frame=178x19@71,178
+      AXStaticText edit=0 selRange=1 valLen=15 selSet=谎 frame=164x16@78,179
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,197
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,197
+      AXTextField edit=0 selRange=1 valLen=2 selSet=谎 frame=90x18@116,204
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=32x20@212,203
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,229
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,229
+      AXTextField edit=0 selRange=1 valLen=4 selSet=谎 frame=97x18@116,236
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=25x20@219,235
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,261
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,261
+      AXTextField edit=0 selRange=1 valLen=5 selSet=谎 frame=89x18@116,268
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=33x20@211,267
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,293
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,293
+      AXTextField edit=0 selRange=1 valLen=9 selSet=谎 frame=97x18@116,300
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=25x20@219,299
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x19@61,338
+     AXCell edit=0 selRange=0 valLen=0 frame=178x19@71,338
+      AXStaticText edit=0 selRange=1 valLen=18 selSet=谎 frame=164x16@78,339
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,357
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,357
+      AXStaticText edit=0 selRange=1 valLen=5 selSet=谎 frame=126x18@116,364
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,389
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,389
+      AXTextField edit=0 selRange=1 valLen=6 selSet=谎 frame=126x18@116,396
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,421
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,421
+      AXTextField edit=0 selRange=1 valLen=9 selSet=谎 frame=97x18@116,428
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=25x20@219,427
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,453
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,453
+      AXTextField edit=0 selRange=1 valLen=6 selSet=谎 frame=126x18@116,460
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,485
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,485
+      AXTextField edit=0 selRange=1 valLen=7 selSet=谎 frame=80x18@116,492
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=42x20@202,491
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,517
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,517
+      AXTextField edit=0 selRange=1 valLen=7 selSet=谎 frame=81x18@116,524
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=41x20@203,523
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,549
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,549
+      AXTextField edit=0 selRange=1 valLen=3 selSet=谎 frame=99x18@116,556
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=23x20@221,555
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,581
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,581
+      AXTextField edit=0 selRange=1 valLen=7 selSet=谎 frame=106x18@116,588
+      AXButton edit=0 selRange=0 valLen=0 selSet=谎 frame=16x20@228,587
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,613
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,613
+      AXTextField edit=0 selRange=1 valLen=6 selSet=谎 frame=126x18@116,620
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,645
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,645
+      AXTextField edit=0 selRange=1 valLen=13 selSet=谎 frame=126x18@116,652
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,677
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,677
+      AXTextField edit=0 selRange=1 valLen=4 selSet=谎 frame=126x18@116,684
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,709
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,709
+      AXStaticText edit=0 selRange=1 valLen=3 selSet=谎 frame=126x18@116,716
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x19@61,754
+     AXCell edit=0 selRange=0 valLen=0 frame=178x19@71,754
+      AXStaticText edit=0 selRange=1 valLen=6 selSet=谎 frame=164x16@78,755
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,773
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,773
+      AXStaticText edit=0 selRange=1 valLen=5 selSet=谎 frame=126x18@116,780
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,805
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,805
+      AXStaticText edit=0 selRange=1 valLen=6 selSet=谎 frame=126x18@116,812
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,837
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,837
+      AXStaticText edit=0 selRange=1 valLen=4 selSet=谎 frame=126x18@116,844
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,869
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,869
+      AXStaticText edit=0 selRange=1 valLen=4 selSet=谎 frame=126x18@116,876
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,901
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,901
+      AXStaticText edit=0 selRange=1 valLen=3 selSet=谎 frame=126x18@116,908
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x19@61,946
+     AXCell edit=0 selRange=0 valLen=0 frame=178x19@71,946
+      AXStaticText edit=0 selRange=1 valLen=5 selSet=谎 frame=164x16@78,947
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,965
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,965
+      AXStaticText edit=0 selRange=1 valLen=6 selSet=谎 frame=126x18@116,972
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,997
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,997
+      AXStaticText edit=0 selRange=1 valLen=4 selSet=谎 frame=126x18@116,1004
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,1029
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,1029
+      AXTextField edit=0 selRange=1 valLen=39 selSet=谎 frame=126x18@116,1036
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x32@61,1061
+     AXCell edit=0 selRange=0 valLen=0 frame=178x32@71,1061
+      AXStaticText edit=0 selRange=1 valLen=3 selSet=谎 frame=126x18@116,1068
+    AXRow(AXOutlineRow) edit=0 selRange=0 valLen=0 frame=198x5@61,1106
+     AXCell edit=0 selRange=0 valLen=0 frame=178x5@71,1106
+      AXStaticText edit=0 selRange=1 valLen=0 selSet=谎 frame=164x16@78,1100
+    AXColumn edit=0 selRange=0 valLen=0 frame=178x1039@71,82
+   AXScrollBar edit=0 selRange=0 valLen=0 selSet=谎 frame=19x1000@241,81
+    AXValueIndicator edit=0 selRange=0 valLen=0 frame=6x954@250,85
+    AXButton(AXIncrementArrow) edit=0 selRange=0 valLen=0 frame=0x0@242,82
+    AXButton(AXDecrementArrow) edit=0 selRange=0 valLen=0 frame=0x0@242,82
+    AXButton(AXIncrementPage) edit=0 selRange=0 valLen=0 frame=6x37@250,1040
+    AXButton(AXDecrementPage) edit=0 selRange=0 valLen=0 frame=6x0@250,85
+  AXStaticText edit=0 selRange=1 valLen=0 selSet=谎 frame=2x16@159,1101
+  AXSplitter edit=0 selRange=1 valLen=0 selSet=谎 frame=1x998@258,82
+  AXSplitGroup edit=0 selRange=0 valLen=0 selSet=谎 frame=1859x1050@61,30
+   AXScrollArea edit=0 selRange=0 valLen=0 selSet=谎 frame=250x998@259,82
+    AXTable edit=0 selRange=0 valLen=0 selSet=谎 frame=252x105402@258,81
+     AXRow(AXTableRow) edit=0 selRange=0 valLen=0 frame=250x110@259,92
+      AXCell edit=0 selRange=0 valLen=0 frame=218x110@275,92
+       AXDisclosureTriangle edit=0 selRange=0 valLen=0 selSet=谎 frame=30x14@464,118
+       AXStaticText edit=0 selRange=1 valLen=37 selSet=谎 frame=164x18@292,99
+       AXStaticText edit=0 selRange=1 valLen=92 selSet=谎 frame=123x14@316,118
+       AXStaticText edit=0 selRange=1 valLen=5 selSet=谎 frame=30x14@464,102
+       AXImage edit=0 selRange=0 valLen=0 selSet=谎 frame=15x10@445,120
+       AXStaticText edit=0 selRange=1 valLen=498 selSet=谎 frame=202x62@292,133
+       AXStaticText edit=0 selRange=1 valLen=2 selSet=谎 frame=21x14@292,118
+     AXRow(AXTableRow) edit=0 selRange=0 valLen=0 frame=250x110@259,202
+      AXCell edit=0 selRange=0 valLen=0 frame=218x110@275,202
+---- 节点 210 个 · 可编辑/可选区 53 个
+RESULT: 找到可编辑节点 —— 按 valLen 最大、selRange=1 的那个当写入口

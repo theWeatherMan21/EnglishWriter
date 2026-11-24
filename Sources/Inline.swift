@@ -1006,7 +1006,10 @@ final class InlineController {
         // 11-24 实况：点接受/自动检查时焦点常落在某个 AXStaticText 上（可读 ≠ 可写），
         // 于是路径变成 statictext、isWebBody=false、门控判只读 → items=0，
         // 看起来像「没建议可接受」，其实是根本没检查正文。
-        if appName(pid) == "Mail", MailProbe.isComposeWindow(pid: pid),
+        // 只在「调用方没指定元素」时才自选正文。
+        // 指定了就必须用指定的那个：--accept-now 按 --expect 挑好窗口后，
+        // 这里再抢一次就等于把检查跑回爹地的真邮件上（11-24 实况，知澜当场拦住）。
+        if explicit == nil, appName(pid) == "Mail", MailProbe.isComposeWindow(pid: pid),
            let best = AXInline.bestWebBody(pid: pid) {
             el = best.el
             picked = "mail-compose-body"
@@ -1688,9 +1691,16 @@ final class InlineController {
             }
             // 先试词级替换：只动那一个词，格式（粗体/链接/图片）不受影响。
             // 失败一律回落整篇替换，绝不留在半选状态。
-            if !copied.isEmpty,
-               tryKeyboardWordReplace(original: original, replacement: text, blockText: block.text,
-                                      pid: pid, wholeBody: copied) { return true }
+            if !copied.isEmpty {
+                let word = tryKeyboardWordReplace(original: original, replacement: text, blockText: block.text,
+                                                  pid: pid, wholeBody: copied)
+                if word.ok { return true }
+                // 已经按过键：文本状态不可预测，绝不再走整篇替换
+                if word.mutated {
+                    AppLog.info("m3", "词级路径已动过键，放弃回落（避免二次写入把正文搞乱）")
+                    return false
+                }
+            }
             // 覆盖判据：复制出来的内容必须「包含了该块原文」，且不短于该块。
             // 不能拿 copied.count 自己跟自己比（永远成立）—— 那是把校验写成恒真。
             let needleBlock = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1813,60 +1823,50 @@ final class InlineController {
     ///
     /// 安全失败即退出：粘贴之前先用 ⌘C 读选区，读到的不是原文那一段就放弃（回落到整篇路径），
     /// 绝不在「可能选错位置」的情况下写键盘。
+    /// 只替换「那一个词」，不动整篇 —— 保住粗体/链接/图片等格式。
+    /// 返回 (成功, 是否已经按下过键)。已经按过键就必须由调用方放弃回落：
+    /// 文本状态已不可预测，再走整篇替换只会把内容搞乱（11-24 实况：639 字）。
     private func tryKeyboardWordReplace(original: String, replacement: String, blockText: String,
-                                        pid: pid_t, wholeBody: String) -> Bool {
-        // 只处理「词级、单次出现、纯 ASCII」的修改
+                                        pid: pid_t, wholeBody: String) -> (ok: Bool, mutated: Bool) {
         let noSpace = original.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
             && replacement.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
         let ascii = original.allSatisfy { $0.isASCII }
         let occurrences = blockText.components(separatedBy: original).count - 1
         AppLog.info("m3", "keyboard-word 前置：noSpace=\(noSpace) ascii=\(ascii) 块内出现=\(occurrences) \"\(original)\"→\"\(replacement)\"")
-        guard noSpace, ascii, !original.isEmpty, occurrences == 1 else { return false }
+        guard noSpace, ascii, !original.isEmpty, occurrences == 1 else { return (false, false) }
 
-        // 目标词之前有多少个词边界（跟 ⌥→ 的分词口径对齐：字母数字算词）
         func wordIndexBefore(_ text: String, _ utf16Offset: Int) -> Int? {
             let ns = text as NSString
             guard utf16Offset <= ns.length else { return nil }
-            let head = ns.substring(to: utf16Offset)
-            let tokens = head.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            return tokens.count
+            return ns.substring(to: utf16Offset)
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).count
         }
-        // 在整篇里定位「块内偏移」对应的绝对偏移
-        let blockNS = blockText as NSString
         let blockRange = (wholeBody as NSString).range(of: blockText)
-        AppLog.info("m3", "keyboard-word 定位：块在全文的位置=\(blockRange.location == NSNotFound ? "未找到" : "\(blockRange.location)+\(blockRange.length)") 全文\(wholeBody.count)字")
-        guard blockRange.location != NSNotFound else { return false }
-        let rInBlock = blockNS.range(of: original)
-        guard rInBlock.location != NSNotFound else { return false }
-        guard let wi = wordIndexBefore(wholeBody, blockRange.location + rInBlock.location) else { return false }
+        AppLog.info("m3", "keyboard-word 定位：块在全文=\(blockRange.location == NSNotFound ? "未找到" : "\(blockRange.location)+\(blockRange.length)") 全文\(wholeBody.count)字")
+        guard blockRange.location != NSNotFound else { return (false, false) }
+        let rInBlock = (blockText as NSString).range(of: original)
+        guard rInBlock.location != NSNotFound,
+              let wi = wordIndexBefore(wholeBody, blockRange.location + rInBlock.location) else { return (false, false) }
 
         returnFocusToBody(pid: pid, element: currentElement)
-        pressKey(0x7C, flags: [], to: pid)                 // → 收起选区到末尾
-        pressKey(0x7E, flags: .maskCommand, to: pid)       // ⌘↑ 到文首
-        let limit = min(wi, 400)
-        for _ in 0..<limit {
-            pressKey(0x7C, flags: .maskAlternate, to: pid, settleUs: 15_000)   // ⌥→ 下一个词
+        // ⌘↑ 到文首 → ⌥→ 走 wi 个词（落到目标词前）→ ⇧→ 精确选 original.count 个字符
+        // 不用 ⇧⌥→：它会把词尾/词首的空格一起选上（11-24 实况：选中 " send"）。
+        pressKey(0x7C, flags: [], to: pid)
+        pressKey(0x7E, flags: .maskCommand, to: pid)
+        for _ in 0..<min(wi, 400) {
+            pressKey(0x7C, flags: .maskAlternate, to: pid, settleUs: 15_000)
         }
-        pressKey(0x7C, flags: [.maskAlternate, .maskShift], to: pid)           // ⇧⌥→ 选中该词
-        var picked = readSelectionViaClipboard(pid: pid) ?? ""
-        // ⇧⌥→ 常把词尾空格一起选上（10:17 实况）：多选就按 ⇧← 缩一位再读，最多三次。
-        var shrink = 0
-        while picked != original, picked.count > original.count, picked.hasSuffix(" "), shrink < 3 {
-            pressKey(0x7B, flags: .maskShift, to: pid)      // ⇧←
-            picked = readSelectionViaClipboard(pid: pid) ?? ""
-            shrink += 1
+        for _ in 0..<max(1, original.count) {
+            pressKey(0x7C, flags: .maskShift, to: pid, settleUs: 15_000)
         }
-        // 必须逐字相等。11-24 10:17 实况：⇧⌥→ 多选了尾随空格，
-        // 而这里用 trimmingCharacters 比较 → 判定「选对了」→ 键入后正文少了 1 个字符（320→319）。
+        let picked = readSelectionViaClipboard(pid: pid) ?? ""
         guard picked == original else {
-            AppLog.info("m3", "keyboard-word 选中的是 \"\(picked.prefix(24))\"，不是 \"\(original)\" —— 放弃，回落整篇")
-            pressKey(0x7C, flags: [], to: pid)             // 收起选区，别留在半选状态
-            return false
+            AppLog.info("m3", "keyboard-word 选中的是 \"\(picked)\"，不是 \"\(original)\" —— 收起选区，交给调用方放弃")
+            pressKey(0x7C, flags: [], to: pid)
+            return (false, true)
         }
-        // 键入替换词（不走剪贴板）：选择范围内输入 = 用户输入，格式不被牵连
         typeText(replacement, to: pid)
         usleep(300_000)
-        // 读回整篇核对：只有「原文消失、替换词出现、其余长度不变」才算成功
         pressSelectAll(to: pid)
         let back = readSelectionViaClipboard(pid: pid) ?? ""
         let absLoc = blockRange.location + rInBlock.location
@@ -1875,11 +1875,12 @@ final class InlineController {
         if back == expected {
             Diag.shared.applyMethod = "键盘词级替换"
             AppLog.info("m3", "write-layer=keyboard-type \"\(original)\"→\"\(replacement)\"（逐字键入，未动剪贴板/整篇）")
-            return true
+            return (true, true)
         }
-        AppLog.info("m3", "keyboard-word 读回不一致（\(back.count) vs \(expected.count)）—— 格式保留了但结果不对，报失败不重试")
-        return false
+        AppLog.info("m3", "keyboard-type 读回不一致（\(back.count) vs \(expected.count)）—— 报失败，不再改动")
+        return (false, true)
     }
+
 
     private func pressSelectAll(to pid: pid_t) {
         guard pid > 0 else { return }

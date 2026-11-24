@@ -459,6 +459,7 @@ if argv.contains("--accept-now") {
     let c = InlineController.shared
     // 有 --expect 时按「正文含该文本」挑写信窗：爹地同时开着自己的真实回复，
     // 只按「第一个写信窗」选目标会挑到真邮件——绝不允许。
+    var targetText = ""
     let expectNeedle: String? = {
         guard let ei = argv.firstIndex(of: "--expect"), ei + 1 < argv.count else { return nil }
         return argv[ei + 1]
@@ -467,9 +468,15 @@ if argv.contains("--accept-now") {
     if let needle = expectNeedle {
         let (wins, attempts) = MailProbe.stableWindows(mail.processIdentifier)
         print("窗口读取：\(wins.count) 个（\(attempts) 轮内稳定）")
+        if needle.count < 8 {
+            print("RESULT: SKIP（--expect 太短（\(needle.count) 字），至少 8 个字符才允许自动接受）")
+            exit(0)
+        }
         if let hit = MailProbe.composeWindow(pid: mail.processIdentifier, containing: needle) {
             targetBody = hit.body
-            print("目标窗：正文含 \"\(needle)\"（\(hit.text.count) 字）")
+            targetText = hit.text
+            let head = String(hit.text.prefix(40)).replacingOccurrences(of: "\n", with: "⏎")
+            print("目标窗：pid=\(mail.processIdentifier) 正文\(hit.text.count)字 前40字=\"\(head)\"")
         } else {
             print("RESULT: SKIP（没有正文含 \"\(needle)\" 的写信窗 —— 不去碰你正在写的别的邮件）")
             exit(0)
@@ -494,15 +501,23 @@ if argv.contains("--accept-now") {
     print("检查完成：items=\(listed2.count) 目标 id=\(wantID) lastError=\(dbg.0) path=\(dbg.1)")
     for (k, o, r, st, ln) in listed2 { print("  [\(k)] \"\(o)\" → \"\(r)\" range=\(st)+\(ln)") }
     guard !listed2.isEmpty, wantID < listed2.count else { print("RESULT: SKIP（没有可接受的建议）"); exit(0) }
-    // --expect "have send"：只接受原文精确等于这段的建议。
-    // 为什么：无人值守跑的时候，绝不替爹地接受他没要求的那一条。
-    if let ei = argv.firstIndex(of: "--expect"), ei + 1 < argv.count {
-        let want = argv[ei + 1]
-        guard listed2[wantID].1 == want else {
-            print("RESULT: SKIP（第 \(wantID) 条原文是 \"\(listed2[wantID].1)\"，不是期望的 \"\(want)\"）")
+    // 硬闸：被接受的条目必须落在 --expect 那段话的范围之内。
+    // 只比 original 字符串不够——"send" 这种词在别人的邮件里到处都是。
+    if let needle = expectNeedle {
+        let ns = targetText as NSString
+        let span = ns.range(of: needle)
+        let it = listed2[wantID]
+        let inside = span.location != NSNotFound
+            && it.3 >= span.location && it.3 + it.4 <= span.location + span.length
+        print("目标校验：needle@\(span.location)+\(span.length) item@\(it.3)+\(it.4) inside=\(inside)")
+        guard inside else {
+            print("RESULT: SKIP（第 \(wantID) 条不在 --expect 那段话里 —— 不动手）")
             exit(0)
         }
     }
+    // 判据最终落在「条目必须在那句话的范围里」（上面已经校验过 span），
+    // 不再要求 item.original 整段等于 --expect —— 引擎给的原文只是那句话里的一个词（send），
+    // 要求全等会把唯一正确的条目也挡掉。
     let ok = MainActor.assumeIsolated { c.accept(itemID: wantID) }
     RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.6))
     print("accept(itemID: \(wantID)) → \(ok ? "ok" : "false")")
