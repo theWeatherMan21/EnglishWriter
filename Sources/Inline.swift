@@ -1918,9 +1918,13 @@ final class InlineController {
         if back.isEmpty { usleep(220_000); pressSelectAll(to: pid); back = readSelectionViaClipboard(pid: pid) ?? "" }
         let expected = (wholeBody as NSString).replacingCharacters(in: NSRange(location: absOffset, length: len),
                                                                    with: replacement)
+        // 判据是逐字相等（不是比长度）：send→sent 同长度，若一个字都没打进去，长度也一样。
         let sameAsClip = Self.squash(back) == Self.squash(expected)
         let imagesNow = Self.webImageCount(of: currentElement)
-        AppLog.info("m3", "keyboard-type 校验：读回\(Self.squash(back).count)字 期望\(Self.squash(expected).count)字 一致=\(sameAsClip) 图片=\(imagesNow)")
+        AppLog.info("m3", "keyboard-type 校验：逐字一致=\(sameAsClip) 读回\(Self.squash(back).count)字 期望\(Self.squash(expected).count)字 图片=\(imagesNow)")
+        if !sameAsClip {
+            AppLog.info("m3", "逐字差异：\(Self.firstDiff(Self.squash(back), Self.squash(expected)))")
+        }
         if sameAsClip {
             Diag.shared.applyMethod = "键盘词级替换（字符计数定位）"
             AppLog.info("m3", "write-layer=keyboard-charcount \"\(original)\"→\"\(replacement)\"（逐字键入，未动剪贴板/整篇）")
@@ -2011,6 +2015,19 @@ final class InlineController {
         pressKey(0x09, flags: .maskCommand, to: pid, settleUs: 600_000)
         usleep(500_000)
         return true
+    }
+
+    /// 两串第一处差异的位置（逐字比对失败时用，别只报字数）。
+    nonisolated static func firstDiff(_ a: String, _ b: String) -> String {
+        let aa = Array(a), bb = Array(b)
+        var i = 0
+        while i < aa.count, i < bb.count, aa[i] == bb[i] { i += 1 }
+        let ctx = { (arr: [Character]) -> String in
+            guard !arr.isEmpty else { return "空" }
+            let lo = max(0, i - 6), hi = min(arr.count, i + 8)
+            return String(arr[lo..<hi])
+        }
+        return "第\(i)字起不同：实际「\(ctx(aa))」期望「\(ctx(bb))」"
     }
 
     /// 归一：去掉所有空白后比较。AX 树与剪贴板的换行/空行不一致，只能按非空白字符比。
