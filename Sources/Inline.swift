@@ -1849,7 +1849,35 @@ final class InlineController {
               let wi = wordIndexBefore(wholeBody, blockRange.location + rInBlock.location) else { return (false, false) }
 
         returnFocusToBody(pid: pid, element: currentElement)
-        // ⌘↑ 到文首 → ⌥→ 走 wi 个词（落到目标词前）→ ⇧→ 精确选 original.count 个字符
+        // 首选：⌘F 查找定位（按字符串精确匹配，不依赖任何词边界语义）。
+        // 依据：⌘↑+⌥→×N 的锚点在宿主里不可预测，且 N 取决于切词方式（11:15 两向回选都是 " sen"）。
+        pressKey(0x03, flags: .maskCommand, to: pid, settleUs: 300_000)   // ⌘F
+        typeText(original, to: pid)
+        usleep(200_000)
+        pressKey(0x24, flags: [], to: pid, settleUs: 250_000)             // ↩ 选中匹配
+        pressKey(0x35, flags: [], to: pid, settleUs: 200_000)             // Esc 关查找栏，选区保留
+        let found = readSelectionViaClipboard(pid: pid) ?? ""
+        AppLog.info("m3", "keyboard-word ⌘F 查找 \"\(original)\" → 选中 \"\(found)\"")
+        if found == original {
+            typeText(replacement, to: pid)
+            usleep(300_000)
+            pressSelectAll(to: pid)
+            let backF = readSelectionViaClipboard(pid: pid) ?? ""
+            let absLocF = blockRange.location + rInBlock.location
+            let expectedF = (wholeBody as NSString).replacingCharacters(in: NSRange(location: absLocF, length: rInBlock.length),
+                                                                        with: replacement)
+            if backF == expectedF {
+                Diag.shared.applyMethod = "键盘词级替换(⌘F定位)"
+                AppLog.info("m3", "write-layer=keyboard-type \"\(original)\"→\"\(replacement)\"（⌘F 定位 + 逐字键入）")
+                return (true, true)
+            }
+            AppLog.info("m3", "⌘F 路径读回不一致（\(backF.count) vs \(expectedF.count)）—— 报失败，不再改动")
+            return (false, true)
+        }
+        if found.isEmpty {
+            AppLog.info("m3", "⌘F 路径：剪贴板没读到选区（查找栏可能没关），改用 caret 路径兜底")
+        }
+        // 兜底：⌘↑ 到文首 → ⌥→ 走 wi 个词（落到目标词前）→ ⇧→ 精确选 original.count 个字符
         // 不用 ⇧⌥→：它会把词尾/词首的空格一起选上（11-24 实况：选中 " send"）。
         pressKey(0x7C, flags: [], to: pid)
         pressKey(0x7E, flags: .maskCommand, to: pid)
@@ -1929,7 +1957,11 @@ final class InlineController {
         guard pid > 0 else { return nil }
         let pb = NSPasteboard.general
         let saved = pb.string(forType: .string)
+        // 写一个哨兵先：⌘C 没生效时读到的一定是哨兵，而不是上一次的残余。
+        // 11:15 两次修正读回同一段 " sen"，很可能就是剪贴板没刷新（哨兵能立刻分辨）。
+        let sentinel = "__EW_CB_\(UUID().uuidString)__"
         pb.clearContents()
+        pb.setString(sentinel, forType: .string)
         let src = CGEventSource(stateID: .combinedSessionState)
         for isDown in [true, false] {
             if let e = CGEvent(keyboardEventSource: src, virtualKey: 0x08, keyDown: isDown) {
@@ -1937,10 +1969,14 @@ final class InlineController {
                 e.postToPid(pid)
             }
         }
-        usleep(200_000)
-        let got = pb.string(forType: .string)
+        var got = pb.string(forType: .string)
+        var waited = 0
+        while (got == nil || got == sentinel), waited < 6 {   // 最多再等 600ms
+            usleep(100_000); waited += 1
+            got = pb.string(forType: .string)
+        }
         if let saved { pb.clearContents(); pb.setString(saved, forType: .string) }
-        return got
+        return (got == sentinel) ? nil : got
     }
 
     /// 把键盘焦点交回正文（点接受时焦点在我们自己的卡片上，所有键击都会落空）。
@@ -2134,7 +2170,11 @@ final class InlineController {
         guard pid > 0 else { return false }
         let pb = NSPasteboard.general
         let saved = pb.string(forType: .string)
+        // 写一个哨兵先：⌘C 没生效时读到的一定是哨兵，而不是上一次的残余。
+        // 11:15 两次修正读回同一段 " sen"，很可能就是剪贴板没刷新（哨兵能立刻分辨）。
+        let sentinel = "__EW_CB_\(UUID().uuidString)__"
         pb.clearContents()
+        pb.setString(sentinel, forType: .string)
         pb.setString(text, forType: .string)
         Audit.pasteboard()
         let src = CGEventSource(stateID: .combinedSessionState)
