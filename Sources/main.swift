@@ -443,6 +443,19 @@ if argv.contains("--accept-now") {
     // 引擎必须先在线：CLI 模式不会像常驻 App 那样自己 bootstrap，
     // 不起引擎时 checkNow 会静静地得到 items=0（09:35 实况：GUI 里有 2 条，CLI 里 0 条）。
     LocalEngineBootstrap.ensureRunning()
+    // LT 冷启动要 10–20 秒：不许「刚拉起就判没引擎」。最多等 30 秒（主队列照常泵）。
+    print("引擎地址=\(LocalEngine.baseURLString)")
+    let ltSem = DispatchSemaphore(value: 0)
+    Task {
+        let ok = await LocalEngine.available(force: true)
+        print("LT 就绪=\(ok)")
+        ltSem.signal()
+    }
+    let ltDeadline = Date().addingTimeInterval(30)
+    while Date() < ltDeadline, ltSem.wait(timeout: .now()) == .timedOut {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.25))
+    }
+    _ = ltSem.wait(timeout: .now())
     let c = InlineController.shared
     // 有 --expect 时按「正文含该文本」挑写信窗：爹地同时开着自己的真实回复，
     // 只按「第一个写信窗」选目标会挑到真邮件——绝不允许。
@@ -452,6 +465,8 @@ if argv.contains("--accept-now") {
     }()
     var targetBody: AXUIElement?
     if let needle = expectNeedle {
+        let (wins, attempts) = MailProbe.stableWindows(mail.processIdentifier)
+        print("窗口读取：\(wins.count) 个（\(attempts) 轮内稳定）")
         if let hit = MailProbe.composeWindow(pid: mail.processIdentifier, containing: needle) {
             targetBody = hit.body
             print("目标窗：正文含 \"\(needle)\"（\(hit.text.count) 字）")

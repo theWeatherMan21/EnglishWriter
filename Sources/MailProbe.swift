@@ -407,6 +407,28 @@ enum MailProbe {
     /// 旧实现：一次 AXWindows 拿不到 → 深递归 120 节点兜底。爹地开着 197 个 staticText 的
     /// 读信窗时 Mail 的 AX 响应慢到 200ms+，深递归必然超时返回空 →
     /// --accept-now 报 windows=0、items=0，而单独跑的 --probe-mail 又能读到。
+    /// 稳定性包装：窗口读取会时有时无（Mail 忙时 AX 偶发空）。
+    /// 一次读到 0、下一次读到 2 时，任何上层判定都会自相矛盾（同分钟两次 --accept-now
+    /// 一次 true 一次 SKIP）。这里要求「连续两次结果一致」才认可，最多 4 轮。
+    static func stableWindows(_ pid: pid_t) -> (wins: [AXUIElement], attempts: Int) {
+        var last: Int = -1
+        var lastResult: [AXUIElement] = []
+        for attempt in 1...4 {
+            let w = windows(pid)
+            if w.count == last, last >= 0 {
+                if attempt > 1 {
+                    AppLog.info("mail", "windows 稳定性：第 \(attempt) 轮与上轮一致（\(w.count) 个）")
+                }
+                return (w, attempt)
+            }
+            last = w.count
+            lastResult = w
+            if w.isEmpty { usleep(120_000) }
+        }
+        AppLog.info("mail", "windows 不稳定：4 轮里始终没连续一致，取最后一次（\(lastResult.count) 个）")
+        return (lastResult, 4)
+    }
+
     static func windows(_ pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
         for attempt in 0..<WindowPolicy.retries {
@@ -546,7 +568,7 @@ extension MailProbe {
     /// 只按「第一个写信窗」选目标会挑到他的真邮件——绝对不允许。
     static func composeWindow(pid: pid_t, containing needle: String) -> (window: AXUIElement, body: AXUIElement, text: String)? {
         let needleLower = needle.lowercased()
-        for w in windows(pid) {
+        for w in stableWindows(pid).wins {
             guard isComposeWindow(window: w) else { continue }
             guard let el = WebText.body(in: w) else { continue }
             let blks = WebText.blocks(of: el, nodeBudget: 400, deadline: 0.6)

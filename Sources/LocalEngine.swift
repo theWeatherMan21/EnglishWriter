@@ -132,6 +132,19 @@ enum LocalEngine {
         set { EnginePrefs.setLTBaseURL(newValue) }
     }
 
+    /// 本机引擎专用会话：显式关掉代理。
+    /// 爹地机器上常开 PAC（Clash，ProxyAutoConfigURLString=http://127.0.0.1:52632/...），
+    /// URLSession 会照 PAC 把 http://127.0.0.1:8081 也送去代理 → 探活永远 false，
+    /// 于是「引擎未启动」→ items=0（11-24 实况：curl 200，App 内探活 false）。
+    /// 本机 loopback 不该走代理，这里也不碰系统设置，只在项目内解决。
+    static let session: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.connectionProxyDictionary = [:]        // 空字典 = 不用任何代理
+        cfg.timeoutIntervalForRequest = 8
+        cfg.waitsForConnectivity = false
+        return URLSession(configuration: cfg)
+    }()
+
     private static var lastProbe: (ok: Bool, at: Date) = (false, .distantPast)
 
     // MARK: 闲置退出（2026-11-18：LT 是 JVM，常驻 368MB，闲置就得让位）
@@ -202,7 +215,7 @@ enum LocalEngine {
         var req = URLRequest(url: url)
         req.timeoutInterval = 0.6
         do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
+            let (_, resp) = try await session.data(for: req)
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             lastProbe = (ok, Date())
             if ok { touch() }     // 探活成功就算「刚用过」，否则看门狗把刚落地的 JVM 当闲置秒杀
@@ -238,7 +251,7 @@ enum LocalEngine {
     private static let inFlight = LTSemaphore(limit: 2)
 
     static func review(text: String, language: String = "en-GB",
-                       session: URLSession = .shared) async throws -> InlineOutcome {
+                       session: URLSession = LocalEngine.session) async throws -> InlineOutcome {
         await inFlight.acquire()
         defer { inFlight.release() }
         guard let req = checkRequest(text: text, language: language), let url = req.url else {
