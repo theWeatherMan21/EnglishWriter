@@ -1046,7 +1046,8 @@ final class InlineController {
                                    hasEditableWebField: hasEditableWebField,
                                    checkReading: EnginePrefs.checkReading,
                                    inEditableWindow: inEditableWindow,
-                                   mailReading: mailReading) {
+                                   mailReading: mailReading,
+                                   composeWindow: composeBySignal || composeByTitle) {
             // 证据必须能自证：是不是真的有可编辑控件被误判成只读？
             let elRole = attrString(el, kAXRoleAttribute as String) ?? "?"
             let kind = AXInline.isEditable(el) ? "editable-but-unreadable"
@@ -2144,13 +2145,15 @@ enum InlineGate {
     /// checkReading 保留开关（默认关），确要读信时再打开。
     static func shouldCheck(editable: Bool, isWebBody: Bool, isMailBody: Bool,
                             hasEditableWebField: Bool, checkReading: Bool = false,
-                            inEditableWindow: Bool = false, mailReading: Bool = false) -> Bool {
+                            inEditableWindow: Bool = false, mailReading: Bool = false,
+                            composeWindow: Bool = false) -> Bool {
         // Mail 阅读窗一律不查（除非显式打开了 checkReading）：那里的可编辑节点是搜索框，
         // 不是你在写的东西（爹地 11-23：左栏画线 / 检查别人的邮件）
         if isMailBody && mailReading && !checkReading { return false }
         // 写信窗正文：Mail 的正文没有 AXTextArea（dump：textArea=0，全是 AXStaticText），
-        // 所以「有可编辑控件」这条永远不成立。是不是写信窗本身就是最准的判据（11-24 实况）。
-        if isMailBody && !mailReading { return true }
+        // 所以「有可编辑控件」这条永远不成立。显式传 composeWindow 才是判据——
+        // 不能拿 !mailReading 推（那会让「默认参数」的调用把阅读窗误判成写信窗，CI 当场抓到）。
+        if isMailBody && composeWindow { return true }
         if editable { return true }
         if isWebBody && hasEditableWebField { return true }
         if isWebBody && inEditableWindow { return true }      // 写信窗口的正文区

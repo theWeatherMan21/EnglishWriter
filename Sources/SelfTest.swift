@@ -1278,12 +1278,14 @@ enum SelfTest {
         check("门控·Mail 写信窗正文放行",
               InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
                                      hasEditableWebField: false, checkReading: false,
-                                     inEditableWindow: false, mailReading: false),
+                                     inEditableWindow: false, mailReading: false,
+                                     composeWindow: true),
               "editable=false + 无 AXTextArea + 写信窗 → 必须 true")
         check("门控·Mail 阅读窗仍然不查",
               !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
                                       hasEditableWebField: false, checkReading: false,
-                                      inEditableWindow: false, mailReading: true),
+                                      inEditableWindow: false, mailReading: true,
+                                      composeWindow: false),
               "阅读窗（mailReading=true）→ 必须 false")
 
         // 6) 证据落盘
