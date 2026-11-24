@@ -1695,6 +1695,23 @@ final class InlineController {
                 pressSelectAll(to: pid)
                 copied = readSelectionViaClipboard(pid: pid) ?? ""
             }
+            // ★ 硬闸：⌘C 必须把 AX 能读到的字全都复制到。
+            // 11:31 实况：AX 读到 320 字，⌘A⌘C 只给 253 字（少 67 字，正好是签名块那几行）。
+            // 拿「读多少写多少」的逻辑去改一封邮件，读少一次 = 多出来的字被静默删掉。
+            // 判据：非空白字符数 ⌘C ≥ AX，否则一个字都不写。
+            let axFull = WebText.blocks(of: currentElement ?? AXUIElementCreateSystemWide())
+                .map { $0.text }.joined(separator: "\n")
+            func visibleCount(_ t: String) -> Int {
+                t.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }.count
+            }
+            let axN = visibleCount(axFull), cbN = visibleCount(copied)
+            let sameContent = Self.squash(axFull) == Self.squash(copied)
+            AppLog.info("m3", "复制完整性：AX=\(axN)字 ⌘C=\(cbN)字 内容一致=\(sameContent)")
+            if !Self.copyComplete(axCount: axN, clipboardCount: cbN) || !sameContent {
+                AppLog.info("m3", "复制不全（⌘C \(cbN) < AX \(axN)）—— 一个字都不写，直接放弃")
+                pressKey(0x7B, flags: [], to: pid)
+                return false
+            }
             // 先试词级替换：只动那一个词，格式（粗体/链接/图片）不受影响。
             // 失败一律回落整篇替换，绝不留在半选状态。
             // 词级（精确选一个词）默认关闭：WKWebView 里没有可靠方式指定「第 7–10 个字符」，
@@ -1952,6 +1969,34 @@ final class InlineController {
         down.postToPid(pid)
         up.postToPid(pid)
         usleep(150_000)
+    }
+
+    /// 诊断用：对比「AX 能读到多少字」与「⌘A⌘C 实际复制到多少字」，不写任何东西。
+    func copyProbe(pid: pid_t, element: AXUIElement) -> (ax: Int, cb: Int, axTail: String, cbTail: String) {
+        let blocks = WebText.blocks(of: element)
+        let axText = blocks.map { $0.text }.joined(separator: "\n")
+        func vis(_ t: String) -> Int {
+            t.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }.count
+        }
+        _ = returnFocusToBody(pid: pid, element: element)
+        pressSelectAll(to: pid)
+        let copied = readSelectionViaClipboard(pid: pid) ?? ""
+        return (vis(axText), vis(copied),
+                String(axText.suffix(40)).replacingOccurrences(of: "\n", with: "⏎"),
+                String(copied.suffix(40)).replacingOccurrences(of: "\n", with: "⏎"))
+    }
+
+    /// 复制完整性判据：⌘C 的非空白字数必须 ≥ AX 能读到的字数。
+    /// 11:31 实况：AX=320、⌘C=253（少 67 字）；若放行就是「读多少写多少」，
+    /// 多出来的那 67 个字会被静默删掉。两边任一为 0 时无法判定，按「不拦」处理（另有别的判据兜）。
+    /// 归一：去掉所有空白后比较。AX 树与剪贴板的换行/空行不一致，只能按非空白字符比。
+    nonisolated static func squash(_ t: String) -> String {
+        String(t.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) })
+    }
+
+    nonisolated static func copyComplete(axCount: Int, clipboardCount: Int) -> Bool {
+        if axCount <= 0 { return true }          // AX 读不到时无法判定（此时也拿不到块文本）
+        return clipboardCount >= axCount          // 复制到 0 字同样算「不全」，必须拒绝
     }
 
     /// 全大写缩写 / 含 & 的机构名：不报拼写。
@@ -2238,8 +2283,16 @@ final class InlineController {
             if !one.isEmpty, one == two { back = one; break }
             back = two.isEmpty ? one : two
         }
-        let ok = back.trimmingCharacters(in: .whitespacesAndNewlines)
+        var ok = back.trimmingCharacters(in: .whitespacesAndNewlines)
             == newFull.trimmingCharacters(in: .whitespacesAndNewlines)
+        // ⌘C 读回会截断（11:31：正文 320、读回 253），所以以 AX 树为准再核一次。
+        if !ok, let el = currentElement {
+            usleep(400_000)
+            let tree = WebText.blocks(of: el).map { $0.text }.joined(separator: "\n")
+            let treeOK = Self.squash(tree) == Self.squash(newFull)
+            AppLog.info("m3", "富文本整篇：AX 树复核 改后\(Self.squash(tree).count)字 期望\(Self.squash(newFull).count)字 一致=\(treeOK)")
+            ok = treeOK
+        }
         AppLog.info("m3", "富文本整篇：属性段 改前=\(runsBefore) 改后=\(runsAfter) 读回=\(back.count)字 一致=\(ok)")
         if ok {
             Diag.shared.applyMethod = "富文本整篇替换"

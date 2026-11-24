@@ -1296,6 +1296,17 @@ enum SelfTest {
         check("拼写·全大写缩写不报", acronymPass,
               acronymCases.map { "\($0.0)=\(InlineController.looksLikeAcronym($0.0))" }.joined(separator: " "))
 
+        // 11.85) 复制完整性硬闸：⌘C 少于 AX 字数时一个字都不许写
+        check("复制完整性·⌘C 少于 AX 必须拒绝",
+              InlineController.copyComplete(axCount: 320, clipboardCount: 253) == false,
+              "AX=320 ⌘C=253 → 拒绝")
+        check("复制完整性·相等放行",
+              InlineController.copyComplete(axCount: 320, clipboardCount: 320),
+              "AX=320 ⌘C=320 → 放行")
+        check("复制完整性·⌘C 空也必须拒绝",
+              InlineController.copyComplete(axCount: 320, clipboardCount: 0) == false,
+              "AX=320 ⌘C=0 → 拒绝")
+
         // 11.9) 富文本整篇替换：改一个词，粗体/字号这些属性必须原样留在原处
         do {
             let base = NSMutableAttributedString(string: "I have send the file, please check it.")

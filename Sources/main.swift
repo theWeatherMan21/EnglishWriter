@@ -429,6 +429,24 @@ if argv.contains("--kpi") {
 }
 
 // M3 链路驱动（离线、不建窗口）：命中 → 弹出 → 接受 → 撤销 → 忽略，行级日志
+// --copy-probe：只诊断「AX 读到多少 / ⌘A⌘C 复制到多少」，不写任何东西。
+if argv.contains("--copy-probe") {
+    if ScreenLock.bailIfLocked("--copy-probe") { exit(0) }
+    guard let mail = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").first else {
+        print("Mail 没在跑"); exit(0)
+    }
+    let pid = mail.processIdentifier
+    guard let body = MailProbe.composeWindow(pid: pid, containing: "")?.body
+            ?? AXInline.bestWebBody(pid: pid)?.el else {
+        print("没有可读的正文元素"); exit(0)
+    }
+    let r = MainActor.assumeIsolated { InlineController.shared.copyProbe(pid: pid, element: body) }
+    print("AX 字数(非空白)=\(r.ax) ⌘C 字数(非空白)=\(r.cb) 差=\(r.ax - r.cb)")
+    print("AX 末尾40字=\(r.axTail)")
+    print("⌘C 末尾40字=\(r.cbTail)")
+    exit(0)
+}
+
 // --accept-now [id]：真机端到端写回，不需要人去点卡片。
 // 为什么加：爹地已经被要求手动点「接受」十几次，每次失败都要他复述现象。
 // 这条命令走产品同一条链路（checkNow 出 items → accept(itemID:) 四层写回 → 读回复核），
