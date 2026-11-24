@@ -223,3 +223,62 @@ bash scripts/settings-selftest.sh        # 断言 + 静态不变量 + 面板截�
 **自检同步改**（`~/.hermes/selfcheck/projects.json`，过 `selfcheck-add.py` 闸门）：`normal` 改为任意 `INFO|DEBUG <tag>`，`glob` 只认 `app.log`、`window_min=30`（归档文件留档复盘，不参与值班）。改之前 18:00 前后的历史误报行已归档到 `~/Library/Logs/EnglishWriter/archive/app.log-pre-logclass-fix-20261123-1955`（未删，grep 可用）。
 
 **证据**：`build/ci-selftest --selftest` 306/0；`scripts/ci-test.sh` 全部通过；装机 19:35（sha `67b815b1…`），重启后 app.log 只有 INFO boot/m3/ax 行；`selfcheck-run.py` → `EnglishWriter 正常`。
+
+## 7. 真机写回：字符计数定位跑通（2026-11-24）
+
+**结论**：Mail 写信窗里「只改那一个词」的路径通了，格式与签名图片零改动。
+
+真机验收（最小化窗口、前台 Finder、连跑 3 次 3/3）：
+
+```
+focus-return 细节 front=true 目标窗="New Message" 焦点窗="New Message" 同窗=true
+复制概况：AX=210字（不含图片文件名）⌘C=275字（含图片文件名）
+keyboard-word 定位：块=1+38 词偏移=8 长度=4 全文320字
+keyboard-word 字符级选中 "send"（期望 "send"）
+keyboard-type 校验：逐字一致=true 读回275字 期望275字 图片=3
+write-layer=keyboard-charcount "send"→"sent"（逐字键入，未动剪贴板/整篇）
+accept(itemID: 0) → ok
+```
+
+**做法**：`⌘↑` 文首 → `→` × absOffset（AX 块偏移算出）→ `⇧→` × len（字符级，无歧义，不依赖 ⌥→ 的词边界）
+→ `⌘C` 读回必须逐字等于原文（不符 ±1 微调最多 4 次）→ 逐字键入替换词
+→ `⌘A⌘C` 读回与期望**逐字**比对（不是比长度；`send→sent` 同长度必须靠逐字）→ 图片节点数不变。
+
+**死路留档（别再走）**：词级 `⇧⌥→ / ⌥← / ⌘F`（WKWebView 无可复制选区，6 轮全败）；
+富文本整篇 `⌘A⌘C RTF → 改词 → ⌘A⌘V`（粘贴后签名图片 3→0，已自动回滚）；纯文本整篇（格式拍平，爹地否）。
+
+**P0 安全闸（同日事故后加）**：
+- `returnFocusToBody` 先 raise 目标窗口，再 `activate([.activateIgnoringOtherApps])`（**去掉 `.activateAllWindows`**，它会把 Mail 所有窗口抬前面、焦点落到爹地正在看的那封）
+- 按键前核对 `kAXFocusedWindow` 必须 CFEqual 目标窗口，不等 → 一个字都不按
+- `⌘C` 字数 > AX 字数 ×3 → 判焦点跑偏，放弃
+- 块文本在整篇里找不到 / 目标词不在块里 → 必须留日志（旧的裸 `return` 表现为「点了没反应也没提示」）
+
+## 8. 性能：AX 卡顿根因与改法（2026-11-24，sample 实证）
+
+**症状**：主线程 1750 样本里 1731 个卡在 `AXUIElementCopyAttributeValue` → `mach_msg`；单轮 `axTotal=1502ms`。
+
+**两个根因**（都不是「调大超时」能救的）：
+1. `AXUIElementSetMessagingTimeout` 对部分调用**不生效**（实测 `AXFocusedUIElement` 花了 1493ms，元素超时设 200ms）；
+2. 一轮里 `AXChildren` 被调 **1808 次**（多趟遍历重复走同一批节点，Mail 的 WebArea 255 节点）。
+
+**改法**：
+- AX 调用放专用串行队列（`axWorkerQueue`），主线程只等**有上限**的时间（标量 80ms / 文本 150ms / AXChildren 250ms），
+  等不到记 `abandon attr=NAME` 并放弃本轮；
+- 轮内 `AXChildren` 缓存（同一元素一轮只跨进程取一次）；
+- 按属性分级超时（AXChildren 500ms / 文本 200ms / 标量 80ms）+ 单轮预算 1500ms；
+- `slow attr` 阈值 100ms → 300ms（150–250ms 是 AXChildren 正常值，之前刷满 40 条假警）。
+
+**实测**：`axTotal` 1502ms → **0–6ms**；`AXChildren` 1808 次/1490ms → **111–156 次/1ms**；主线程 sample 无 AX 帧。
+
+**仍已知**：AX 调用逻辑上还在主线程发起（靠有界等待兜住），彻底搬出需要把 `checkNowCore` 读取段拆成无 UI 依赖的 worker ——
+非必要不做，先看真实使用两天的表现。
+
+## 9. 语言门控 vs 过滤：日志口径（2026-11-24 改正）
+
+`skip-lang`（原来打「中文块 N · 0 请求」）与「引擎回传后全被过滤」是两件事，混在一起会误判成「整轮被门控拦了」：
+
+- 引擎回传 N 条但全被过滤（全大写缩写 / 去重）→ `filtered-all`：「引擎回传 2 条 → 缩写/去重过滤后 0 条（跳过中文块 1）」
+- 真有请求发不出去（全中文块 / 无英文块）→ `skip-lang`
+
+**已知引擎边界**：LanguageTool 对 `I send this to your email,` 在 `level=picky` 下 **0 条**（`send→sent` 需要时间状语类上下文才报）。
+所以「这一封没画线」不等于漏检 —— 先 `curl /v2/check` 复核原文，再判我们的链路。
