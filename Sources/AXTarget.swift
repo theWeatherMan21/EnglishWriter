@@ -301,8 +301,16 @@ final class AXRoundStats {
     private var focused: [pid_t: AXUIElement] = [:]
     private var active = false
 
+    /// 轮内 AXChildren 缓存：同一元素一轮只跨进程取一次。
+    /// 11-24 实况：一轮里 AXChildren 被调了 1808 次（多趟遍历重复走同一批节点），
+    /// 单轮 axTotal=1502ms —— 这才是卡吨的主因，不是某一次调用慢。
+    private var childrenCache: [String: [AXUIElement]] = [:]
+    func cachedChildren(_ el: AXUIElement) -> [AXUIElement]? { childrenCache["\(CFHash(el))"] }
+    func storeChildren(_ el: AXUIElement, _ kids: [AXUIElement]) { childrenCache["\(CFHash(el))"] = kids }
+
     func begin() {
         totalMs = 0; slowCount = 0; focusedCalls = 0; byName = [:]; byNameMs = [:]; focused = [:]; active = true
+        childrenCache = [:]
         resetRoleCache()
     }
     func end(_ tag: String) {
@@ -362,13 +370,53 @@ let axRoundBudgetMs = 1500
 /// 主线程 1750 个样本里 1731 个卡在 AXUIElementCopyAttributeValue → mach_msg 等 Mail 回复，
 /// 设过 app 元素的超时对这些**子元素**不生效，Mail 忙起来就无限等，界面直接冻住。
 /// 150ms 足够正常的同步请求（实测 <40ms），异常时宁可当作「读不到」也不冻界面。
+/// AX 调用专用串行队列。
+/// 为什么要有它（知澜 11-24 sample 88781 + 17:24 复测）：
+/// AXUIElementSetMessagingTimeout 对某些调用**不生效**——
+/// 17:24:25 实测 attr=AXFocusedUIElement 花了 1493ms（设在元素上的超时是 200ms）。
+/// 只要这条调用在主线程上，界面就按它冻住这么久，超时救不了。
+/// 所以：AX 请求放到 worker 线程，主线程只等一个**有上限**的时间，等不到就放弃这一轮。
+private let axWorkerQueue = DispatchQueue(label: "com.wanyi.ew.ax", qos: .userInitiated)
+
+/// 主线程最多等这么久（按属性分级）。等不到 → 本次读当作「读不到」，AX 请求继续在 worker 上跑完丢弃。
+func axMainWaitMs(for name: String) -> Int {
+    switch name {
+    case "AXChildren", "AXChildrenInNavigationOrder", "AXRows", "AXVisibleChildren": return 250
+    case "AXValue", "AXSelectedText", "AXSelectedTextRange", "AXPlaceholderValue": return 150
+    default: return 80
+    }
+}
+
+private final class AXBox: @unchecked Sendable {
+    var value: CFTypeRef?
+    var error: AXError = .success
+}
+
 func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
     // 预算用完：本轮不再发 AX 请求（否则一轮几十次超时会叠成几十秒）
     if AXRoundStats.shared.budgetExhausted() { return nil }
     let t0 = Date()
-    var out: CFTypeRef?
+    if name == "AXChildren", let hit = AXRoundStats.shared.cachedChildren(el) {
+        return hit as CFTypeRef
+    }
+    let box = AXBox()
+    let sem = DispatchSemaphore(value: 0)
     AXUIElementSetMessagingTimeout(el, axTimeout(for: name, defaultTimeout: 0.2))
-    let r = AXUIElementCopyAttributeValue(el, name as CFString, &out)
+    axWorkerQueue.async {
+        box.error = AXUIElementCopyAttributeValue(el, name as CFString, &box.value)
+        sem.signal()
+    }
+    let waitMs = axMainWaitMs(for: name)
+    if sem.wait(timeout: .now() + .milliseconds(waitMs)) == .timedOut {
+        AXRoundStats.shared.add(name, waitMs)
+        AppLog.info("ax", "abandon attr=\(name) 主线程等了 \(waitMs)ms 没回 —— 本轮当读不到（worker 继续跑完丢弃）")
+        return nil
+    }
+    let out = box.value
+    let r = box.error
+    if name == "AXChildren", r == .success, let kids = out as? [AXUIElement] {
+        AXRoundStats.shared.storeChildren(el, kids)
+    }
     let ms = Int(Date().timeIntervalSince(t0) * 1000)
     AXRoundStats.shared.add(name, ms)
     if ms >= 300 {
