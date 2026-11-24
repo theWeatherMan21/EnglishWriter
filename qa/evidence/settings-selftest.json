@@ -114,6 +114,66 @@
       "detail" : "阅读窗（mailReading=true）→ 必须 false",
       "name" : "门控·Mail 阅读窗仍然不查",
       "pass" : true
+    },
+    {
+      "detail" : "WCA&JC=true WCA=true JC=true HQ=true Send=false send=false of=false Container=false",
+      "name" : "拼写·全大写缩写不报",
+      "pass" : true
+    },
+    {
+      "detail" : "跨进程传整棵子树，150ms 会全判超时",
+      "name" : "超时分级·AXChildren=500ms",
+      "pass" : true
+    },
+    {
+      "detail" : "文本内容给 200ms",
+      "name" : "超时分级·AXValue=200ms",
+      "pass" : true
+    },
+    {
+      "detail" : "标量正常 <10ms",
+      "name" : "超时分级·AXRole=80ms",
+      "pass" : true
+    },
+    {
+      "detail" : "新属性不许被当标量压到 80ms",
+      "name" : "超时分级·未知属性走默认",
+      "pass" : true
+    },
+    {
+      "detail" : "一轮超了就跳过本轮",
+      "name" : "单轮预算=1500ms",
+      "pass" : true
+    },
+    {
+      "detail" : "AX=320 ⌘C=253 → 拒绝",
+      "name" : "复制完整性·⌘C 少于 AX 必须拒绝",
+      "pass" : true
+    },
+    {
+      "detail" : "AX=320 ⌘C=320 → 放行",
+      "name" : "复制完整性·相等放行",
+      "pass" : true
+    },
+    {
+      "detail" : "AX=320 ⌘C=0 → 拒绝",
+      "name" : "复制完整性·⌘C 空也必须拒绝",
+      "pass" : true
+    },
+    {
+      "detail" : "RTF=<488 字节>",
+      "name" : "富文本·改词后文本正确",
+      "pass" : true
+    },
+    {
+      "detail" : "替换词仍在粗体 run 内",
+      "name" : "富文本·粗体保留",
+      "pass" : true
+    },
+    {
+      "detail" : "前缀颜色 run 未被打散",
+      "name" : "富文本·颜色保留",
+      "pass" : true
     }
   ],
   "check" : "settings-selftest",
@@ -126,7 +186,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-24T01:52:22Z",
+  "generatedAt" : "2026-11-24T09:24:02Z",
   "netStub" : {
     "emptyConfigHits" : 0,
     "how" : "URLProtocol 打桩计数（CountingProtocol）",

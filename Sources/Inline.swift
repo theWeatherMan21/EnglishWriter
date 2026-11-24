@@ -891,10 +891,13 @@ final class InlineController {
             // 注意：这里**绝不 clear()**。读不到焦点只说明「这一轮没读到」（窗口非 key、overlay 抢了 key、
             // AX 暂时沉默都会这样），不代表宿主换了。线该由「前台 App 变没变」和 TTL 决定，不由能不能读到焦点决定。
             // Chromium 的 AX 树是异步长出来的：1.5s 后再试（最多 3 次），别一次取样就判死
-            if AXInline.isChromium(pid) {
+            // 超时/读不到不许「躺平」：Mail 的 AX 树会短暂沉默（同步、切换窗口），
+            // 11-24 实况撞满超时后 12 分钟一条日志都没有 —— 因为没有任何东西再触发 attach。
+            // 这里对 Mail / Chromium 都重试（最多 4 次，1.5s 起步）。
+            if AXInline.isChromium(pid) || appName(pid) == "Mail" {
                 let n = (attachRetries[pid] ?? 0) + 1
                 attachRetries[pid] = n
-                if n <= 3 {
+                if n <= 4 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                         Task { @MainActor in self?.attachElementObserver(pid: pid) }
                     }

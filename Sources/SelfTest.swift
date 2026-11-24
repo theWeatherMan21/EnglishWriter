@@ -1296,6 +1296,17 @@ enum SelfTest {
         check("拼写·全大写缩写不报", acronymPass,
               acronymCases.map { "\($0.0)=\(InlineController.looksLikeAcronym($0.0))" }.joined(separator: " "))
 
+        // 11.86) AX 超时必须按属性分级（一刀切 150ms 会把 AXChildren 全判超时）
+        check("超时分级·AXChildren=500ms", axTimeout(for: "AXChildren", defaultTimeout: 0.2) == 0.5,
+              "跨进程传整棵子树，150ms 会全判超时")
+        check("超时分级·AXValue=200ms", axTimeout(for: "AXValue", defaultTimeout: 0.2) == 0.2,
+              "文本内容给 200ms")
+        check("超时分级·AXRole=80ms", axTimeout(for: "AXRole", defaultTimeout: 0.2) == 0.08,
+              "标量正常 <10ms")
+        check("超时分级·未知属性走默认", axTimeout(for: "AXSomethingNew", defaultTimeout: 0.2) == 0.2,
+              "新属性不许被当标量压到 80ms")
+        check("单轮预算=1500ms", axRoundBudgetMs == 1500, "一轮超了就跳过本轮")
+
         // 11.85) 复制完整性硬闸：⌘C 少于 AX 字数时一个字都不许写
         check("复制完整性·⌘C 少于 AX 必须拒绝",
               InlineController.copyComplete(axCount: 320, clipboardCount: 253) == false,

@@ -313,6 +313,8 @@ final class AXRoundStats {
         // INFO，不是 ERROR：慢调用是性能事实，不是故障。
         AppLog.info("ax", "\(tag) axTotal=\(totalMs)ms slow=\(slowCount) focused=\(focusedCalls) \(hot)")
     }
+    /// 单轮总预算是否已经用完
+    func budgetExhausted() -> Bool { active && totalMs >= axRoundBudgetMs }
     func add(_ name: String, _ ms: Int) {
         guard active else { return }
         totalMs += ms
@@ -334,22 +336,45 @@ final class AXRoundStats {
 private var axSlowCount = 0
 func axSlowCountValue() -> Int { axSlowCount }
 
-/// AX 调用的统一闸：每次调用前把该元素的 messaging timeout 压到 150ms。
+/// 按属性分级的 messaging timeout（知澜 11-24 定）。
+/// 一刀切 150ms 会把功能修死：AXChildren 跨进程传整棵子树，正常就要 150–250ms，
+/// Mail 的 AXWebArea 有 255 个节点 → 每次都判超时 → 读不到正文 → 不检查、不画线。
+func axTimeout(for name: String, defaultTimeout: Float) -> Float {
+    switch name {
+    case "AXChildren", "AXChildrenInNavigationOrder", "AXRows", "AXVisibleChildren":
+        return 0.5                                   // 大宗数据
+    case "AXValue", "AXSelectedText", "AXSelectedTextRange", "AXDescription", "AXPlaceholderValue", "AXTitle":
+        return 0.2                                   // 文本内容
+    case "AXRole", "AXSubrole", "AXPosition", "AXSize", "AXEnabled", "AXEditable", "AXFocused",
+         "AXMain", "AXWindow", "AXParent", "AXIdentifier":
+        return 0.08                                  // 标量
+    default:
+        return 0.2
+    }
+}
+
+/// 单轮 AX 总预算：超了就跳过本轮（宁可这一轮不画线，也不让界面按顺序等下去）。
+/// 上限给 1.5s（知澜判据）。
+let axRoundBudgetMs = 1500
+
+/// AX 调用的统一闸：每次调用前按属性分级设 messaging timeout。
 /// 为什么必须逐个元素设（知澜 11-24 sample 88781 硬证据）：
 /// 主线程 1750 个样本里 1731 个卡在 AXUIElementCopyAttributeValue → mach_msg 等 Mail 回复，
 /// 设过 app 元素的超时对这些**子元素**不生效，Mail 忙起来就无限等，界面直接冻住。
 /// 150ms 足够正常的同步请求（实测 <40ms），异常时宁可当作「读不到」也不冻界面。
-let axCallTimeout: Float = 0.15
 func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
+    // 预算用完：本轮不再发 AX 请求（否则一轮几十次超时会叠成几十秒）
+    if AXRoundStats.shared.budgetExhausted() { return nil }
     let t0 = Date()
     var out: CFTypeRef?
-    AXUIElementSetMessagingTimeout(el, axCallTimeout)
+    AXUIElementSetMessagingTimeout(el, axTimeout(for: name, defaultTimeout: 0.2))
     let r = AXUIElementCopyAttributeValue(el, name as CFString, &out)
     let ms = Int(Date().timeIntervalSince(t0) * 1000)
     AXRoundStats.shared.add(name, ms)
-    if ms >= 100 {
+    if ms >= 300 {
         axSlowCount += 1
-        // 降级为 INFO：慢不等于错，汇总行比单条更有用
+        // 只在「真的异常慢」时单条留痕（≥300ms）；150ms 级别的慢由汇总行体现，
+        // 否则 AXChildren 正常 150–250ms 会刷满日志（11-24 实况刷了 40 条）。
         AppLog.info("ax", "slow attr=\(name) \(ms)ms（累计 \(axSlowCount)）")
     }
     guard r == .success else { return nil }
