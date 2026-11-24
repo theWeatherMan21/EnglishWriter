@@ -429,6 +429,46 @@ if argv.contains("--kpi") {
 }
 
 // M3 链路驱动（离线、不建窗口）：命中 → 弹出 → 接受 → 撤销 → 忽略，行级日志
+// --accept-now [id]：真机端到端写回，不需要人去点卡片。
+// 为什么加：爹地已经被要求手动点「接受」十几次，每次失败都要他复述现象。
+// 这条命令走产品同一条链路（checkNow 出 items → accept(itemID:) 四层写回 → 读回复核），
+// 我自己就能跑，结论落日志和 --e2e-report。
+if argv.contains("--accept-now") {
+    let i = argv.firstIndex(of: "--accept-now")!
+    let wantID = (i + 1 < argv.count && Int(argv[i + 1]) != nil) ? Int(argv[i + 1])! : 0
+    guard let mail = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").first else {
+        print("RESULT: SKIP（Mail 没在运行）"); exit(0)
+    }
+    if ScreenLock.bailIfLocked("--accept-now") { exit(0) }
+    let c = InlineController.shared
+    let listed: [(Int, String, String, Int, Int)] = MainActor.assumeIsolated {
+        c.checkNow(for: mail.processIdentifier)
+        return []
+    }
+    // 引擎结果异步回填：sleep 必须在主线程外，否则把回填一起堵死（自己踩的坑）
+    for _ in 0..<40 {
+        usleep(200_000)
+        let n = MainActor.assumeIsolated { c.items.count }
+        if n > 0 { break }
+    }
+    let listed2: [(Int, String, String, Int, Int)] = MainActor.assumeIsolated {
+        c.items.enumerated().map { ($0.offset, $0.element.original, $0.element.replacement, $0.element.start, $0.element.length) }
+    }
+    print("检查完成（异步等过）：items=\(listed2.count)")
+    let dbg = MainActor.assumeIsolated { (c.diag.lastError, c.diag.lastPath) }
+    print("诊断：isComposeWindow=\(MailProbe.isComposeWindow(pid: mail.processIdentifier)) windows=\(MailProbe.windows(mail.processIdentifier).count)")
+    print("检查完成：items=\(listed.count) 目标 id=\(wantID) lastError=\(dbg.0) path=\(dbg.1)")
+    for (k, o, r, st, ln) in listed {
+        print("  [\(k)] \"\(o)\" → \"\(r)\" range=\(st)+\(ln)")
+    }
+    for (k, o, r, st, ln) in listed2 { print("  [\(k)] \"\(o)\" → \"\(r)\" range=\(st)+\(ln)") }
+    guard !listed2.isEmpty, wantID < listed2.count else { print("RESULT: SKIP（没有可接受的建议）"); exit(0) }
+    let ok = MainActor.assumeIsolated { c.accept(itemID: wantID) }
+    usleep(600_000)
+    print("accept(itemID: \(wantID)) → \(ok ? "ok" : "false")")
+    exit(ok ? 0 : 2)
+}
+
 if argv.contains("--m3-drive") {
     let i = argv.firstIndex(of: "--m3-drive")!
     let out = (i + 1 < argv.count && !argv[i + 1].hasPrefix("--")) ? argv[i + 1] : "out/m3-drive.log"

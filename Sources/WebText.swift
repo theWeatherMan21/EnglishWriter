@@ -32,7 +32,7 @@ enum WebText {
             for c in attrChildrenFast(el) {
                 budget -= 1
                 if budget <= 0 { return }
-                let role = attrString(c, kAXRoleAttribute as String) ?? ""
+                let role = roleOf(c)
                 if role == "AXStaticText" {
                     let t = attrString(c, kAXValueAttribute as String) ?? ""
                     if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -54,7 +54,7 @@ enum WebText {
 
     /// 文本框是不是 WebKit 形态
     static func isWebBody(_ el: AXUIElement) -> Bool {
-        (attrString(el, kAXRoleAttribute as String) ?? "") == "AXWebArea"
+        (roleOf(el)) == "AXWebArea"
     }
 
     /// 元素所在的窗口矩形（视口）。WebArea 的 AXFrame 常是整个文档高度，
@@ -63,7 +63,7 @@ enum WebText {
         var cur: AXUIElement? = el
         var hops = 0
         while let c = cur, hops < 10 {
-            if (attrString(c, kAXRoleAttribute as String) ?? "") == "AXWindow" { return frame(c) }
+            if (roleOf(c)) == "AXWindow" { return frame(c) }
             guard let raw = attr(c, kAXParentAttribute as String) else { break }
             let cf = raw as CFTypeRef
             guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
@@ -155,7 +155,7 @@ enum WebText {
         var cur: AXUIElement? = el
         var hops = 0
         while let c = cur, hops < depth {
-            let role = attrString(c, kAXRoleAttribute as String) ?? "?"
+            let role = roleOf(c).isEmpty ? "?" : roleOf(c)
             let sub = attrString(c, kAXSubroleAttribute as String) ?? ""
             let ed = isEditableNode(c) ? "E" : "-"
             out.append("\(role)\(sub.isEmpty ? "" : "(\(sub))")\(ed)")
@@ -260,9 +260,9 @@ enum WebText {
             for c in attrChildrenFast(el) {
                 budget -= 1
                 if budget <= 0 { return }
-                let r0 = attrString(c, kAXRoleAttribute as String) ?? ""
+                let r0 = roleOf(c)
                 if r0 == "AXMenuBar" || r0 == "AXMenu" || r0 == "AXMenuItem" { continue }
-                let role = attrString(c, kAXRoleAttribute as String) ?? ""
+                let role = roleOf(c)
                 let f = frame(c)
                 if role == "AXWebArea", web == nil { web = c }
                 if role == "AXTextArea" {

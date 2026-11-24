@@ -277,6 +277,20 @@ func axRangeValue(_ location: Int, _ length: Int) -> AXValue? {
 /// 一轮检查内的 AX 记账：总耗时 / 慢调用数 / 各属性次数 / 焦点元素复用。
 /// 卡顿不是 CPU/内存，是主线程同步 AX 阻塞（知澜 11-23 判据）。
 /// 只有逐个打日志看不出「这一轮到底卡在哪、卡了多久」，所以按轮汇总。
+/// 一轮内的 role 缓存：一次检查里 AXRole 要被问 259 次（实测 131ms），
+/// 同一个节点问第二遍纯属浪费主线程。按 CFHash 索引，命中前用 CFEqual 复核，避免碰撞串味。
+private var roleCache: [CFHashCode: (AXUIElement, String)] = [:]
+
+func resetRoleCache() { roleCache.removeAll(keepingCapacity: true) }
+
+func roleOf(_ el: AXUIElement) -> String {
+    let key = CFHash(el)
+    if let hit = roleCache[key], CFEqual(hit.0, el) { return hit.1 }
+    let r = attrString(el, kAXRoleAttribute as String) ?? ""
+    roleCache[key] = (el, r)
+    return r
+}
+
 final class AXRoundStats {
     static let shared = AXRoundStats()
     private(set) var totalMs = 0
@@ -289,6 +303,7 @@ final class AXRoundStats {
 
     func begin() {
         totalMs = 0; slowCount = 0; focusedCalls = 0; byName = [:]; byNameMs = [:]; focused = [:]; active = true
+        resetRoleCache()
     }
     func end(_ tag: String) {
         guard active else { return }

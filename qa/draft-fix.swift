@@ -22,7 +22,9 @@ import ApplicationServices
 
 let apply = CommandLine.arguments.contains("--apply")
 let wrongNeedle = "havesent"          // 只认这一处坏样本，别的文本一律不碰
-let fixedWord = "have sent"
+// 正确形态是 "have send"：多出来的就是 have 之后的 "sent"（havesent → have）。
+// 注意不能把整段换成 "have sent"——那样变成 "have sent send ..."，错得更远。
+let extraOffset = 4                    // "have" 之后开始删
 
 func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
     var out: CFTypeRef?
@@ -98,15 +100,57 @@ guard let t = target else {
 
 let ns = t.text as NSString
 let badRange = ns.range(of: wrongNeedle)
-let expected = ns.replacingCharacters(in: badRange, with: fixedWord)
+let delRange = NSRange(location: badRange.location + extraOffset, length: badRange.length - extraOffset)
+let expected = ns.replacingCharacters(in: delRange, with: "")
 print("当前正文：\(t.text)")
 print("期望正文：\(expected)")
-print("要删掉的：位置 \(badRange.location) 长度 \(badRange.length) → 改为 \"\(fixedWord)\"")
+print("要删掉的：位置 \(delRange.location) 长度 \(delRange.length) → \"\(ns.substring(with: delRange))\"")
 print("行框：\(Int(t.rect.width))x\(Int(t.rect.height)) @ \(Int(t.rect.origin.x)),\(Int(t.rect.origin.y))")
 
 if !apply {
     print("RESULT: DRY-RUN（加 --apply 才真改）"); exit(0)
 }
+
+// 真人正在操作时绝不按键盘：按住任意修饰键 = 多半在打快捷键，此刻插进去会改到他的东西
+let mods = CGEventSource.flagsState(.combinedSessionState)
+if mods.contains(.maskCommand) || mods.contains(.maskShift) || mods.contains(.maskControl) || mods.contains(.maskAlternate) {
+    print("RESULT: SKIP（检测到修饰键按着，判断爹地正在操作，这次不动）"); exit(0)
+}
+// 稳定性复核：隔 1.2 秒再读一次，文本变了说明他正在敲，立刻退出
+usleep(1_200_000)
+var again: (el: AXUIElement, text: String, rect: CGRect)?
+func rescan(_ el: AXUIElement, _ d: Int) {
+    guard d > 0, again == nil else { return }
+    if (str(el, kAXRoleAttribute as String) ?? "") == "AXStaticText",
+       let s = str(el, kAXValueAttribute as String), s.contains(wrongNeedle) {
+        again = (el, s, frame(el)); return
+    }
+    for c in kids(el) { rescan(c, d - 1) }
+}
+for w in windows { rescan(w, 14) }
+guard let a2 = again, a2.text == t.text else {
+    print("RESULT: SKIP（1.2 秒内正文变了，爹地正在操作，不动）"); exit(0)
+}
+
+// 0) 先把窗口变成 key/main 并把 Mail 提到前台 —— 否则 postToPid 的键击进不了正文
+//    （11-24 实测：窗口非 key 时点一下、敲一串箭头，读回文本一个字没变）
+let win = windows.first { w in
+    var cur: AXUIElement? = t.el
+    for _ in 0..<20 {
+        guard let c = cur else { break }
+        if CFEqual(c, w) { return true }
+        cur = (attr(c, kAXParentAttribute as String).map { $0 as CFTypeRef })
+            .flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
+    }
+    return str(w, kAXTitleAttribute as String)?.contains("New Message") ?? false
+} ?? windows.first
+if let w = win {
+    _ = AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+    _ = AXUIElementSetAttributeValue(w, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+}
+app.activate(options: [.activateAllWindows])
+usleep(400_000)
 
 // 1) 点进这一行（点左侧内部，别点到行尾之外）
 let clickPoint = CGPoint(x: t.rect.origin.x + 6, y: t.rect.origin.y + t.rect.height / 2)
@@ -139,8 +183,8 @@ func key(_ code: CGKeyCode, flags: CGEventFlags = []) {
 
 // 3) ⌘←（行首）→ → ×位置 → ⇧→ ×长度 → Delete
 key(0x7B, flags: .maskCommand)                 // Command+Left = 行首
-for _ in 0..<badRange.location { key(0x7C) }   // Right
-for _ in 0..<badRange.length { key(0x7C, flags: .maskShift) }   // Shift+Right
+for _ in 0..<delRange.location { key(0x7C) }   // Right
+for _ in 0..<delRange.length { key(0x7C, flags: .maskShift) }   // Shift+Right
 key(0x33)                                       // Delete（向后删）
 usleep(300_000)
 
@@ -154,7 +198,7 @@ func verify(_ el: AXUIElement, _ d: Int) {
     }
     for c in kids(el) { verify(c, d - 1) }
 }
-for w in windows { verify(w, 14) }
+if let scopeWin = win { verify(scopeWin, 14) } else { for w in windows { verify(w, 14) } }
 
 if let a = after, a == expected {
     print("RESULT: PASS —— 正文已还原；读回 \"\(a)\"")

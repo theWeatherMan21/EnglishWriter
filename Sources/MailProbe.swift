@@ -88,7 +88,7 @@ enum MailProbe {
             if (sendHit && recipientHit) || depth <= 0 || budget <= 0 { return }
             if Date() > deadline { budget = 0; return }
             budget -= 1
-            let role = attrString(el, kAXRoleAttribute as String) ?? ""
+            let role = roleOf(el)
             if role == kAXButtonRole as String || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String {
                 let label = [attrString(el, kAXTitleAttribute as String),
                              attrString(el, kAXDescriptionAttribute as String),

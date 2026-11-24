@@ -76,7 +76,7 @@ enum AXInline {
         var best: (area: CGFloat, el: AXUIElement)?
         for w in wins {
             for el in descendants(w, depth: 8) {
-                guard (attrString(el, kAXRoleAttribute as String) ?? "") == "AXTextArea" else { continue }
+                guard (roleOf(el)) == "AXTextArea" else { continue }
                 guard let v = attrString(el, kAXValueAttribute as String), !v.isEmpty else { continue }
                 var r = CGRect.zero
                 if let p = attr(el, kAXPositionAttribute as String), CFGetTypeID(p) == AXValueGetTypeID() {
@@ -193,7 +193,7 @@ enum AXInline {
         var win: AXUIElement?
         var hops = 0
         while let c = cur, hops < 12 {
-            if (attrString(c, kAXRoleAttribute as String) ?? "") == "AXWindow" { win = c; break }
+            if (roleOf(c)) == "AXWindow" { win = c; break }
             guard let raw = attr(c, kAXParentAttribute as String) else { break }
             let cf = raw as CFTypeRef
             guard CFGetTypeID(cf) == AXUIElementGetTypeID() else { break }
@@ -240,7 +240,7 @@ enum AXInline {
     static func textField(in body: AXUIElement) -> AXUIElement? {
         var best: (el: AXUIElement, len: Int)?
         for el in descendants(body, depth: 10) {
-            let role = attrString(el, kAXRoleAttribute as String) ?? ""
+            let role = roleOf(el)
             guard role == "AXTextArea" || role == "AXTextField" else { continue }
             let v = attrString(el, kAXValueAttribute as String) ?? ""
             guard !v.isEmpty else { continue }
@@ -543,7 +543,7 @@ final class InlineController {
             _ = cfg
         } else if Integrations.all.contains(where: { $0.id == app && !$0.isEnabled }) {
             emit(CheckEvent(kind: "skip-app-disabled", pid: pid, app: app,
-                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            role: roleOf(el),
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "该 App 适配未探明，已关闭", at: Date()))
             return nil
@@ -556,7 +556,7 @@ final class InlineController {
         }
         if Integrations.isSensitive(text: idParts.joined(separator: " ")) {
             emit(CheckEvent(kind: "skip-sensitive", pid: pid, app: app,
-                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            role: roleOf(el),
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "敏感字段（命中关键词黑名单）", at: Date()))
             return nil
@@ -623,7 +623,7 @@ final class InlineController {
                     // 轮询自己也要留证据：Web 正文到底读出几块、几个字（没声音时靠这行判断）
                     self.emit(CheckEvent(kind: "web-poll", pid: self.lastFocusPid,
                                          app: appName(self.lastFocusPid),
-                                         role: attrString(el, kAXRoleAttribute as String) ?? "",
+                                         role: roleOf(el),
                                          textLen: (joined as NSString).length, sentenceLen: 0,
                                          itemCount: 0, rectCount: 0,
                                          elapsed: "-", err: "blocks=\(blks.count)", at: Date()))
@@ -1075,7 +1075,7 @@ final class InlineController {
         }
 
         if full == nil {
-            emit(CheckEvent(kind: "no-text", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+            emit(CheckEvent(kind: "no-text", pid: pid, app: appName(pid), role: roleOf(el),
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0, elapsed: "-",
                             err: "读不到文本框内容", at: Date()))
             // 读不到字 = 不知道，不许打成绿点（三态球）
@@ -1090,7 +1090,7 @@ final class InlineController {
             _ = cfg
         } else if Integrations.all.contains(where: { $0.id == app && !$0.isEnabled }) {
             emit(CheckEvent(kind: "skip-app-disabled", pid: pid, app: app,
-                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            role: roleOf(el),
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "该 App 适配未探明，已关闭", at: Date()))
             return
@@ -1103,7 +1103,7 @@ final class InlineController {
         }
         if Integrations.isSensitive(text: idParts.joined(separator: " ")) {
             emit(CheckEvent(kind: "skip-sensitive", pid: pid, app: app,
-                            role: attrString(el, kAXRoleAttribute as String) ?? "",
+                            role: roleOf(el),
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "敏感字段（命中关键词黑名单）", at: Date()))
             return
@@ -1132,7 +1132,7 @@ final class InlineController {
         // 语言门控：中文占比超阈值 → 一个请求都不发
         if !LanguageGate.isEnglish(sentence) {
             diag.skippedChinese += 1
-            emit(CheckEvent(kind: "skip-lang", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+            emit(CheckEvent(kind: "skip-lang", pid: pid, app: appName(pid), role: roleOf(el),
                             textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
                             itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
             floatUnknown(pid: pid, element: el)
@@ -1158,7 +1158,7 @@ final class InlineController {
         if !instant.isEmpty {
             apply(items: shift(instant, by: sentenceRange.location), sentenceRange: sentenceRange, element: el, pid: pid)
         }
-        emit(CheckEvent(kind: "check", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+        emit(CheckEvent(kind: "check", pid: pid, app: appName(pid), role: roleOf(el),
                         textLen: (full as NSString).length, sentenceLen: (sentence as NSString).length,
                         itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
 
@@ -1741,6 +1741,10 @@ final class InlineController {
         if let region = WebText.editableRegion(of: el) {
             _ = AXUIElementSetAttributeValue(region, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         }
+        // 光设 AXFocused 不够：11-24 真机证明，Mail 不是前台时 postToPid 的键击照样落空，
+        // 必须把 Mail 真正提到前台、窗口变 key，键击才进得去正文。
+        NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows])
+        usleep(180_000)
         // 验证：设 1 字选区能读回来，说明焦点/可写性都在
         if let v = axRangeValue(0, 1) {
             _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
@@ -1912,7 +1916,7 @@ final class InlineController {
 
     private func apply(items newItems: [DiffItem], sentenceRange: NSRange, element el: AXUIElement, pid: pid_t) {
         defer {
-            emit(CheckEvent(kind: "render", pid: pid, app: appName(pid), role: attrString(el, kAXRoleAttribute as String) ?? "",
+            emit(CheckEvent(kind: "render", pid: pid, app: appName(pid), role: roleOf(el),
                             textLen: (lastText as NSString).length, sentenceLen: sentenceRange.length,
                             itemCount: items.count, rectCount: overlay.specs.count,
                             elapsed: diag.lastElapsed,
