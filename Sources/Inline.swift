@@ -1859,9 +1859,26 @@ final class InlineController {
         for _ in 0..<max(1, original.count) {
             pressKey(0x7C, flags: .maskShift, to: pid, settleUs: 15_000)
         }
-        let picked = readSelectionViaClipboard(pid: pid) ?? ""
+        var picked = readSelectionViaClipboard(pid: pid) ?? ""
+        // ⌥→ 在不同宿主里落点不一致（词首/词尾/带前导空格），实测选中过 " send" / " sen"。
+        // 不跟语义猜：选中长度不对就「收拢到末端 → ⇧←×len」再来一次，
+        // 还不对就「收拢到首端 → ⇧→×len」。两次都失败才放弃（正文此时未被改动）。
+        if picked != original {
+            let len = original.count
+            pressKey(0x7C, flags: [], to: pid)          // → 收拢到选区末端
+            for _ in 0..<max(1, len) { pressKey(0x7B, flags: .maskShift, to: pid, settleUs: 12_000) }
+            picked = readSelectionViaClipboard(pid: pid) ?? ""
+            AppLog.info("m3", "keyboard-word 修正①（末端回选 \(len) 字）：\"\(picked)\"")
+        }
+        if picked != original {
+            let len = original.count
+            pressKey(0x7B, flags: [], to: pid)          // ← 收拢到选区首端
+            for _ in 0..<max(1, len) { pressKey(0x7C, flags: .maskShift, to: pid, settleUs: 12_000) }
+            picked = readSelectionViaClipboard(pid: pid) ?? ""
+            AppLog.info("m3", "keyboard-word 修正②（首端正选 \(len) 字）：\"\(picked)\"")
+        }
         guard picked == original else {
-            AppLog.info("m3", "keyboard-word 选中的是 \"\(picked)\"，不是 \"\(original)\" —— 收起选区，交给调用方放弃")
+            AppLog.info("m3", "keyboard-word 两次修正后仍选中 \"\(picked)\"，不是 \"\(original)\" —— 放弃，正文未改动")
             pressKey(0x7C, flags: [], to: pid)
             return (false, true)
         }
