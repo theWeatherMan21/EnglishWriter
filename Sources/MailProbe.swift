@@ -66,6 +66,25 @@ enum MailProbe {
 
     static func isComposeWindow(pid: pid_t) -> Bool { composeSignal(pid: pid).isCompose }
 
+    /// 兜底判据：这个元素所在窗口的标题是不是写信窗。
+    /// 为什么需要：composeSignal 靠发送按钮/收件人字段，Mail 窗口一多或焦点一变就翻成 false，
+    /// 结果写信窗被当成阅读窗跳过（11-24 实况 skip-readonly readonly-web，线一条都不画）。
+    static func windowTitleLooksCompose(_ el: AXUIElement) -> Bool {
+        var cur: AXUIElement? = el
+        for _ in 0..<12 {
+            guard let c = cur else { break }
+            if roleOf(c) == "AXWindow" {
+                let t = (attrString(c, kAXTitleAttribute as String) ?? "") + " "
+                    + (attrString(c, kAXSubroleAttribute as String) ?? "")
+                let words = ["New Message", "新邮件", "新訊息", "Compose", "Neue Nachricht", "Nouveau message"]
+                return words.contains { t.contains($0) }
+            }
+            guard let p = attr(c, kAXParentAttribute as String), CFGetTypeID(p as CFTypeRef) == AXUIElementGetTypeID() else { break }
+            cur = (p as! AXUIElement)
+        }
+        return false
+    }
+
     /// 写信窗的两个信号（命中任一即算）：
     ///   send      工具栏有「发送 / Send」按钮
     ///   recipient 有收件人字段（To / 收件人 / Cc）
@@ -78,7 +97,7 @@ enum MailProbe {
         // 两道闸：单次调用 0.15s 超时 + 总节点预算 300 + 0.4s 截止时间，超了就按「不是写信窗」返回。
         AXUIElementSetMessagingTimeout(app, 0.15)
         guard let windows = attr(app, kAXWindowsAttribute as String) as? [AXUIElement],
-              let front = windows.first else { return (false, "没有窗口") }
+              !windows.isEmpty else { return (false, "没有窗口") }
         let sendWords = ["发送", "Send", "送信", "Enviar", "Envoyer"]
         let toWords = ["收件人", "To:", "收件人：", "Cc", "抄送", "To "]
         var sendHit = false, recipientHit = false
@@ -104,7 +123,12 @@ enum MailProbe {
                     || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String || role.isEmpty else { return }
             for c in attrChildrenFast(el) { walk(c, depth: depth - 1) }
         }
-        walk(front, depth: 8)
+        // 必须扫**所有**窗口：爹地同时开着读信窗和写信窗时，写信窗常不在第一位，
+        // 只看 front 会判成「不是写信窗」→ 整条检查被当成只读文本跳过（11-24 实况）。
+        for w in windows.prefix(4) {
+            if sendHit || recipientHit { break }
+            walk(w, depth: 8)
+        }
         if sendHit { return (true, "发送按钮") }
         if recipientHit { return (true, "收件人字段") }
         if budget <= 0 { return (false, "遍历超预算(300 节点/0.4s)，按非写信窗处理") }

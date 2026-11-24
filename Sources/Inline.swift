@@ -1018,7 +1018,14 @@ final class InlineController {
         let hasEditableWebField = WebText.isWebBody(el) && AXInline.textField(in: el) != nil
         // Mail 的阅读窗也有可编辑节点（搜索框），所以要问「前台窗口有没有发送按钮」。
         // 这条不按尺寸打分：小窗口的写信区会被面积阈值误杀（11-23 退回那条阈值）。
-        let mailReading = (appName(pid) == "Mail") && !MailProbe.isComposeWindow(pid: pid)
+        // 两个独立判据只要有一个说是写信窗，就不按「阅读窗」处理：
+        // ① 发送按钮/收件人字段（窗口一多会翻成 false）② 窗口标题（New Message 这类）
+        let composeBySignal = MailProbe.isComposeWindow(pid: pid)
+        let composeByTitle = WebText.isWebBody(el) && MailProbe.windowTitleLooksCompose(el)
+        let mailReading = (appName(pid) == "Mail") && !composeBySignal && !composeByTitle
+        if composeByTitle && !composeBySignal {
+            AppLog.info("check", "compose 判定：信号=false 但标题是写信窗 → 按写信窗处理")
+        }
         let inEditableWindow = WebText.isWebBody(el) && AXInline.webAreaIsInEditableWindow(el, pid: pid)
         if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
                                    isWebBody: WebText.isWebBody(el),
