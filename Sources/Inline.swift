@@ -1736,28 +1736,56 @@ final class InlineController {
     /// 这一步不成立，后面 ⌘A/⌘V 全是空放。
     @discardableResult
     private func returnFocusToBody(pid: pid_t, element: AXUIElement?) -> Bool {
-        guard pid > 0, let el = element else { return false }
+        guard pid > 0 else { return false }
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.3)
+
+        // ① AppKit 层：把 Mail 真正提到前台。AXFocused 对 Mail 的 WebArea 不管用，
+        //    而 postToPid 的键击只认「前台 App + key 窗口」（11-24 实测：非前台时键击全落空）。
+        NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        usleep(150_000)
+
+        // ② 窗口层：raise + 设 main/focused
+        var targetWin: AXUIElement?
         var winsRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
-           let wins = winsRef as? [AXUIElement], let w = wins.first {
+           let wins = winsRef as? [AXUIElement] {
+            // 优先「包含目标元素的那个窗口」
+            for w in wins where CFEqual(w, element ?? w) {
+                targetWin = w; break
+            }
+            if targetWin == nil { targetWin = wins.first }
+        }
+        if let w = targetWin {
+            _ = AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+            _ = AXUIElementSetAttributeValue(w, kAXFocusedAttribute as CFString, kCFBooleanTrue)
             AXUIElementPerformAction(w, kAXRaiseAction as CFString)
         }
-        _ = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        if let region = WebText.editableRegion(of: el) {
-            _ = AXUIElementSetAttributeValue(region, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if let el = element {
+            _ = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         }
-        // 光设 AXFocused 不够：11-24 真机证明，Mail 不是前台时 postToPid 的键击照样落空，
-        // 必须把 Mail 真正提到前台、窗口变 key，键击才进得去正文。
-        NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows])
-        usleep(180_000)
-        // 验证：设 1 字选区能读回来，说明焦点/可写性都在
-        if let v = axRangeValue(0, 1) {
-            _ = AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v)
-            if let r = axSelection(el), r.length == 1 { return true }
+        usleep(200_000)
+
+        // ③ 验证：不能用「设 1 字选区读回来」——Mail 的 AXSelectedTextRange 是假成功，
+        //    拿它当判据等于用一个已知会说谎的 API 自证。改用可观察事实：
+        //    Mail 是前台 App，且它的 AXMainWindow 就是目标窗口。
+        let frontOK = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+        var mainOK = false
+        var mainRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appEl, kAXMainWindowAttribute as CFString, &mainRef) == .success,
+           let m = mainRef {
+            let mw = m as! AXUIElement
+            mainOK = (targetWin == nil) ? true : CFEqual(mw, targetWin!)
         }
-        return false
+        let focusedInWin: Bool = {
+            var fe: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &fe) == .success,
+                  let f = fe, CFGetTypeID(f as CFTypeRef) == AXUIElementGetTypeID() else { return false }
+            return true     // 能读到焦点元素就说明不是「无焦点」状态；具体角色不重要
+        }()
+        let ok = frontOK && mainOK && focusedInWin
+        AppLog.info("m3", "focus-return 细节 front=\(frontOK) main=\(mainOK) focusedEl=\(focusedInWin)")
+        return ok
     }
 
     /// 目标进程里的选区文本（键盘兜底读回用）。

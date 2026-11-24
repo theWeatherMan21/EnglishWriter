@@ -48,7 +48,7 @@ for i in $(seq 1 1440); do
         if locked; then echo "又锁上了，继续等" >> "$OUT"; continue; fi
 
         TS=$(date '+%Y%m%d-%H%M%S')
-        echo "--- ① AX 树 dump（$TS）---" >> "$OUT"
+        echo "--- ① AX 树 dump（${TS}）---" >> "$OUT"
         "$BIN" --axdump-mail > "$EVID/axdump-mail-$TS.txt" 2>&1
         tail -3 "$EVID/axdump-mail-$TS.txt" >> "$OUT"
         grep -c "edit=1\|selRange=1" "$EVID/axdump-mail-$TS.txt" 2>/dev/null \
