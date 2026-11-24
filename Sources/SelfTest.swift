@@ -1296,6 +1296,38 @@ enum SelfTest {
         check("拼写·全大写缩写不报", acronymPass,
               acronymCases.map { "\($0.0)=\(InlineController.looksLikeAcronym($0.0))" }.joined(separator: " "))
 
+        // 11.9) 富文本整篇替换：改一个词，粗体/字号这些属性必须原样留在原处
+        do {
+            let base = NSMutableAttributedString(string: "I have send the file, please check it.")
+            let boldFont = NSFont.boldSystemFont(ofSize: 13)
+            base.addAttribute(.font, value: boldFont, range: NSRange(location: 7, length: 4))     // send
+            base.addAttribute(.foregroundColor, value: NSColor.systemBlue,
+                              range: NSRange(location: 0, length: 6))                              // "I have"
+            let rtf = try? base.data(from: NSRange(location: 0, length: base.length),
+                                     documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+            var textOK = false, boldKept = false, colorKept = false
+            if let d = rtf,
+               let back = try? NSAttributedString(data: d, options: [.documentType: NSAttributedString.DocumentType.rtf],
+                                                  documentAttributes: nil) {
+                let m = NSMutableAttributedString(attributedString: back)
+                let r = (m.string as NSString).range(of: "send")
+                if r.location != NSNotFound {
+                    m.replaceCharacters(in: r, with: "sent")
+                    textOK = m.string == "I have sent the file, please check it."
+                    // 替换后：新词仍是粗体；"I have" 仍是蓝色
+                    if let f = m.attribute(.font, at: 7, effectiveRange: nil) as? NSFont {
+                        boldKept = f.fontDescriptor.symbolicTraits.contains(.bold)
+                    }
+                    if let c = m.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor {
+                        colorKept = c == NSColor.systemBlue || c.usingColorSpace(.sRGB) != nil
+                    }
+                }
+            }
+            check("富文本·改词后文本正确", textOK, "RTF=<\(rtf?.count ?? 0) 字节>")
+            check("富文本·粗体保留", boldKept, "替换词仍在粗体 run 内")
+            check("富文本·颜色保留", colorKept, "前缀颜色 run 未被打散")
+        }
+
         // 6) 证据落盘
         evidence["check"] = "settings-selftest"
         evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())

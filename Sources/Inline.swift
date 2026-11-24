@@ -1531,15 +1531,21 @@ final class InlineController {
         // 抓着旧元素复读永远是旧文本 → 判「写回后文本与期望不一致」再回滚（11-23 实测）。
         // 补救：整棵树重新走一遍，只要正文里出现了替换后的文本，就算写进去了。
         if !out.ok, currentElement != nil, itemBlock.indices.contains(id), itemBlock[id] >= 0 {
-            let fresh = WebText.blocks(of: currentElement!).map { $0.text }.joined(separator: "\n")
-            // 判据必须是「整篇逐字等于期望」，不能只看「出现了替换词」——
-            // 那会在「少了一个空格」时也报成功（10:17 实况：320→319 却 accept ok）。
             let expectedTrim = out.expected.trimmingCharacters(in: .whitespacesAndNewlines)
-            let freshTrim = fresh.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !expectedTrim.isEmpty && freshTrim == expectedTrim && Self.webReadbackRecovered(fresh: fresh, replacement: it.replacement) {
-                AppLog.info("m3", "accept readback 复核：整树已含「\(it.replacement)」，判成功")
-                out = M3Flow.AcceptOutcome(ok: true, expected: out.expected, actual: fresh,
-                                           detail: "整树复核：已写入（读回元素被宿主替换）")
+            // 写回生效有延迟（粘贴后有重排/动画），单次复读经常读到旧树 → 冤枉判失败。
+            // 这里最多复核 4 次、每次间隔 300ms；判据仍是「整篇逐字等于期望」。
+            for attempt in 1...4 {
+                usleep(300_000)
+                let fresh = WebText.blocks(of: currentElement!).map { $0.text }.joined(separator: "\n")
+                let freshTrim = fresh.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !expectedTrim.isEmpty, freshTrim == expectedTrim,
+                   Self.webReadbackRecovered(fresh: fresh, replacement: it.replacement) {
+                    AppLog.info("m3", "accept readback 复核（第 \(attempt) 次）：整篇与期望逐字一致，判成功")
+                    out = M3Flow.AcceptOutcome(ok: true, expected: out.expected, actual: fresh,
+                                               detail: "整树复核：已写入（读回元素被宿主替换）")
+                    break
+                }
+                AppLog.info("m3", "accept readback 复核（第 \(attempt) 次）：\(freshTrim.count) 字 vs 期望 \(expectedTrim.count) 字，还不一致")
             }
         }
         if out.ok {
@@ -1691,7 +1697,10 @@ final class InlineController {
             }
             // 先试词级替换：只动那一个词，格式（粗体/链接/图片）不受影响。
             // 失败一律回落整篇替换，绝不留在半选状态。
-            if !copied.isEmpty {
+            // 词级（精确选一个词）默认关闭：WKWebView 里没有可靠方式指定「第 7–10 个字符」，
+            // ⇧⌥→ / ⌥← / 自纠 / ⌘F 六轮全部失败（⌘F 在 WebView 只是高亮，不是可复制的选区）。
+            // 保格式的正解换成「整篇搬 RTF」。要再试词级：EW_WORD_REPLACE=1。
+            if !copied.isEmpty, ProcessInfo.processInfo.environment["EW_WORD_REPLACE"] == "1" {
                 let word = tryKeyboardWordReplace(original: original, replacement: text, blockText: block.text,
                                                   pid: pid, wholeBody: copied)
                 if word.ok { return true }
@@ -1710,7 +1719,13 @@ final class InlineController {
             if let full = (copied.isEmpty ? nil : copied), covered,
                WebText.allowFullReplace(fullText: full),
                let newFull = WebText.replaceOnce(fullText: full, original: original, replacement: text),
-               newFull != full, Self.backupDraft(full), pasteViaClipboard(newFull, to: pid) {
+               newFull != full, Self.backupDraft(full) {
+                let rich = replaceWholeBodyRich(original: original, replacement: text,
+                                                newFull: newFull, pid: pid)
+                if rich.ok { return true }
+                // 富文本路径已经按过 ⌘V：正文可能已被改动，绝不再粘一次纯文本（会双重写入）。
+                if rich.pasted { return false }
+                guard pasteViaClipboard(newFull, to: pid) else { return false }
                 usleep(500_000)
                 pressSelectAll(to: pid)
                 let back = readSelectionViaClipboard(pid: pid) ?? ""
@@ -1953,6 +1968,9 @@ final class InlineController {
     /// 用 ⌘C 读选区：AX 报的选区长度在 Mail 上是假话（selSet=谎），
     /// 而「复制出来的东西」是应用自己写的系统剪贴板——这是唯一能当判据的事实。
     /// 读完立刻还原剪贴板，不动爹地原本的内容。
+    /// 最近一次 ⌘C 拿到的 RTF（WebView 复制富文本时才有）。整篇替换用它保格式。
+    private var lastCopiedRTF: Data?
+
     private func readSelectionViaClipboard(pid: pid_t) -> String? {
         guard pid > 0 else { return nil }
         let pb = NSPasteboard.general
@@ -1975,6 +1993,7 @@ final class InlineController {
             usleep(100_000); waited += 1
             got = pb.string(forType: .string)
         }
+        lastCopiedRTF = pb.data(forType: .rtf)
         if let saved { pb.clearContents(); pb.setString(saved, forType: .string) }
         return (got == sentinel) ? nil : got
     }
@@ -2166,6 +2185,69 @@ final class InlineController {
 
     /// 写回兜底：剪贴板 ⌘V。Chromium 网页字段实测 AXValue / AXSelectedText 都写不进，
     /// 只有合成键击能进去。用完 0.6s 把爹地的剪贴板原样还原，长期占用为零。
+    /// 属性段数量：用来量化「格式有没有变」。同一份 RTF 改一个词，段数应基本不变。
+    private func attributeRunCount(_ attr: NSAttributedString) -> Int {
+        var i = 0, n = 0
+        while i < attr.length {
+            var eff = NSRange()
+            _ = attr.attributes(at: i, longestEffectiveRange: &eff,
+                                in: NSRange(location: 0, length: attr.length))
+            n += 1
+            i = eff.length > 0 ? eff.location + eff.length : i + 1
+        }
+        return n
+    }
+
+    /// 富文本整篇替换：把 ⌘C 拿到的 RTF 改掉那一个词，再整篇粘回。
+    /// 目的：既保住粗体/链接/字号（RTF 原样搬回），又不用在 WKWebView 里精确选词。
+    private func replaceWholeBodyRich(original: String, replacement: String,
+                                      newFull: String, pid: pid_t) -> (ok: Bool, pasted: Bool) {
+        guard let rtf = lastCopiedRTF,
+              let attr = try? NSAttributedString(data: rtf,
+                                                 options: [.documentType: NSAttributedString.DocumentType.rtf],
+                                                 documentAttributes: nil) else {
+            AppLog.info("m3", "富文本整篇：剪贴板没有 RTF（WebView 给的是纯文本），改走纯文本粘贴")
+            return (false, false)
+        }
+        let m = NSMutableAttributedString(attributedString: attr)
+        let r = (m.string as NSString).range(of: original)
+        guard r.location != NSNotFound else {
+            AppLog.info("m3", "富文本整篇：RTF 里找不到 \"\(original)\"，不猜，走纯文本")
+            return (false, false)
+        }
+        let runsBefore = attributeRunCount(attr)
+        m.replaceCharacters(in: r, with: replacement)
+        let runsAfter = attributeRunCount(m)
+        let rtfOut = try? m.data(from: NSRange(location: 0, length: m.length),
+                                 documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(newFull, forType: .string)
+        if let out = rtfOut { pb.setData(out, forType: .rtf) }
+        pressSelectAll(to: pid)
+        pressKey(0x09, flags: .maskCommand, to: pid, settleUs: 600_000)   // ⌘V
+        usleep(400_000)   // 到这里正文已经可能被改动，调用方不许再粘第二次
+        pressSelectAll(to: pid)
+        // 读回要等稳定：WebView 里 ⌘C 偶发只抄到半篇（11:26 实况 253/320），
+        // 抄到半截就判失败会导致「明明改对了却报失败」，还会触发后面的重复粘贴。
+        var back = ""
+        for _ in 0..<4 {
+            let one = readSelectionViaClipboard(pid: pid) ?? ""
+            usleep(220_000)
+            let two = (one.isEmpty ? "" : (readSelectionViaClipboard(pid: pid) ?? ""))
+            if !one.isEmpty, one == two { back = one; break }
+            back = two.isEmpty ? one : two
+        }
+        let ok = back.trimmingCharacters(in: .whitespacesAndNewlines)
+            == newFull.trimmingCharacters(in: .whitespacesAndNewlines)
+        AppLog.info("m3", "富文本整篇：属性段 改前=\(runsBefore) 改后=\(runsAfter) 读回=\(back.count)字 一致=\(ok)")
+        if ok {
+            Diag.shared.applyMethod = "富文本整篇替换"
+            AppLog.info("m3", "write-layer=clipboard-rtf len=\(newFull.count)（整篇搬 RTF，未逐字键入）")
+        }
+        return (ok, true)
+    }
+
     private func pasteViaClipboard(_ text: String, to pid: pid_t) -> Bool {
         guard pid > 0 else { return false }
         let pb = NSPasteboard.general
