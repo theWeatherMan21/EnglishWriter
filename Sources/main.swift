@@ -441,7 +441,7 @@ if argv.contains("--copy-probe") {
         print("没有可读的正文元素"); exit(0)
     }
     let r = MainActor.assumeIsolated { InlineController.shared.copyProbe(pid: pid, element: body) }
-    print("AX 字数(非空白)=\(r.ax) ⌘C 字数(非空白)=\(r.cb) 差=\(r.ax - r.cb)")
+    print("AX 字数(非空白)=\(r.ax) ⌘C 字数(非空白)=\(r.cb) 差=\(r.ax - r.cb) 图片节点=\(r.images) RTF=\(r.rtfBytes)字节")
     print("AX 末尾40字=\(r.axTail)")
     print("⌘C 末尾40字=\(r.cbTail)")
     exit(0)

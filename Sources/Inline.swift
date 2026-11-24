@@ -1704,14 +1704,12 @@ final class InlineController {
             func visibleCount(_ t: String) -> Int {
                 t.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }.count
             }
+            // 「AX 字数 == ⌘C 字数」这条闸是错的（知澜 11:44 查清）：
+            // 签名里有图片，⌘C 复制 HTML 时 <img> 变成文件名文字（downloadex.png），
+            // AX 读纯文本不数图片 → 两边永远不等 → 闸恒拒绝，等于把功能焊死。
+            // 防吃字改由「写前备份 + 写后逐段比对 + 图片数不变，不符回滚」负责（见 replaceWholeBodyRich）。
             let axN = visibleCount(axFull), cbN = visibleCount(copied)
-            let sameContent = Self.squash(axFull) == Self.squash(copied)
-            AppLog.info("m3", "复制完整性：AX=\(axN)字 ⌘C=\(cbN)字 内容一致=\(sameContent)")
-            if !Self.copyComplete(axCount: axN, clipboardCount: cbN) || !sameContent {
-                AppLog.info("m3", "复制不全（⌘C \(cbN) < AX \(axN)）—— 一个字都不写，直接放弃")
-                pressKey(0x7B, flags: [], to: pid)
-                return false
-            }
+            AppLog.info("m3", "复制概况：AX=\(axN)字（不含图片文件名）⌘C=\(cbN)字（含图片文件名）—— 差值来自签名图片，不拦")
             // 先试词级替换：只动那一个词，格式（粗体/链接/图片）不受影响。
             // 失败一律回落整篇替换，绝不留在半选状态。
             // 词级（精确选一个词）默认关闭：WKWebView 里没有可靠方式指定「第 7–10 个字符」，
@@ -1972,7 +1970,7 @@ final class InlineController {
     }
 
     /// 诊断用：对比「AX 能读到多少字」与「⌘A⌘C 实际复制到多少字」，不写任何东西。
-    func copyProbe(pid: pid_t, element: AXUIElement) -> (ax: Int, cb: Int, axTail: String, cbTail: String) {
+    func copyProbe(pid: pid_t, element: AXUIElement) -> (ax: Int, cb: Int, axTail: String, cbTail: String, images: Int, rtfBytes: Int) {
         let blocks = WebText.blocks(of: element)
         let axText = blocks.map { $0.text }.joined(separator: "\n")
         func vis(_ t: String) -> Int {
@@ -1983,12 +1981,65 @@ final class InlineController {
         let copied = readSelectionViaClipboard(pid: pid) ?? ""
         return (vis(axText), vis(copied),
                 String(axText.suffix(40)).replacingOccurrences(of: "\n", with: "⏎"),
-                String(copied.suffix(40)).replacingOccurrences(of: "\n", with: "⏎"))
+                String(copied.suffix(40)).replacingOccurrences(of: "\n", with: "⏎"),
+                Self.webImageCount(of: element), lastCopiedRTF?.count ?? 0)
     }
 
     /// 复制完整性判据：⌘C 的非空白字数必须 ≥ AX 能读到的字数。
     /// 11:31 实况：AX=320、⌘C=253（少 67 字）；若放行就是「读多少写多少」，
     /// 多出来的那 67 个字会被静默删掉。两边任一为 0 时无法判定，按「不拦」处理（另有别的判据兜）。
+    /// AX 树里的图片节点数（判「写回有没有把签名图片搞丢」）。
+    nonisolated static func webImageCount(of el: AXUIElement?) -> Int {
+        guard let el else { return 0 }
+        var n = 0
+        func walk(_ e: AXUIElement, _ d: Int) {
+            if d > 14 { return }
+            var roleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(e, kAXRoleAttribute as CFString, &roleRef) == .success,
+               let role = roleRef as? String, role == "AXImage" { n += 1 }
+            var kidsRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(e, kAXChildrenAttribute as CFString, &kidsRef) == .success,
+               let kids = kidsRef as? [AXUIElement] {
+                for k in kids.prefix(400) { walk(k, d + 1) }
+            }
+        }
+        walk(el, 0)
+        return n
+    }
+
+    /// 把写前的 RTF 落盘（回滚/取证用）。
+    nonisolated static func backupRTF(_ rtf: Data) -> String? {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/EnglishWriter/rtf-backup", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = dir.appendingPathComponent("body-\(Int(Date().timeIntervalSince1970)).rtf")
+        do { try rtf.write(to: f); return f.path } catch { return nil }
+    }
+
+    /// 回滚：把最近一份 RTF 备份整篇粘回去（⌘A ⌘V）。
+    func restoreFromBackup(pid: pid_t) -> Bool {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/EnglishWriter/rtf-backup", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]))?
+            .filter { $0.pathExtension == "rtf" }
+            .sorted { a, b in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return da > db
+            } ?? []
+        guard let latest = files.first, let rtf = try? Data(contentsOf: latest) else { return false }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        if let attr = try? NSAttributedString(data: rtf, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil) {
+            pb.setString(attr.string, forType: .string)
+        }
+        pb.setData(rtf, forType: .rtf)
+        pressSelectAll(to: pid)
+        pressKey(0x09, flags: .maskCommand, to: pid, settleUs: 600_000)
+        usleep(500_000)
+        return true
+    }
+
     /// 归一：去掉所有空白后比较。AX 树与剪贴板的换行/空行不一致，只能按非空白字符比。
     nonisolated static func squash(_ t: String) -> String {
         String(t.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) })
@@ -2245,6 +2296,11 @@ final class InlineController {
 
     /// 富文本整篇替换：把 ⌘C 拿到的 RTF 改掉那一个词，再整篇粘回。
     /// 目的：既保住粗体/链接/字号（RTF 原样搬回），又不用在 WKWebView 里精确选词。
+    /// 富文本整篇替换（三段式：备份 → 写 → 校验，不符就回滚）。
+    ///
+    /// 为什么不能用「字数相等」当判据：签名里有图片，⌘C 复制 HTML 时 <img> 会变成文件名
+    /// 文字、AX 读文本不数图片 → 两边永远不等（11:44 查清，差 65 字全是 downloadex.png）。
+    /// 真正的防吃字判据是：写后除目标词外逐字相同 + 图片节点数不变，任何一条不符就用备份回滚。
     private func replaceWholeBodyRich(original: String, replacement: String,
                                       newFull: String, pid: pid_t) -> (ok: Bool, pasted: Bool) {
         guard let rtf = lastCopiedRTF,
@@ -2261,6 +2317,12 @@ final class InlineController {
             return (false, false)
         }
         let runsBefore = attributeRunCount(attr)
+        let imagesBefore = Self.webImageCount(of: currentElement)
+        let beforeText = (attr.string as String)
+        // ① 备份：AX 纯文本 + RTF 都落盘，出问题能原样粘回去
+        Self.backupDraft(newFull)
+        let rtfPath = Self.backupRTF(rtf)
+
         m.replaceCharacters(in: r, with: replacement)
         let runsAfter = attributeRunCount(m)
         let rtfOut = try? m.data(from: NSRange(location: 0, length: m.length),
@@ -2271,34 +2333,33 @@ final class InlineController {
         if let out = rtfOut { pb.setData(out, forType: .rtf) }
         pressSelectAll(to: pid)
         pressKey(0x09, flags: .maskCommand, to: pid, settleUs: 600_000)   // ⌘V
-        usleep(400_000)   // 到这里正文已经可能被改动，调用方不许再粘第二次
-        pressSelectAll(to: pid)
-        // 读回要等稳定：WebView 里 ⌘C 偶发只抄到半篇（11:26 实况 253/320），
-        // 抄到半截就判失败会导致「明明改对了却报失败」，还会触发后面的重复粘贴。
+        usleep(450_000)
+        // 到这里正文已经动过，不许再粘第二次
+
+        // ③ 校验：逐字（除目标词）+ 图片数
         var back = ""
-        for _ in 0..<4 {
+        for _ in 0..<3 {
+            pressSelectAll(to: pid)
             let one = readSelectionViaClipboard(pid: pid) ?? ""
-            usleep(220_000)
-            let two = (one.isEmpty ? "" : (readSelectionViaClipboard(pid: pid) ?? ""))
-            if !one.isEmpty, one == two { back = one; break }
-            back = two.isEmpty ? one : two
+            usleep(200_000)
+            if !one.isEmpty { back = one; break }
         }
-        var ok = back.trimmingCharacters(in: .whitespacesAndNewlines)
-            == newFull.trimmingCharacters(in: .whitespacesAndNewlines)
-        // ⌘C 读回会截断（11:31：正文 320、读回 253），所以以 AX 树为准再核一次。
-        if !ok, let el = currentElement {
-            usleep(400_000)
-            let tree = WebText.blocks(of: el).map { $0.text }.joined(separator: "\n")
-            let treeOK = Self.squash(tree) == Self.squash(newFull)
-            AppLog.info("m3", "富文本整篇：AX 树复核 改后\(Self.squash(tree).count)字 期望\(Self.squash(newFull).count)字 一致=\(treeOK)")
-            ok = treeOK
-        }
-        AppLog.info("m3", "富文本整篇：属性段 改前=\(runsBefore) 改后=\(runsAfter) 读回=\(back.count)字 一致=\(ok)")
-        if ok {
+        let imagesAfter = Self.webImageCount(of: currentElement)
+        let backSq = Self.squash(back), expSq = Self.squash(newFull)
+        let textOK = !backSq.isEmpty && backSq == expSq
+        let imgOK = imagesBefore == imagesAfter
+        let runsOK = runsBefore == runsAfter || abs(runsBefore - runsAfter) <= 1
+        AppLog.info("m3", "富文本整篇校验：before=\(Self.squash(beforeText).count)字 after=\(backSq.count)字 期望=\(expSq.count)字 一致=\(textOK) 图片 \(imagesBefore)→\(imagesAfter) 属性段 \(runsBefore)→\(runsAfter)")
+        if textOK && imgOK && runsOK {
             Diag.shared.applyMethod = "富文本整篇替换"
-            AppLog.info("m3", "write-layer=clipboard-rtf len=\(newFull.count)（整篇搬 RTF，未逐字键入）")
+            AppLog.info("m3", "write-layer=clipboard-rtf len=\(newFull.count) 图片=\(imagesAfter) 段=\(runsAfter) RTF备份=\(rtfPath ?? "-")")
+            return (true, true)
         }
-        return (ok, true)
+        // 回滚：把写前的 RTF 原样粘回去
+        AppLog.info("m3", "富文本整篇校验不过（文本=\(textOK) 图片=\(imgOK) 段=\(runsOK)）—— 回滚")
+        let restoreOK = restoreFromBackup(pid: pid)
+        AppLog.info("m3", "回滚结果=\(restoreOK ? "已恢复原文" : "恢复失败，备份在 \(rtfPath ?? "-")")")
+        return (false, true)
     }
 
     private func pasteViaClipboard(_ text: String, to pid: pid_t) -> Bool {
