@@ -99,6 +99,21 @@
       "detail" : "totalMs=430 slow=2 收尾后 totalMs=430",
       "name" : "AX记账·总量与慢计数",
       "pass" : true
+    },
+    {
+      "detail" : "retries=3 maxDepth=2 timeout=0.4s",
+      "name" : "窗口查找·重试≥3 且不深挖",
+      "pass" : true
+    },
+    {
+      "detail" : "editable=false + 无 AXTextArea + 写信窗 → 必须 true",
+      "name" : "门控·Mail 写信窗正文放行",
+      "pass" : true
+    },
+    {
+      "detail" : "阅读窗（mailReading=true）→ 必须 false",
+      "name" : "门控·Mail 阅读窗仍然不查",
+      "pass" : true
     }
   ],
   "check" : "settings-selftest",
@@ -111,7 +126,7 @@
     "lt.language" : "en-US"
   },
   "domain" : "com.wanyi.englishwriter",
-  "generatedAt" : "2026-11-24T00:54:10Z",
+  "generatedAt" : "2026-11-24T01:52:22Z",
   "netStub" : {
     "emptyConfigHits" : 0,
     "how" : "URLProtocol 打桩计数（CountingProtocol）",

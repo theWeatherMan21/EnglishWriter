@@ -1273,6 +1273,19 @@ enum SelfTest {
               MailProbe.WindowPolicy.retries >= 3 && MailProbe.WindowPolicy.maxDepth <= 2,
               "retries=\(MailProbe.WindowPolicy.retries) maxDepth=\(MailProbe.WindowPolicy.maxDepth) timeout=\(MailProbe.WindowPolicy.timeout)s")
 
+        // 11.7) 写信窗正文必须能被检查：Mail 正文没有 AXTextArea，
+        //       老判据（editable / hasEditableWebField / inEditableWindow）全不成立 → items=0。
+        check("门控·Mail 写信窗正文放行",
+              InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                     hasEditableWebField: false, checkReading: false,
+                                     inEditableWindow: false, mailReading: false),
+              "editable=false + 无 AXTextArea + 写信窗 → 必须 true")
+        check("门控·Mail 阅读窗仍然不查",
+              !InlineGate.shouldCheck(editable: false, isWebBody: true, isMailBody: true,
+                                      hasEditableWebField: false, checkReading: false,
+                                      inEditableWindow: false, mailReading: true),
+              "阅读窗（mailReading=true）→ 必须 false")
+
         // 6) 证据落盘
         evidence["check"] = "settings-selftest"
         evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())

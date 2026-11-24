@@ -8,37 +8,6 @@
       "badRects" : [
 
       ],
-      "blocks" : 10,
-      "chars" : 289,
-      "englishBlocks" : 8,
-      "itemCount" : 0,
-      "items" : [
-
-      ],
-      "kind" : "reading",
-      "langSkippedBlocks" : 1,
-      "note" : "可见 10 块 \/ 屏幕外 0 块；其中中文块 0（0 字，按设计跳过）、英文块 8 → 本次命中 0",
-      "offscreenBlocks" : 0,
-      "rectsInsideWindow" : true,
-      "skippedCjkBlocks" : 0,
-      "skippedCjkChars" : 0,
-      "staticTexts" : 21,
-      "textAreas" : 0,
-      "title" : "Terramar&Winpax\/\/ F2607 S\/HANDAN GARMENTS  C\/POLSTAR   1*40HQ XINGANG-GDANSK",
-      "totalChars" : 289,
-      "visibleBlocks" : 10,
-      "webAreaFound" : true,
-      "windowRect" : [
-        92,
-        80,
-        436,
-        949
-      ]
-    },
-    {
-      "badRects" : [
-
-      ],
       "blocks" : 0,
       "chars" : 0,
       "englishBlocks" : 0,
@@ -53,9 +22,9 @@
       "rectsInsideWindow" : true,
       "skippedCjkBlocks" : 0,
       "skippedCjkChars" : 0,
-      "staticTexts" : 180,
+      "staticTexts" : 30,
       "textAreas" : 0,
-      "title" : "Searching – All Mailboxes, 104 results",
+      "title" : "Drafts – Network Management – 2 drafts",
       "totalChars" : 0,
       "visibleBlocks" : 0,
       "webAreaFound" : false,
@@ -64,6 +33,37 @@
         30,
         1859,
         1050
+      ]
+    },
+    {
+      "badRects" : [
+
+      ],
+      "blocks" : 15,
+      "chars" : 463,
+      "englishBlocks" : 12,
+      "itemCount" : 0,
+      "items" : [
+
+      ],
+      "kind" : "reading",
+      "langSkippedBlocks" : 2,
+      "note" : "可见 15 块 \/ 屏幕外 0 块；其中中文块 0（0 字，按设计跳过）、英文块 12 → 本次命中 0",
+      "offscreenBlocks" : 0,
+      "rectsInsideWindow" : true,
+      "skippedCjkBlocks" : 0,
+      "skippedCjkChars" : 0,
+      "staticTexts" : 26,
+      "textAreas" : 0,
+      "title" : "Terramar&Winpax\/\/ F2607 S\/HANDAN GARMENTS  C\/POLSTAR   1*40HQ XINGANG-GDANSK",
+      "totalChars" : 463,
+      "visibleBlocks" : 15,
+      "webAreaFound" : true,
+      "windowRect" : [
+        92,
+        80,
+        436,
+        949
       ]
     }
   ]

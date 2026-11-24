@@ -1002,6 +1002,17 @@ final class InlineController {
                             elapsed: "-", err: "焦点不可读 / 无 key 可编辑元素 / 无窗口正文", at: Date()))
             return
         }
+        // Mail 写信窗：必须优先取正文 WebArea，不能被「焦点元素」骗走。
+        // 11-24 实况：点接受/自动检查时焦点常落在某个 AXStaticText 上（可读 ≠ 可写），
+        // 于是路径变成 statictext、isWebBody=false、门控判只读 → items=0，
+        // 看起来像「没建议可接受」，其实是根本没检查正文。
+        if appName(pid) == "Mail", MailProbe.isComposeWindow(pid: pid),
+           let best = AXInline.bestWebBody(pid: pid) {
+            el = best.el
+            picked = "mail-compose-body"
+            diag.lastPath = picked
+        }
+
         // 选路证据：哪一级接上的，一眼可见（爹地问「Mail 为什么不画线」时直接看这行）
         emit(CheckEvent(kind: picked == "focused" ? "attach-el" : "fallback-el",
                         pid: pid, app: appName(pid),
@@ -1027,7 +1038,9 @@ final class InlineController {
             AppLog.info("check", "compose 判定：信号=false 但标题是写信窗 → 按写信窗处理")
         }
         let inEditableWindow = WebText.isWebBody(el) && AXInline.webAreaIsInEditableWindow(el, pid: pid)
-        if !InlineGate.shouldCheck(editable: AXInline.isEditable(el),
+        let gateEditable = AXInline.isEditable(el)
+        AppLog.info("gate", "editable=\(gateEditable) web=\(WebText.isWebBody(el)) mailReading=\(mailReading) signal=\(composeBySignal) title=\(composeByTitle) field=\(hasEditableWebField)")
+        if !InlineGate.shouldCheck(editable: gateEditable,
                                    isWebBody: WebText.isWebBody(el),
                                    isMailBody: isMailBody,
                                    hasEditableWebField: hasEditableWebField,
@@ -1358,6 +1371,7 @@ final class InlineController {
             texts.append(t); idxs.append(bi)
         }
         let batch = BlockBatch.join(texts, blockIndexes: idxs, charLimit: joinLimit)
+        AppLog.info("m3", "blocks=\(blks.count) 送检块=\(texts.count) 跳过中文=\(cjkSkipped) 批次字符=\((batch.text as NSString).length) 预览=\(String(batch.text.prefix(90)).replacingOccurrences(of: "\n", with: "⏎"))")
         if batch.isEmpty {
             // 全是中文 / 噪声块：一个请求都不发
         } else if !ltOK {
@@ -1368,11 +1382,13 @@ final class InlineController {
                 let out = try await LocalEngine.review(text: batch.text, language: EnginePrefs.language())
                 ltMs += Date().timeIntervalSince(t0) * 1000
                 await MainActor.run { self.diag.lastElapsed = String(format: "%.0fms", ltMs) }
+                AppLog.info("m3", "引擎回传 items=\(out.items.count) → 映射后 \(BlockBatch.map(out.items, in: batch).count)")
                 for (it, bi) in BlockBatch.map(out.items, in: batch) {
                     all.append(it)
                     map.append(bi)
                 }
             } catch {
+                AppLog.error("m3", "review 失败：\(error)")
                 firstError = "LT: \(error)"
             }
         }
@@ -2132,6 +2148,9 @@ enum InlineGate {
         // Mail 阅读窗一律不查（除非显式打开了 checkReading）：那里的可编辑节点是搜索框，
         // 不是你在写的东西（爹地 11-23：左栏画线 / 检查别人的邮件）
         if isMailBody && mailReading && !checkReading { return false }
+        // 写信窗正文：Mail 的正文没有 AXTextArea（dump：textArea=0，全是 AXStaticText），
+        // 所以「有可编辑控件」这条永远不成立。是不是写信窗本身就是最准的判据（11-24 实况）。
+        if isMailBody && !mailReading { return true }
         if editable { return true }
         if isWebBody && hasEditableWebField { return true }
         if isWebBody && inEditableWindow { return true }      // 写信窗口的正文区

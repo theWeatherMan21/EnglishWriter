@@ -440,27 +440,43 @@ if argv.contains("--accept-now") {
         print("RESULT: SKIP（Mail 没在运行）"); exit(0)
     }
     if ScreenLock.bailIfLocked("--accept-now") { exit(0) }
+    // 引擎必须先在线：CLI 模式不会像常驻 App 那样自己 bootstrap，
+    // 不起引擎时 checkNow 会静静地得到 items=0（09:35 实况：GUI 里有 2 条，CLI 里 0 条）。
+    LocalEngineBootstrap.ensureRunning()
     let c = InlineController.shared
-    let listed: [(Int, String, String, Int, Int)] = MainActor.assumeIsolated {
-        c.checkNow(for: mail.processIdentifier)
-        return []
+    // 有 --expect 时按「正文含该文本」挑写信窗：爹地同时开着自己的真实回复，
+    // 只按「第一个写信窗」选目标会挑到真邮件——绝不允许。
+    let expectNeedle: String? = {
+        guard let ei = argv.firstIndex(of: "--expect"), ei + 1 < argv.count else { return nil }
+        return argv[ei + 1]
+    }()
+    var targetBody: AXUIElement?
+    if let needle = expectNeedle {
+        if let hit = MailProbe.composeWindow(pid: mail.processIdentifier, containing: needle) {
+            targetBody = hit.body
+            print("目标窗：正文含 \"\(needle)\"（\(hit.text.count) 字）")
+        } else {
+            print("RESULT: SKIP（没有正文含 \"\(needle)\" 的写信窗 —— 不去碰你正在写的别的邮件）")
+            exit(0)
+        }
     }
-    // 引擎结果异步回填：sleep 必须在主线程外，否则把回填一起堵死（自己踩的坑）
-    for _ in 0..<40 {
-        usleep(200_000)
+    MainActor.assumeIsolated { c.checkNow(for: mail.processIdentifier, element: targetBody) }
+    // 引擎结果异步回填：必须让主线程跑 RunLoop。
+    // 之前用 usleep 轮询，表面上「等 8 秒」，实际把 MainActor 上那个做引擎请求的 Task 一起堵死了
+    // → items 恒为 0，而 GUI 里同样的正文有 2 条（09:35 实况）。CLI 卡自己的主队列。
+    let waitDeadline = Date().addingTimeInterval(8)
+    while Date() < waitDeadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.2))
         let n = MainActor.assumeIsolated { c.items.count }
         if n > 0 { break }
     }
     let listed2: [(Int, String, String, Int, Int)] = MainActor.assumeIsolated {
         c.items.enumerated().map { ($0.offset, $0.element.original, $0.element.replacement, $0.element.start, $0.element.length) }
     }
-    print("检查完成（异步等过）：items=\(listed2.count)")
+    print("检查完成（异步等过）：items=\(listed2.count) enabled=\(MainActor.assumeIsolated { c.enabled }) axPerm=\(AXPermission.granted())")
     let dbg = MainActor.assumeIsolated { (c.diag.lastError, c.diag.lastPath) }
     print("诊断：isComposeWindow=\(MailProbe.isComposeWindow(pid: mail.processIdentifier)) windows=\(MailProbe.windows(mail.processIdentifier).count)")
-    print("检查完成：items=\(listed.count) 目标 id=\(wantID) lastError=\(dbg.0) path=\(dbg.1)")
-    for (k, o, r, st, ln) in listed {
-        print("  [\(k)] \"\(o)\" → \"\(r)\" range=\(st)+\(ln)")
-    }
+    print("检查完成：items=\(listed2.count) 目标 id=\(wantID) lastError=\(dbg.0) path=\(dbg.1)")
     for (k, o, r, st, ln) in listed2 { print("  [\(k)] \"\(o)\" → \"\(r)\" range=\(st)+\(ln)") }
     guard !listed2.isEmpty, wantID < listed2.count else { print("RESULT: SKIP（没有可接受的建议）"); exit(0) }
     // --expect "have send"：只接受原文精确等于这段的建议。
@@ -473,7 +489,7 @@ if argv.contains("--accept-now") {
         }
     }
     let ok = MainActor.assumeIsolated { c.accept(itemID: wantID) }
-    usleep(600_000)
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.6))
     print("accept(itemID: \(wantID)) → \(ok ? "ok" : "false")")
     exit(ok ? 0 : 2)
 }

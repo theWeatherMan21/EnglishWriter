@@ -536,3 +536,37 @@ enum MailProbe {
         print("    证据：\(side)")
     }
 }
+
+extension MailProbe {
+    /// 在多个写信窗里挑出「正文包含指定文本」的那一个。
+    /// 为什么必须按内容挑：爹地同时开着一封真实回复（模板正文），
+    /// 只按「第一个写信窗」选目标会挑到他的真邮件——绝对不允许。
+    static func composeWindow(pid: pid_t, containing needle: String) -> (window: AXUIElement, body: AXUIElement, text: String)? {
+        let needleLower = needle.lowercased()
+        for w in windows(pid) {
+            guard isComposeWindow(window: w) else { continue }
+            guard let el = WebText.body(in: w) else { continue }
+            let blks = WebText.blocks(of: el, nodeBudget: 400, deadline: 0.6)
+            let text = blks.map { $0.text }.joined(separator: "\n")
+            if text.lowercased().contains(needleLower) { return (w, el, text) }
+        }
+        return nil
+    }
+
+    /// 单个窗口是不是写信窗（标题像写信，或里面有发送按钮）
+    static func isComposeWindow(window: AXUIElement) -> Bool {
+        if windowTitleLooksCompose(window) { return true }
+        var found = false
+        func walk(_ el: AXUIElement, _ depth: Int) {
+            if found || depth > 6 { return }
+            if roleOf(el) == "AXButton",
+               let t = attr(el, kAXTitleAttribute as String) as? String,
+               ["Send", "发送", "Send Now"].contains(where: { t.localizedCaseInsensitiveContains($0) }) {
+                found = true; return
+            }
+            if let kids = attrChildren(el) as? [AXUIElement] { for k in kids { walk(k, depth + 1) } }
+        }
+        walk(window, 0)
+        return found
+    }
+}
