@@ -1288,6 +1288,14 @@ enum SelfTest {
                                       composeWindow: false),
               "阅读窗（mailReading=true）→ 必须 false")
 
+        // 11.8) 全大写缩写不报拼写（WCA&JC / WCA / JC 这类公司名/行业缩写）
+        let acronymCases: [(String, Bool)] = [("WCA&JC", true), ("WCA", true), ("JC", true),
+                                              ("HQ", true), ("Send", false), ("send", false),
+                                              ("of", false), ("Container", false)]
+        let acronymPass = acronymCases.allSatisfy { InlineController.looksLikeAcronym($0.0) == $0.1 }
+        check("拼写·全大写缩写不报", acronymPass,
+              acronymCases.map { "\($0.0)=\(InlineController.looksLikeAcronym($0.0))" }.joined(separator: " "))
+
         // 6) 证据落盘
         evidence["check"] = "settings-selftest"
         evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())

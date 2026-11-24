@@ -1384,9 +1384,16 @@ final class InlineController {
                 ltMs += Date().timeIntervalSince(t0) * 1000
                 await MainActor.run { self.diag.lastElapsed = String(format: "%.0fms", ltMs) }
                 AppLog.info("m3", "引擎回传 items=\(out.items.count) → 映射后 \(BlockBatch.map(out.items, in: batch).count)")
+                var acronymSkipped = 0
                 for (it, bi) in BlockBatch.map(out.items, in: batch) {
+                    // 全大写缩写/公司名不报拼写：WCA&JC、WCA、JC Trans 这类被当成拼写错误
+                    // 就是「点接受改坏公司名」的根源（知澜 11-24 揪出）。
+                    if it.kind == .spelling, Self.looksLikeAcronym(it.original) { acronymSkipped += 1; continue }
                     all.append(it)
                     map.append(bi)
+                }
+                if acronymSkipped > 0 {
+                    AppLog.info("m3", "跳过全大写缩写 \(acronymSkipped) 条（拼写不动股东/公司名）")
                 }
             } catch {
                 AppLog.error("m3", "review 失败：\(error)")
@@ -1521,8 +1528,12 @@ final class InlineController {
         // 抓着旧元素复读永远是旧文本 → 判「写回后文本与期望不一致」再回滚（11-23 实测）。
         // 补救：整棵树重新走一遍，只要正文里出现了替换后的文本，就算写进去了。
         if !out.ok, currentElement != nil, itemBlock.indices.contains(id), itemBlock[id] >= 0 {
-            let fresh = WebText.blocks(of: currentElement!).map(\.text).joined(separator: "\n")
-            if Self.webReadbackRecovered(fresh: fresh, replacement: it.replacement) {
+            let fresh = WebText.blocks(of: currentElement!).map { $0.text }.joined(separator: "\n")
+            // 判据必须是「整篇逐字等于期望」，不能只看「出现了替换词」——
+            // 那会在「少了一个空格」时也报成功（10:17 实况：320→319 却 accept ok）。
+            let expectedTrim = out.expected.trimmingCharacters(in: .whitespacesAndNewlines)
+            let freshTrim = fresh.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !expectedTrim.isEmpty && freshTrim == expectedTrim && Self.webReadbackRecovered(fresh: fresh, replacement: it.replacement) {
                 AppLog.info("m3", "accept readback 复核：整树已含「\(it.replacement)」，判成功")
                 out = M3Flow.AcceptOutcome(ok: true, expected: out.expected, actual: fresh,
                                            detail: "整树复核：已写入（读回元素被宿主替换）")
@@ -1669,7 +1680,12 @@ final class InlineController {
             // ⌘A 之后必须确认选区覆盖全文：读 AXValue 拿到全文不等于选中了全文，
             // 没选中就粘 = 追加到末尾（11-23 真机症状）。
             // ⌘A 之后确认「选中了全文」：AX 的选区读数不可信，用 ⌘C 的事实判断。
-            let copied = readSelectionViaClipboard(pid: pid) ?? ""
+            var copied = readSelectionViaClipboard(pid: pid) ?? ""
+            if copied.isEmpty {                       // 剪贴板偶发空：等一拍重试一次
+                usleep(180_000)
+                pressSelectAll(to: pid)
+                copied = readSelectionViaClipboard(pid: pid) ?? ""
+            }
             // 先试词级替换：只动那一个词，格式（粗体/链接/图片）不受影响。
             // 失败一律回落整篇替换，绝不留在半选状态。
             if !copied.isEmpty,
@@ -1800,11 +1816,12 @@ final class InlineController {
     private func tryKeyboardWordReplace(original: String, replacement: String, blockText: String,
                                         pid: pid_t, wholeBody: String) -> Bool {
         // 只处理「词级、单次出现、纯 ASCII」的修改
-        guard original.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
-              replacement.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
-              original.allSatisfy({ $0.isASCII }), !original.isEmpty else { return false }
+        let noSpace = original.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+            && replacement.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+        let ascii = original.allSatisfy { $0.isASCII }
         let occurrences = blockText.components(separatedBy: original).count - 1
-        guard occurrences == 1 else { return false }
+        AppLog.info("m3", "keyboard-word 前置：noSpace=\(noSpace) ascii=\(ascii) 块内出现=\(occurrences) \"\(original)\"→\"\(replacement)\"")
+        guard noSpace, ascii, !original.isEmpty, occurrences == 1 else { return false }
 
         // 目标词之前有多少个词边界（跟 ⌥→ 的分词口径对齐：字母数字算词）
         func wordIndexBefore(_ text: String, _ utf16Offset: Int) -> Int? {
@@ -1816,8 +1833,9 @@ final class InlineController {
         }
         // 在整篇里定位「块内偏移」对应的绝对偏移
         let blockNS = blockText as NSString
-        guard let blockRange = (wholeBody as NSString).range(of: blockText) as NSRange?,
-              blockRange.location != NSNotFound else { return false }
+        let blockRange = (wholeBody as NSString).range(of: blockText)
+        AppLog.info("m3", "keyboard-word 定位：块在全文的位置=\(blockRange.location == NSNotFound ? "未找到" : "\(blockRange.location)+\(blockRange.length)") 全文\(wholeBody.count)字")
+        guard blockRange.location != NSNotFound else { return false }
         let rInBlock = blockNS.range(of: original)
         guard rInBlock.location != NSNotFound else { return false }
         guard let wi = wordIndexBefore(wholeBody, blockRange.location + rInBlock.location) else { return false }
@@ -1830,8 +1848,17 @@ final class InlineController {
             pressKey(0x7C, flags: .maskAlternate, to: pid, settleUs: 15_000)   // ⌥→ 下一个词
         }
         pressKey(0x7C, flags: [.maskAlternate, .maskShift], to: pid)           // ⇧⌥→ 选中该词
-        let picked = readSelectionViaClipboard(pid: pid) ?? ""
-        guard picked.trimmingCharacters(in: .whitespacesAndNewlines) == original else {
+        var picked = readSelectionViaClipboard(pid: pid) ?? ""
+        // ⇧⌥→ 常把词尾空格一起选上（10:17 实况）：多选就按 ⇧← 缩一位再读，最多三次。
+        var shrink = 0
+        while picked != original, picked.count > original.count, picked.hasSuffix(" "), shrink < 3 {
+            pressKey(0x7B, flags: .maskShift, to: pid)      // ⇧←
+            picked = readSelectionViaClipboard(pid: pid) ?? ""
+            shrink += 1
+        }
+        // 必须逐字相等。11-24 10:17 实况：⇧⌥→ 多选了尾随空格，
+        // 而这里用 trimmingCharacters 比较 → 判定「选对了」→ 键入后正文少了 1 个字符（320→319）。
+        guard picked == original else {
             AppLog.info("m3", "keyboard-word 选中的是 \"\(picked.prefix(24))\"，不是 \"\(original)\" —— 放弃，回落整篇")
             pressKey(0x7C, flags: [], to: pid)             // 收起选区，别留在半选状态
             return false
@@ -1864,6 +1891,17 @@ final class InlineController {
         down.postToPid(pid)
         up.postToPid(pid)
         usleep(150_000)
+    }
+
+    /// 全大写缩写 / 含 & 的机构名：不报拼写。
+    /// 判据：去掉标点后长度 ≥2 且全是字母、且全部大写（WCA、JC、HQ、WCA&JC 里的 WCA）。
+    /// 反例：句首大写的普通词（"Send"）只有首字母大写，不算。
+    nonisolated static func looksLikeAcronym(_ token: String) -> Bool {
+        let letters = token.filter { $0.isLetter }
+        guard letters.count >= 2 else { return false }
+        guard letters.allSatisfy({ $0.isUppercase || !$0.isCased }) else { return false }
+        // 至少要有两个真正的大写字母，避免「&」之类的噪声
+        return letters.filter { $0.isUppercase }.count >= 2
     }
 
     /// 用 ⌘C 读选区：AX 报的选区长度在 Mail 上是假话（selSet=谎），
