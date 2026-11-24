@@ -1630,6 +1630,12 @@ final class InlineController {
         // 先抢回正文焦点：没有焦点，下面每一层都是空放（11-23 真机四层全败的原因）
         let focused = returnFocusToBody(pid: pid, element: currentElement ?? host)
         AppLog.info("m3", "focus-return=\(focused ? "ok" : "fail")")
+        if !focused, appName(pid) == "Mail" {
+            // Mail 同时开着多个窗口时，焦点落到别人那封 = 后面 ⌘A⌘C 复制的是别人的邮件
+            // （11-24 14:06：AX=210、⌘C=29544）。宁可这一条不写，也不碰。
+            AppLog.info("m3", "焦点不在目标窗口 —— 不按任何键，放弃本次写回")
+            return false
+        }
 
         // 单一写回路径（知澜 11-24 定案）：键盘事件。
         // 为什么砍掉前三层：Mail 的 AXSelectedTextRange 是假成功（dump 里 56 个节点 selSet 全谎），
@@ -1709,6 +1715,11 @@ final class InlineController {
             // AX 读纯文本不数图片 → 两边永远不等 → 闸恒拒绝，等于把功能焊死。
             // 防吃字改由「写前备份 + 写后逐段比对 + 图片数不变，不符回滚」负责（见 replaceWholeBodyRich）。
             let axN = visibleCount(axFull), cbN = visibleCount(copied)
+            // 复制量硬闸：⌘C 拿到的是目标正文的若干倍 → 焦点跑到别的邮件去了，立刻放弃。
+            if axN > 0, cbN > axN * 3 {
+                AppLog.info("m3", "复制量异常（⌘C \(cbN) 字 > AX \(axN) 字 ×3）—— 焦点不在目标窗口，一个字都不写")
+                return false
+            }
             AppLog.info("m3", "复制概况：AX=\(axN)字（不含图片文件名）⌘C=\(cbN)字（含图片文件名）—— 差值来自签名图片，不拦")
             // 先试词级替换：只动那一个词，格式（粗体/链接/图片）不受影响。
             // 失败一律回落整篇替换，绝不留在半选状态。
@@ -1872,7 +1883,10 @@ final class InlineController {
         }
         AppLog.info("m3", "keyboard-word 定位：块=\(blockRange.location)+\(blockRange.length) 词偏移=\(absOffset) 长度=\(len) 全文\(wholeBody.count)字")
 
-        returnFocusToBody(pid: pid, element: currentElement)
+        guard returnFocusToBody(pid: pid, element: currentElement) else {
+            AppLog.info("m3", "keyboard-word 放弃：焦点不在目标窗口")
+            return (false, false)
+        }
         pressKey(0x7E, flags: .maskCommand, to: pid, settleUs: 120_000)     // ⌘↑ 文首
         for _ in 0..<absOffset { pressKey(0x7C, flags: [], to: pid, settleUs: 5_000) }        // → × abs
         for _ in 0..<len { pressKey(0x7C, flags: .maskShift, to: pid, settleUs: 5_000) }      // ⇧→ × len
@@ -2053,66 +2067,71 @@ final class InlineController {
         return (got == sentinel) ? nil : got
     }
 
-    /// 把键盘焦点交回正文（点接受时焦点在我们自己的卡片上，所有键击都会落空）。
-    /// 顺序：raise 窗口 → 给正文元素设 AXFocused → 用「设一个 1 字选区并读回」验证焦点真的到了。
-    /// 这一步不成立，后面 ⌘A/⌘V 全是空放。
-    @discardableResult
+    /// 把键盘焦点交回「指定的那个窗口里的正文」。
+    /// 顺序：先 raise 目标窗口 → activate（不带 .activateAllWindows）→ 核对焦点窗口身份 → 才允许按键。
+    /// 为什么不能先 .activateAllWindows：它会把 Mail 所有窗口抬到前面，焦点落到最上面那个
+    /// （往往是爹地正在看的那封），随后 ⌘A⌘C 复制的就是他的邮件（11-24 14:06：AX=210、⌘C=29544）。
     private func returnFocusToBody(pid: pid_t, element: AXUIElement?) -> Bool {
         guard pid > 0 else { return false }
         let appEl = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(appEl, 0.3)
+        AXUIElementSetMessagingTimeout(appEl, 0.4)
 
-        // ① AppKit 层：把 Mail 真正提到前台。AXFocused 对 Mail 的 WebArea 不管用，
-        //    而 postToPid 的键击只认「前台 App + key 窗口」（11-24 实测：非前台时键击全落空）。
-        NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-        usleep(150_000)
-
-        // ② 窗口层：raise + 设 main/focused
-        var targetWin: AXUIElement?
-        var winsRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
-           let wins = winsRef as? [AXUIElement] {
-            // 优先「包含目标元素的那个窗口」
-            for w in wins where CFEqual(w, element ?? w) {
-                targetWin = w; break
-            }
-            if targetWin == nil { targetWin = wins.first }
-        }
+        let targetWin = windowAncestor(of: element)
         if let w = targetWin {
+            AXUIElementPerformAction(w, kAXRaiseAction as CFString)
             _ = AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
             _ = AXUIElementSetAttributeValue(w, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
+        NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateIgnoringOtherApps])
+        usleep(220_000)
+        if let w = targetWin {          // activate 之后再抬一次，压过系统自己挑的 key 窗口
             AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+            _ = AXUIElementSetAttributeValue(w, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            usleep(120_000)
         }
         if let el = element {
             _ = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         }
-        usleep(200_000)
 
-        // ③ 验证：不能用「设 1 字选区读回来」——Mail 的 AXSelectedTextRange 是假成功，
-        //    拿它当判据等于用一个已知会说谎的 API 自证。改用可观察事实：
-        //    Mail 是前台 App，且它的 AXMainWindow 就是目标窗口。
+        var focusedWinRef: CFTypeRef?
+        let gotFocused = AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &focusedWinRef) == .success
+        let focusedWin: AXUIElement? = (gotFocused && focusedWinRef != nil
+            && CFGetTypeID(focusedWinRef as CFTypeRef) == AXUIElementGetTypeID())
+            ? (focusedWinRef as! AXUIElement) : nil
+        let sameWin = (targetWin != nil && focusedWin != nil) ? CFEqual(focusedWin!, targetWin!) : false
         let frontOK = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
-        var mainOK = false
-        var mainRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appEl, kAXMainWindowAttribute as CFString, &mainRef) == .success,
-           let m = mainRef {
-            let mw = m as! AXUIElement
-            mainOK = (targetWin == nil) ? true : CFEqual(mw, targetWin!)
+        let titleOf: (AXUIElement?) -> String = { w in
+            guard let w else { return "-" }
+            var t: CFTypeRef?
+            _ = AXUIElementCopyAttributeValue(w, kAXTitleAttribute as CFString, &t)
+            return (t as? String) ?? "-"
         }
-        let focusedInWin: Bool = {
-            var fe: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &fe) == .success,
-                  let f = fe, CFGetTypeID(f as CFTypeRef) == AXUIElementGetTypeID() else { return false }
-            return true     // 能读到焦点元素就说明不是「无焦点」状态；具体角色不重要
-        }()
-        let ok = frontOK && mainOK && focusedInWin
-        AppLog.info("m3", "focus-return 细节 front=\(frontOK) main=\(mainOK) focusedEl=\(focusedInWin)")
-        return ok
+        AppLog.info("m3", "focus-return 细节 front=\(frontOK) 目标窗=\"\(titleOf(targetWin))\" 焦点窗=\"\(titleOf(focusedWin))\" 同窗=\(sameWin)")
+        if !frontOK || targetWin == nil || !sameWin {
+            AppLog.info("m3", "focus-return=fail（焦点不在目标窗口）—— 不按任何键，直接放弃")
+            return false
+        }
+        var fe: CFTypeRef?
+        let hasEl = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &fe) == .success
+        AppLog.info("m3", "focus-return=ok（前台 + 焦点窗就是目标窗\(hasEl ? "，能读焦点元素" : "")）")
+        return true
     }
 
-    /// 目标进程里的选区文本（键盘兜底读回用）。
-    /// 必须取**那个进程**的焦点元素：点接受时焦点在我们自己的卡片窗口上，
-    /// 用 SystemWide 读到的会是卡片，永远读不到 Mail 的选区（11-23 自查纠正）。
+    /// 从元素往上找它所属的 AXWindow。
+    private func windowAncestor(of element: AXUIElement?) -> AXUIElement? {
+        guard var cur = element else { return nil }
+        for _ in 0..<12 {
+            var roleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(cur, kAXRoleAttribute as CFString, &roleRef) == .success,
+               let role = roleRef as? String, role == "AXWindow" { return cur }
+            var pRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(cur, kAXParentAttribute as CFString, &pRef) == .success,
+                  let p = pRef, CFGetTypeID(p as CFTypeRef) == AXUIElementGetTypeID() else { return nil }
+            cur = (p as! AXUIElement)
+        }
+        return nil
+    }
+
     private func selectedText(of pid: pid_t) -> String? {
         guard pid > 0 else { return nil }
         let appEl = AXUIElementCreateApplication(pid)
