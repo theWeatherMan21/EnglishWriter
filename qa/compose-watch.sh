@@ -47,8 +47,14 @@ for i in $(seq 1 1440); do
         tail -6 "$EVID/accept-now-$TS.log" >> "$OUT"
         grep -a "accept-\|web-write\|write-layer\|focus-return\|clipboard 前置\|整段替换前置\|keyboard-all" \
             ~/Library/Logs/EnglishWriter/app.log | tail -12 >> "$EVID/accept-now-$TS.log"
-        echo "== 完成 $(date '+%F %T') ==" >> "$OUT"
-        exit 0
+        # 成功判据：accept 真返回 ok（写回并读回通过）。没成就不退出，继续等下一次——
+        # 窗口在他手里开开关关，抢到一次失败就收工等于白等（09:14 那次就是这样）。
+        if grep -q "accept(itemID: 0) → ok" "$EVID/accept-now-$TS.log"; then
+            echo "== 成功，结束 $(date '+%F %T') ==" >> "$OUT"
+            exit 0
+        fi
+        echo "--- 这次没成（窗口可能被关/建议未出），60 秒后再看 ---" >> "$OUT"
+        sleep 60
     fi
     sleep 15
 done
