@@ -463,6 +463,15 @@ if argv.contains("--accept-now") {
     }
     for (k, o, r, st, ln) in listed2 { print("  [\(k)] \"\(o)\" → \"\(r)\" range=\(st)+\(ln)") }
     guard !listed2.isEmpty, wantID < listed2.count else { print("RESULT: SKIP（没有可接受的建议）"); exit(0) }
+    // --expect "have send"：只接受原文精确等于这段的建议。
+    // 为什么：无人值守跑的时候，绝不替爹地接受他没要求的那一条。
+    if let ei = argv.firstIndex(of: "--expect"), ei + 1 < argv.count {
+        let want = argv[ei + 1]
+        guard listed2[wantID].1 == want else {
+            print("RESULT: SKIP（第 \(wantID) 条原文是 \"\(listed2[wantID].1)\"，不是期望的 \"\(want)\"）")
+            exit(0)
+        }
+    }
     let ok = MainActor.assumeIsolated { c.accept(itemID: wantID) }
     usleep(600_000)
     print("accept(itemID: \(wantID)) → \(ok ? "ok" : "false")")
