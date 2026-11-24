@@ -391,47 +391,38 @@ enum MailProbe {
         return ["new message", "新邮件", "no subject", "无主题", "untitled", "未命名", "re:"].contains { t.contains($0) }
     }
 
+    /// 窗口查找策略（常量，CI 用断言钉住，防止再被改回「深递归 + 小预算」）
+    struct WindowPolicy {
+        static let retries = 3
+        static let maxDepth = 2          // 窗口挂在 app 的直接子节点，深挖只会被大邮件拖死
+        static let timeout: Float = 0.4
+        static let retryGapUs: useconds_t = 120_000
+    }
+
+    /// 找窗口。**所有**诊断与驱动都走这一个函数（11-24 教训：两个口径把我们坑了一整天）。
+    ///
+    /// 旧实现：一次 AXWindows 拿不到 → 深递归 120 节点兜底。爹地开着 197 个 staticText 的
+    /// 读信窗时 Mail 的 AX 响应慢到 200ms+，深递归必然超时返回空 →
+    /// --accept-now 报 windows=0、items=0，而单独跑的 --probe-mail 又能读到。
     static func windows(_ pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(appEl, 0.25)
-        var raw: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success,
-           let wins = raw as? [AXUIElement], !wins.isEmpty {
-            // macOS 27 实测：Mail/TextEdit 在「有文档没窗口」时把 AXApplication 元素塞进 AXWindows。
-            // 它不是窗口（role=AXApplication，children 全是菜单栏），必须滤掉，否则会报
-            // 「窗口=1 但取不到可见文本」这种误导性结论。
-            let real = wins.filter { (str($0, kAXRoleAttribute) ?? "") == "AXWindow" }
-            if real.count != wins.count {
-                print("  ! AXWindows 里 \(wins.count - real.count) 个不是真窗口（AXApplication 占位），已忽略")
-            }
-            if !real.isEmpty { return real }
-        }
-        // Mail 写信窗口可能不在 kAXWindowsAttribute 里（实测：主窗口关掉只留 compose 时 windows=0）。
-        // 兜底：从 app 元素往下找 role=AXWindow 的节点，最多 4 层。
-        // 兜底遍历必须限流：app 元素下面挂着整条菜单栏（几十上百个 AXMenuItem），
-        // 每一项都是一次 IPC；Mail 一时不响应就会 1.5s × N 把探针拖到十几秒（11-23 实测 14.2s）。
-        AXUIElementSetMessagingTimeout(appEl, 0.25)
-        var budget = 120
-        var found: [AXUIElement] = []
-        func walk(_ el: AXUIElement, depth: Int) {
-            guard depth > 0, budget > 0 else { return }
+        for attempt in 0..<WindowPolicy.retries {
+            AXUIElementSetMessagingTimeout(appEl, WindowPolicy.timeout)
             var raw: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &raw) == .success,
-                  let kids = raw as? [AXUIElement] else { return }
-            for c in kids {
-                budget -= 1
-                if budget <= 0 { return }
-                let role = str(c, kAXRoleAttribute) ?? ""
-                if role == "AXMenuBar" || role == "AXMenu" || role == "AXMenuItem" { continue }   // 菜单栏与窗口无关
-                if role == "AXWindow" { found.append(c); continue }
-                walk(c, depth: depth - 1)
+            if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success,
+               let wins = raw as? [AXUIElement], !wins.isEmpty {
+                let real = wins.filter { roleOf($0) == "AXWindow" }
+                if !real.isEmpty { return real }
+                if attempt == WindowPolicy.retries - 1 { return wins }   // 占位里也挂着 children
             }
+            AXUIElementSetMessagingTimeout(appEl, WindowPolicy.timeout)
+            if let kids = attr(appEl, kAXChildrenAttribute as String) as? [AXUIElement] {
+                let shallow = kids.filter { roleOf($0) == "AXWindow" }
+                if !shallow.isEmpty { return shallow }
+            }
+            if attempt < WindowPolicy.retries - 1 { usleep(WindowPolicy.retryGapUs) }
         }
-        walk(appEl, depth: 4)
-        if !found.isEmpty {
-            print("  ! kAXWindowsAttribute 为空，从子节点兜底找到 \(found.count) 个 AXWindow")
-        }
-        return found
+        return []
     }
 
     /// 有界遍历：菜单栏整棵跳过（几十上百项，每项一次 IPC），

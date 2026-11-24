@@ -1586,8 +1586,14 @@ final class InlineController {
         let focused = returnFocusToBody(pid: pid, element: currentElement ?? host)
         AppLog.info("m3", "focus-return=\(focused ? "ok" : "fail")")
 
-        // ① 容器上 AXSelectedText（坐标已换算）
-        if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
+        // 单一写回路径（知澜 11-24 定案）：键盘事件。
+        // 为什么砍掉前三层：Mail 的 AXSelectedTextRange 是假成功（dump 里 56 个节点 selSet 全谎），
+        // 叠三个不可靠的方式只会让失败点更多、日志更糊。默认只走键盘，
+        // 老三层留在 EW_WRITE_LEGACY=1 后面仅供排查，不再参与正常判定。
+        let legacyLayers = ProcessInfo.processInfo.environment["EW_WRITE_LEGACY"] == "1"
+
+        // ① 容器上 AXSelectedText（坐标已换算）—— 仅 legacy
+        if legacyLayers, let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
             _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, v)
             let err = AXUIElementSetAttributeValue(h, kAXSelectedTextAttribute as CFString, text as CFTypeRef)
             if err == .success, Self.webWriteVerified(hostText: AXInline.fullText(of: h) ?? "", mapped: m, replacement: text) {
@@ -1600,7 +1606,7 @@ final class InlineController {
 
         // ② 剪贴板 ⌘V —— 必须先确认选区真的落在了容器上。
         // 11-23 真机：选区没生效也照样粘，结果 sent 被追加到正文末尾而不是覆盖 send。
-        if let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
+        if legacyLayers, let h = host, let m = mapped, let v = axRangeValue(m.location, m.length) {
             _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, v)
             let landed = Self.selectionLanded(h, expected: m)
             AppLog.info("m3", "clipboard 前置：选区 \(landed ? "已落下" : "没落下，不粘") range=\(m.location)+\(m.length)")
@@ -1617,7 +1623,7 @@ final class InlineController {
         }
         // ③ 暴力兜底：选中容器全文 + 粘贴「整段替换后的文本」
         //    （容器不接受区间选区时唯一还能走的路；不改别的，只改这一段）
-        if let h = host, let m = mapped,
+        if legacyLayers, let h = host, let m = mapped,
            let full = WebText.replacedFullText(hostText: AXInline.fullText(of: h) ?? "", mapped: m, replacement: text),
            let all = axRangeValue(0, (full as NSString).length) {
             _ = AXUIElementSetAttributeValue(h, kAXSelectedTextRangeAttribute as CFString, all)
@@ -1657,7 +1663,7 @@ final class InlineController {
                 AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 \(n) 字 / 未全选 \(selCovered) / 原文不唯一 / 正文超长拒绝覆盖）")
             }
         }
-        AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（容器定位失败 / AX 与剪贴板都不成功）")
+        AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（键盘路径前置条件不满足：选区空 / 未全选 / 原文不唯一 / 正文超长）")
         return false
     }
 

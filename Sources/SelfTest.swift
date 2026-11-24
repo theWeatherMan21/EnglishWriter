@@ -1266,6 +1266,13 @@ enum SelfTest {
               t1 == 430 && s1 == 2 && st.totalMs == 430,
               "totalMs=\(t1) slow=\(s1) 收尾后 totalMs=\(st.totalMs)")
 
+        // 11.6) 窗口查找策略：不许被改回「一次拿不到就深递归 + 小预算」。
+        //      爹地开着 197 staticText 的读信窗时，那条老路必然超时返回空，
+        //      于是 --accept-now 读不到写信窗、items=0（11-24 实况）。
+        check("窗口查找·重试≥3 且不深挖",
+              MailProbe.WindowPolicy.retries >= 3 && MailProbe.WindowPolicy.maxDepth <= 2,
+              "retries=\(MailProbe.WindowPolicy.retries) maxDepth=\(MailProbe.WindowPolicy.maxDepth) timeout=\(MailProbe.WindowPolicy.timeout)s")
+
         // 6) 证据落盘
         evidence["check"] = "settings-selftest"
         evidence["generatedAt"] = ISO8601DateFormatter().string(from: Date())
