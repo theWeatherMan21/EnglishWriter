@@ -1592,6 +1592,14 @@ final class InlineController {
             host = WebText.editableRegion(of: cur)
             if host == nil { host = cur; hostSrc = "webarea" } else { hostSrc = "正文区" }
         }
+        // Mail 写信窗：强制走键盘路径。
+        // Mail 的 WebArea 接受 AXSelectedTextRange 的「设置」却读回不变（selSet=谎），
+        // 只要 host 非 nil 就会掉进那三层假成功里，永远改不动正文（10:00 实况：直接 none）。
+        if appName(pid) == "Mail", MailProbe.isComposeWindow(pid: pid), host != nil {
+            AppLog.info("m3", "web-write 强制键盘路径（Mail 写信窗的 AX 容器不可写，忽略 host=\(hostSrc)）")
+            host = nil
+            hostSrc = "mail-compose(强制键盘)"
+        }
         let hostText = host.flatMap { AXInline.fullText(of: $0) } ?? ""
         let mapped = host != nil ? WebText.mapRange(blockText: block.text, range: range, hostText: hostText) : nil
         AppLog.info("m3", "web-write host=\(host != nil ? hostSrc : "无") map=\(mapped.map { "\($0.location)+\($0.length)" } ?? "nil") hostLen=\(hostText.count) block=\(range.location)+\(range.length)")
@@ -1660,24 +1668,29 @@ final class InlineController {
             pressSelectAll(to: pid)
             // ⌘A 之后必须确认选区覆盖全文：读 AXValue 拿到全文不等于选中了全文，
             // 没选中就粘 = 追加到末尾（11-23 真机症状）。
-            let selCovered = Self.selectionCoversAllText(pid: pid)
-            if let full = selectedText(of: pid),
-               selCovered,
+            // ⌘A 之后确认「选中了全文」：AX 的选区读数不可信，用 ⌘C 的事实判断。
+            let copied = readSelectionViaClipboard(pid: pid) ?? ""
+            // 覆盖判据：复制出来的内容必须「包含了该块原文」，且不短于该块。
+            // 不能拿 copied.count 自己跟自己比（永远成立）—— 那是把校验写成恒真。
+            let needleBlock = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let covered = !copied.isEmpty && (copied.count >= needleBlock.count) && copied.contains(needleBlock)
+            AppLog.info("m3", "全选读回 \(copied.count) 字（块原文 \(needleBlock.count) 字，覆盖=\(covered)）")
+            let selCovered = covered
+            if let full = (copied.isEmpty ? nil : copied), covered,
                WebText.allowFullReplace(fullText: full),
                let newFull = WebText.replaceOnce(fullText: full, original: original, replacement: text),
                newFull != full, Self.backupDraft(full), pasteViaClipboard(newFull, to: pid) {
                 usleep(500_000)
                 pressSelectAll(to: pid)
-                let back = selectedText(of: pid) ?? ""
-                if back == newFull {
+                let back = readSelectionViaClipboard(pid: pid) ?? ""
+                if back.trimmingCharacters(in: .whitespacesAndNewlines) == newFull.trimmingCharacters(in: .whitespacesAndNewlines) {
                     Diag.shared.applyMethod = "键盘全选替换"
                     AppLog.info("m3", "write-layer=keyboard-all len=\(newFull.count)（正文无可编辑 AX 容器）")
                     return true
                 }
                 AppLog.info("m3", "write-layer=keyboard-all 但读回不一致（字数 \(back.count) vs \(newFull.count)）")
             } else {
-                let n = selectedText(of: pid)?.count ?? 0
-                AppLog.info("m3", "keyboard-all 前置条件不满足（选区空 \(n) 字 / 未全选 \(selCovered) / 原文不唯一 / 正文超长拒绝覆盖）")
+                AppLog.info("m3", "keyboard-all 前置条件不满足（复制到 \(copied.count) 字 / 覆盖 \(selCovered) / 原文不唯一 / 正文超长拒绝覆盖）")
             }
         }
         AppLog.info("m3", "write-layer=none range=\(range.location)+\(range.length)（键盘路径前置条件不满足：选区空 / 未全选 / 原文不唯一 / 正文超长）")
@@ -1752,6 +1765,27 @@ final class InlineController {
         down.postToPid(pid)
         up.postToPid(pid)
         usleep(150_000)
+    }
+
+    /// 用 ⌘C 读选区：AX 报的选区长度在 Mail 上是假话（selSet=谎），
+    /// 而「复制出来的东西」是应用自己写的系统剪贴板——这是唯一能当判据的事实。
+    /// 读完立刻还原剪贴板，不动爹地原本的内容。
+    private func readSelectionViaClipboard(pid: pid_t) -> String? {
+        guard pid > 0 else { return nil }
+        let pb = NSPasteboard.general
+        let saved = pb.string(forType: .string)
+        pb.clearContents()
+        let src = CGEventSource(stateID: .combinedSessionState)
+        for isDown in [true, false] {
+            if let e = CGEvent(keyboardEventSource: src, virtualKey: 0x08, keyDown: isDown) {
+                e.flags = .maskCommand
+                e.postToPid(pid)
+            }
+        }
+        usleep(200_000)
+        let got = pb.string(forType: .string)
+        if let saved { pb.clearContents(); pb.setString(saved, forType: .string) }
+        return got
     }
 
     /// 把键盘焦点交回正文（点接受时焦点在我们自己的卡片上，所有键击都会落空）。

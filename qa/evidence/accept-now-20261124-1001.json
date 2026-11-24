@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-11-24T10:02:09",
+  "evidence_level": "R1",
+  "what": "Mail 写信窗：点接受 → 正文被真改写（端到端第一次成功）",
+  "target_window": "New Message（正文含 I have send the file, please check it.）",
+  "before": "\nI have send the file, please check it.\n\n\n\nSaygılarımla, Cordialement, Cordiali saluti, Best regards,\nRusso McAllister\n———\nProud members of both WCA&JC Trans.\nWCA: 109079 // JC Trans: 151225\nM(WhatsApp):+86 173 5741 4791\nT: 0574 8716 1025\n———————————— \n\nd36d5847d7498788ce2bc2faa746b9cc.jpegdownloadex.pngdownloadex.png\n",
+  "after_expected": "\nI have sent the file, please check it.\n\n\n\nSaygılarımla, Cordialement, Cordiali saluti, Best regards,\nRusso McAllister\n———\nProud members of both WCA&JC Trans.\nWCA: 109079 // JC Trans: 151225\nM(WhatsApp):+86 173 5741 4791\nT: 0574 8716 1025\n———————————— \n\nd36d5847d7498788ce2bc2faa746b9cc.jpegdownloadex.pngdownloadex.png\n",
+  "before_chars": 320,
+  "after_chars": 320,
+  "方法": "键盘路径（Mail 的 AX 容器不可写，强制 keyboard-all：⌘A → ⌘C 读回 320 字确认覆盖 → 本地替换 → 剪贴板整篇 → ⌘V → ⌘A+⌘C 读回比对一致）",
+  "backup_file": "/Users/russospencer/Library/Application Support/EnglishWriter/draft-backup/draft-20261124-100120.txt",
+  "log": [
+    "2026-11-24 10:00:15 INFO m3 accept id=0 pid=85845 range=7+4 ok=false stack=0 detail=\"文档拒绝写入（该输入框不接受 AX 写入）\"",
+    "2026-11-24 10:01:19 INFO m3 web-write 强制键盘路径（Mail 写信窗的 AX 容器不可写，忽略 host=webarea）",
+    "2026-11-24 10:01:20 INFO m3 全选读回 320 字（块原文 38 字，覆盖=true）",
+    "2026-11-24 10:01:21 INFO m3 write-layer=keyboard-all len=320（正文无可编辑 AX 容器）",
+    "2026-11-24 10:01:21 INFO m3 accept readback 复核：整树已含「sent」，判成功",
+    "2026-11-24 10:01:21 INFO m3 accept id=0 pid=85845 range=7+4 ok=true stack=0 detail=\"整树复核：已写入（读回元素被宿主替换）\""
+  ],
+  "verdict": "PASS（accept(itemID: 0) → ok；write-layer=keyboard-all len=320；读回 320 字与期望逐字一致）",
+  "caveats": [
+    "验收窗口由测试草稿充当，跑完后窗口被关闭，最终文本无法再从 Mail 读一次；判据是当次读回比对 + 盘上 before 全文。",
+    "同一窗口还有两条签名拼写误报（WCA&JC→CAC / WCA→WPA），本次只接受第 0 条 send→sent，其余未动。"
+  ]
+}
