@@ -3,7 +3,7 @@
 #
 # 做三件事，全带时间戳落盘：
 #   ① --axdump-mail  → qa/evidence/axdump-mail-<ts>.txt   （R1 原始件）
-#   ② --accept-now 0 --expect "have send" → 写回 + 读回验证
+#   ② --accept-now 0 --expect "send" → 写回 + 读回验证
 #   ③ 抓 check-round / accept-* / write-layer 日志 → qa/evidence/accept-now-<ts>.log
 #
 # 安全：
@@ -43,7 +43,7 @@ for i in $(seq 1 1440); do
         echo "--- 命中写信窗含 have send @ $TS ---" >> "$OUT"
         "$BIN" --axdump-mail > "$EVID/axdump-mail-$TS.txt" 2>&1
         tail -1 "$EVID/axdump-mail-$TS.txt" >> "$OUT"
-        "$BIN" --accept-now 0 --expect "have send" > "$EVID/accept-now-$TS.log" 2>&1
+        "$BIN" --accept-now 0 --expect "send" > "$EVID/accept-now-$TS.log" 2>&1
         tail -6 "$EVID/accept-now-$TS.log" >> "$OUT"
         grep -a "accept-\|web-write\|write-layer\|focus-return\|clipboard 前置\|整段替换前置\|keyboard-all" \
             ~/Library/Logs/EnglishWriter/app.log | tail -12 >> "$EVID/accept-now-$TS.log"

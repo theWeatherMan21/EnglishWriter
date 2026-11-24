@@ -92,47 +92,46 @@ enum MailProbe {
     /// 阅读窗两个都不命中，所以不会误判成写信。
     static func composeSignal(pid: pid_t) -> (isCompose: Bool, reason: String) {
         guard pid > 0 else { return (false, "pid=0") }
-        guard let app = AXUIElementCreateApplication(pid) as AXUIElement? else { return (false, "拿不到 AXApplication") }
-        // AX 是跨进程 IPC：Mail 一个窗口有 2000+ 节点，深度遍历会把它拖到几十秒（11-23 实测探针卡死）。
-        // 两道闸：单次调用 0.15s 超时 + 总节点预算 300 + 0.4s 截止时间，超了就按「不是写信窗」返回。
-        AXUIElementSetMessagingTimeout(app, 0.15)
-        guard let windows = attr(app, kAXWindowsAttribute as String) as? [AXUIElement],
+        let appEl = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appEl, 0.15)
+        guard let windows = attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement],
               !windows.isEmpty else { return (false, "没有窗口") }
+
         let sendWords = ["发送", "Send", "送信", "Enviar", "Envoyer"]
         let toWords = ["收件人", "To:", "收件人：", "Cc", "抄送", "To "]
-        var sendHit = false, recipientHit = false
-        var budget = 300
-        let deadline = Date().addingTimeInterval(0.4)
-        func walk(_ el: AXUIElement, depth: Int) {
-            if (sendHit && recipientHit) || depth <= 0 || budget <= 0 { return }
-            if Date() > deadline { budget = 0; return }
-            budget -= 1
-            let role = roleOf(el)
-            if role == kAXButtonRole as String || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String {
-                let label = [attrString(el, kAXTitleAttribute as String),
-                             attrString(el, kAXDescriptionAttribute as String),
-                             attrString(el, kAXHelpAttribute as String),
-                             attrString(el, "AXPlaceholderValue")]
-                    .compactMap { $0 }.joined(separator: " ")
-                if role == kAXButtonRole as String, sendWords.contains(where: { label.contains($0) }) { sendHit = true }
-                if role != kAXButtonRole as String, toWords.contains(where: { label.contains($0) }) { recipientHit = true }
+
+        // 每个窗口单独给预算和截止时间。
+        // 旧实现是「所有窗口共用 300 节点 / 0.4 秒」：爹地那封 197 个 staticText 的读信窗
+        // 排在第一，头一个窗口就把预算吃光，后面的写信窗根本没被看过 → 判「不是写信窗」
+        // → 整条检查被当只读跳过（知澜定位，11-24）。预算必须按窗口隔离。
+        for (idx, w) in windows.prefix(WindowPolicy.composeScanWindows).enumerated() {
+            var send = false, recipient = false
+            var budget = WindowPolicy.composeScanBudget
+            let deadline = Date().addingTimeInterval(WindowPolicy.composeScanDeadline)
+            func walk(_ el: AXUIElement, depth: Int) {
+                if send || depth <= 0 || budget <= 0 { return }
+                if Date() > deadline { budget = 0; return }
+                budget -= 1
+                let role = roleOf(el)
+                if role == kAXButtonRole as String || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String {
+                    let label = [attrString(el, kAXTitleAttribute as String),
+                                 attrString(el, kAXDescriptionAttribute as String),
+                                 attrString(el, kAXHelpAttribute as String),
+                                 attrString(el, "AXPlaceholderValue")]
+                        .compactMap { $0 }.joined(separator: " ")
+                    if role == kAXButtonRole as String, sendWords.contains(where: { label.contains($0) }) { send = true }
+                    if role != kAXButtonRole as String, toWords.contains(where: { label.contains($0) }) { recipient = true }
+                }
+                guard role == "AXWindow" || role == "AXGroup" || role == "AXToolbar" || role == "AXSplitGroup"
+                        || role == "AXScrollArea" || role == "AXWebArea" || role == kAXButtonRole as String
+                        || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String || role.isEmpty else { return }
+                for c in attrChildrenFast(el) { walk(c, depth: depth - 1) }
             }
-            // 只走「容器类」节点，跳过几千个静态文本叶子（正文、列表行）
-            guard role == "AXWindow" || role == "AXGroup" || role == "AXToolbar" || role == "AXSplitGroup"
-                    || role == "AXScrollArea" || role == "AXWebArea" || role == kAXButtonRole as String
-                    || role == kAXTextFieldRole as String || role == kAXTextAreaRole as String || role.isEmpty else { return }
-            for c in attrChildrenFast(el) { walk(c, depth: depth - 1) }
-        }
-        // 必须扫**所有**窗口：爹地同时开着读信窗和写信窗时，写信窗常不在第一位，
-        // 只看 front 会判成「不是写信窗」→ 整条检查被当成只读文本跳过（11-24 实况）。
-        for w in windows.prefix(4) {
-            if sendHit || recipientHit { break }
             walk(w, depth: 8)
+            if send { return (true, "发送按钮(窗口#\(idx))") }
+            if recipient { return (true, "收件人字段(窗口#\(idx))") }
         }
-        if sendHit { return (true, "发送按钮") }
-        if recipientHit { return (true, "收件人字段") }
-        if budget <= 0 { return (false, "遍历超预算(300 节点/0.4s)，按非写信窗处理") }
-        return (false, "无发送按钮、无收件人字段")
+        return (false, "无发送按钮、无收件人字段（扫了 \(min(windows.count, WindowPolicy.composeScanWindows)) 个窗口）")
     }
 
     static func waitForEnglish(_ argv: [String]) async -> Bool {
@@ -397,6 +396,10 @@ enum MailProbe {
         static let maxDepth = 2          // 窗口挂在 app 的直接子节点，深挖只会被大邮件拖死
         static let timeout: Float = 0.4
         static let retryGapUs: useconds_t = 120_000
+        // compose 判定：逐窗口独立预算（共用预算会被一个超大读信窗吃光）
+        static let composeScanWindows = 4
+        static let composeScanBudget = 220
+        static let composeScanDeadline: TimeInterval = 0.30
     }
 
     /// 找窗口。**所有**诊断与驱动都走这一个函数（11-24 教训：两个口径把我们坑了一整天）。

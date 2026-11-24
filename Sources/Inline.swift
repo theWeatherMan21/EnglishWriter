@@ -1771,6 +1771,25 @@ final class InlineController {
         usleep(settleUs)
     }
 
+    /// 逐字键入（等同于人手打字）。不碰剪贴板：
+    /// 粘贴会把宿主当成「外部内容」，格式/撤销栈都可能被牵连；
+    /// 键入是「用户输入」，宿主只改插入点，周围格式一律不动（Grammarly 也是这么做的）。
+    private func typeText(_ text: String, to pid: pid_t) {
+        guard pid > 0, !text.isEmpty else { return }
+        let src = CGEventSource(stateID: .combinedSessionState)
+        for ch in text {
+            var units = Array(String(ch).utf16)
+            guard let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) else { continue }
+            down.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
+            up.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
+            down.postToPid(pid)
+            up.postToPid(pid)
+            usleep(12_000)
+        }
+        usleep(120_000)
+    }
+
     /// 只替换「那一个词」，不动整篇 —— 保住粗体/链接/图片等格式。
     ///
     /// 为什么需要：键盘兜底原本是 ⌘A 全选整篇替换，格式会全部拍平成纯文本。
@@ -1817,8 +1836,9 @@ final class InlineController {
             pressKey(0x7C, flags: [], to: pid)             // 收起选区，别留在半选状态
             return false
         }
-        guard pasteViaClipboard(replacement, to: pid) else { return false }
-        usleep(400_000)
+        // 键入替换词（不走剪贴板）：选择范围内输入 = 用户输入，格式不被牵连
+        typeText(replacement, to: pid)
+        usleep(300_000)
         // 读回整篇核对：只有「原文消失、替换词出现、其余长度不变」才算成功
         pressSelectAll(to: pid)
         let back = readSelectionViaClipboard(pid: pid) ?? ""
@@ -1827,7 +1847,7 @@ final class InlineController {
                                                                    with: replacement)
         if back == expected {
             Diag.shared.applyMethod = "键盘词级替换"
-            AppLog.info("m3", "write-layer=keyboard-word \"\(original)\"→\"\(replacement)\"（保留格式）")
+            AppLog.info("m3", "write-layer=keyboard-type \"\(original)\"→\"\(replacement)\"（逐字键入，未动剪贴板/整篇）")
             return true
         }
         AppLog.info("m3", "keyboard-word 读回不一致（\(back.count) vs \(expected.count)）—— 格式保留了但结果不对，报失败不重试")
