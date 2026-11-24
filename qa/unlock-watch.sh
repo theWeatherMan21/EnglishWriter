@@ -47,20 +47,21 @@ for i in $(seq 1 1440); do
         sleep 20
         if locked; then echo "又锁上了，继续等" >> "$OUT"; continue; fi
 
-        echo "--- ① AX 树 dump ---" >> "$OUT"
-        "$BIN" --axdump-mail > "$EVID/axdump-mail.txt" 2>&1
-        tail -3 "$EVID/axdump-mail.txt" >> "$OUT"
-        grep -c "edit=1\|selRange=1" "$EVID/axdump-mail.txt" 2>/dev/null \
+        TS=$(date '+%Y%m%d-%H%M%S')
+        echo "--- ① AX 树 dump（$TS）---" >> "$OUT"
+        "$BIN" --axdump-mail > "$EVID/axdump-mail-$TS.txt" 2>&1
+        tail -3 "$EVID/axdump-mail-$TS.txt" >> "$OUT"
+        grep -c "edit=1\|selRange=1" "$EVID/axdump-mail-$TS.txt" 2>/dev/null \
             | sed 's/^/可编辑或可选区节点数：/' >> "$OUT"
 
         echo "--- ② 草稿还原（先 dry-run）---" >> "$OUT"
         if [ -x "$FIX" ]; then
-            "$FIX" > "$EVID/draft-fix.log" 2>&1
-            tail -4 "$EVID/draft-fix.log" >> "$OUT"
-            if grep -q "RESULT: DRY-RUN" "$EVID/draft-fix.log"; then
+            "$FIX" > "$EVID/draft-fix-$TS.log" 2>&1
+            tail -4 "$EVID/draft-fix-$TS.log" >> "$OUT"
+            if grep -q "RESULT: DRY-RUN" "$EVID/draft-fix-$TS.log"; then
                 echo "dry-run 通过，执行还原" >> "$OUT"
-                "$FIX" --apply >> "$EVID/draft-fix.log" 2>&1
-                tail -3 "$EVID/draft-fix.log" >> "$OUT"
+                "$FIX" --apply >> "$EVID/draft-fix-$TS.log" 2>&1
+                tail -3 "$EVID/draft-fix-$TS.log" >> "$OUT"
             else
                 echo "dry-run 没就绪（没窗口 / 没找到坏文本），不执行" >> "$OUT"
             fi

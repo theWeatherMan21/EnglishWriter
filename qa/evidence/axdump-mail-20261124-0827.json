@@ -1,0 +1,34 @@
+{
+  "case": "axdump-mail-20261124-0827",
+  "verdict": "AX 写回路径不可用（Mail 正文不接受 AXSelectedTextRange）",
+  "evidence_level": "R2 —— 依据是 08:27 那次 --axdump-mail 的 stdout（会话记录）。原文件被 08:26 那次 SKIP 结果覆盖，盘上已无原始 dump。",
+  "app": "com.apple.mail pid=85845",
+  "window": "「New Message」compose（webArea=true, staticText=15, textArea=0）",
+  "result": {
+    "nodes_scanned": 255,
+    "editable_or_selectable_nodes": 56,
+    "selSet_ok": 0,
+    "selSet_lie": "每个节点都是「谎」—— 设 AXSelectedTextRange 返回 success，读回来没变",
+    "conclusion": "RESULT: 找到可编辑节点 —— 按 valLen 最大、selRange=1 的那个当写入口（但设置选区不生效）"
+  },
+  "sample_lines": [
+    "AXButton(AXCloseButton) edit=0 selRange=0 valLen=0 selSet=谎 frame=16x16@79,48",
+    "AXButton(AXFullScreenButton) edit=0 selRange=0 valLen=0 selSet=谎 frame=16x16@125,48",
+    "AXStaticText edit=0 selRange=1 valLen=27 frame=160x52@263,30",
+    "AXStaticText edit=0 selRange=1 valLen=7 frame=160x52@263,30"
+  ],
+  "implication": [
+    "写在 AXStaticText / AXWebArea 上的 AXSelectedTextRange 是假成功，不能作为写回手段。",
+    "键盘路径（activate Mail → 窗口 key → ⌘A/光标+Shift+Delete/⌘V）在 08:26 的草稿还原里被证明可用。",
+    "写回前必须 NSRunningApplication.activate，仅设 AXFocused 不够（11-24 实测三次键击全落空）。"
+  ],
+  "caveats": [
+    "这份 dump 的原始文件已被覆盖：qa/unlock-watch.sh 当时固定写 axdump-mail.txt，08:26 那次 SKIP 把它冲掉了。",
+    "已改：watcher 现在写 axdump-mail-<时间戳>.txt / draft-fix-<时间戳>.log，不再覆盖。"
+  ],
+  "followups": [
+    "下次打开写信窗时复跑 --axdump-mail，落 axdump-mail-<时间戳>.txt，作为 R1 证据。"
+  ],
+  "recordedAt": "2026-11-24T08:47:00+08:00",
+  "recordedBy": "婉宜（据 08:27 --axdump-mail 的 stdout 整理）"
+}

@@ -1,0 +1,43 @@
+{
+  "case": "draft-restore-20261124",
+  "verdict": "PASS（依据 --probe-mail 读回；脚本自报为 FAIL，原因见 caveats）",
+  "evidence_level": "R2 —— 依据是 08:25 / 08:29 两次 --probe-mail 的可见块输出（会话记录），不是盘上独立留存的改前后全文",
+  "window": "Mail「New Message」compose（窗口内含签名块：Saygılarımla… / Russo McAllister / WCA&JC）",
+  "before": {
+    "text": "I havesent send the file, please check it.",
+    "chars": 42,
+    "source": "--probe-mail 08:25:58 可见块[42字]"
+  },
+  "after": {
+    "text": "I have send the file, please check it.",
+    "chars": 38,
+    "source": "--probe-mail 08:26:5x 与 08:29:24 可见块[38字]（两次一致）"
+  },
+  "deleted": {
+    "text": "sent",
+    "location": 6,
+    "length": 4,
+    "meaning": "havesent → have；保留原文里 have 与 send 之间原有的那个空格"
+  },
+  "method": [
+    "activate Mail + 把目标窗口设为 key/main + AXRaise",
+    "点第一行内部左侧（282x20 @ 116,387 的框内 +6pt, 垂直居中）",
+    "⌘← 到行首",
+    "Right × 6（走到 have 之后）",
+    "Shift+Right × 4（选中多出来的 sent）",
+    "Delete",
+    "读回全文逐字比对（比对必须限定在目标窗口，否则会读到另一封草稿）"
+  ],
+  "why_not_select_all": "该窗口正文之后紧跟签名块；⌘A 全选再粘会把签名拍平成纯文本，属于毁稿。",
+  "caveats": [
+    "脚本当次自报 RESULT: FAIL —— 因为验证扫的是全局第一个含 \"I have\" 的静态文本，命中了另一封草稿（Dear Jaroslaw… 里有 \"I have 1*20GP\"）。已改为只在目标窗口内验证。",
+    "本文件的 before/after 文本来自会话记录里的 --probe-mail 输出；改前全文没有独立落盘（当时脚本还没有落盘逻辑）。",
+    "已改：draft-fix 现在每次运行都写 qa/evidence/draft-fix-<时间戳>.json，含 before / expected / after / verdict / 删除区间，不再覆盖。"
+  ],
+  "followups": [
+    "下次打开写信窗时复跑 --probe-mail，确认正文仍是 I have send the file, please check it.（38 字）",
+    "签名块逐行确认未受影响：Saygılarımla… / Russo McAllister / ——— / Proud members of both WCA&JC Trans. / WCA: 109079 // JC Trans: 151225"
+  ],
+  "recordedAt": "2026-11-24T08:45:00+08:00",
+  "recordedBy": "婉宜（据 2026-11-24 08:25–08:29 的 --probe-mail 实测输出整理）"
+}

@@ -21,6 +21,21 @@ import AppKit
 import ApplicationServices
 
 let apply = CommandLine.arguments.contains("--apply")
+
+// 证据落盘：每次运行都写一份带时间戳的 JSON，不覆盖——同一个文件名被下一次 SKIP 冲掉，
+// 等于没留下（知澜 11-24 审计要求）。对话里说的数字必须能在盘上复现。
+let evDir = NSHomeDirectory() + "/dev/EnglishWriter/qa/evidence"
+let ts: String = {
+    let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"; return f.string(from: Date())
+}()
+func writeEvidence(_ dict: [String: Any]) {
+    try? FileManager.default.createDirectory(atPath: evDir, withIntermediateDirectories: true)
+    let path = evDir + "/draft-fix-\(ts).json"
+    if let d = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
+        try? d.write(to: URL(fileURLWithPath: path))
+        print("证据：\(path)")
+    }
+}
 let wrongNeedle = "havesent"          // 只认这一处坏样本，别的文本一律不碰
 // 正确形态是 "have send"：多出来的就是 have 之后的 "sent"（havesent → have）。
 // 注意不能把整段换成 "have sent"——那样变成 "have sent send ..."，错得更远。
@@ -46,6 +61,7 @@ func frame(_ el: AXUIElement) -> CGRect {
 
 if let d = CGSessionCopyCurrentDictionary() as? [String: Any],
    (d["CGSSessionScreenIsLocked"] as? Bool) == true {
+    writeEvidence(["ts": ts, "verdict": "SKIP", "reason": "屏幕已锁"])
     print("RESULT: SKIP（屏幕已锁 —— 不做任何键击）"); exit(0)
 }
 
@@ -95,6 +111,7 @@ func scan(_ el: AXUIElement, _ d: Int) {
 for w in windows { scan(w, 14) }
 
 guard let t = target else {
+    writeEvidence(["ts": ts, "verdict": "SKIP", "reason": "没找到含 \(wrongNeedle) 的正文块"])
     print("RESULT: SKIP（没有找到含 \(wrongNeedle) 的正文块 —— 不做任何动作）"); exit(0)
 }
 
@@ -108,6 +125,9 @@ print("要删掉的：位置 \(delRange.location) 长度 \(delRange.length) → 
 print("行框：\(Int(t.rect.width))x\(Int(t.rect.height)) @ \(Int(t.rect.origin.x)),\(Int(t.rect.origin.y))")
 
 if !apply {
+    writeEvidence(["ts": ts, "verdict": "DRY-RUN", "before": t.text, "expected": expected,
+                   "delete": ["location": delRange.location, "length": delRange.length,
+                              "text": ns.substring(with: delRange)]])
     print("RESULT: DRY-RUN（加 --apply 才真改）"); exit(0)
 }
 
@@ -199,6 +219,13 @@ func verify(_ el: AXUIElement, _ d: Int) {
     for c in kids(el) { verify(c, d - 1) }
 }
 if let scopeWin = win { verify(scopeWin, 14) } else { for w in windows { verify(w, 14) } }
+
+writeEvidence(["ts": ts, "verdict": (after == expected) ? "PASS" : "FAIL",
+               "before": t.text, "expected": expected, "after": after ?? "(读不到)",
+               "delete": ["location": delRange.location, "length": delRange.length,
+                          "text": ns.substring(with: delRange)],
+               "method": "click line → ⌘← → Right×loc → Shift+Right×len → Delete → 读回比对",
+               "window": str(win ?? t.el, kAXTitleAttribute as String) ?? "-"])
 
 if let a = after, a == expected {
     print("RESULT: PASS —— 正文已还原；读回 \"\(a)\"")
