@@ -107,7 +107,7 @@ enum SelfTest {
         if wantAll || argv.contains("--req") { requestBodyTests() }
         if wantAll || argv.contains("--replace") { sentenceCaseTests() }
         if wantAll || argv.contains("--diffhl") { spellingDiffTests() }
-        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); webRecoverTests(); webWriteTests(); ContrastTests.run() }
+        if wantAll || argv.contains("--ui") { uiTextTests(); webReuseTests(); noDevTracesTests(); floatBallStateTests(); ballLifecycleTests(); acceptRangeTests(); sidebarLayoutTests(); ballGeometryTests(); dictBulkTests(); underlineLifecycleTests(); firstClickTests(); acceptRecoveryTests(); webRegionTests(); mailReadingGateTests(); ltProbeTests(); engineStatusTextTests(); webRecoverTests(); webWriteTests(); ContrastTests.run() }
         if wantAll || argv.contains("--privacy") { lockGateTests(); privacyTests(); hitTestTests(); cardPlacementTests(); emptyEditTests(); ballPlacementTests(); staleUnderlineTests(); editableGateTests(); coordTests(); ownerAttrTests(); clickRaceTests(); settingsKeyImportTest() }
         if wantAll || argv.contains("--goals") { goalsTests() }
         if wantAll || argv.contains("--tone") { toneTests() }
@@ -1661,6 +1661,47 @@ extension SelfTest {
 // MARK: UI 文案（看不见就是没做 → 用断言锁住格式与档位阈值）
 extension SelfTest {
     // MARK: 浮动球三态（知澜 11-18：灰=不知道 / 绿=查过没问题 / 环+数字=N 条）
+    /// 悬浮球去留（知澜 11-25 规格：保留只有一种情形，其余四条立刻清）
+    static func ballLifecycleTests() {
+        print("\n--- 悬浮球去留（四条清除 / 一条保留）---")
+        typealias D = InlineController.BallDecision
+        let cases: [(Int, pid_t, pid_t, Bool, Bool, String)] = [
+            (3, 7016, 7016, true,  true,  "keep"),           // 有 items + 同宿主 + 窗口在 + 焦点在正文
+            (0, 7016, 7016, true,  true,  "no-items"),       // 检查完 0 条
+            (3, 7016, 2319, true,  true,  "host-switch"),    // 切了 App
+            (3, 7016, 7016, false, true,  "window-gone"),    // 写窗关了
+            (3, 7016, 7016, true,  false, "focus-left"),     // 焦点离开正文
+        ]
+        for (n, ball, host, win, focus, want) in cases {
+            let got = D.decide(itemCount: n, ballPid: ball, hostPid: host, windowExists: win, focusInBody: focus)
+            if got.rawValue == want { SelfTest.ok("球去留·\(want)") }
+            else { SelfTest.bad("球去留·\(want)", "得到 \(got.rawValue)") }
+        }
+    }
+
+    /// accept 的 range 必须对「送检那份全文」校验（知澜 11-25：Mail 正文以 \n 开头，
+    /// item 说 4+2 而块文本说 3+2，accept 拿块文本校验 → range 越界，点了改不了字）
+    static func acceptRangeTests() {
+        print("\n--- accept 偏移基准（marker 全文 vs 块文本）---")
+        let doc = "\nHe go to the office yesterday."
+        let item = DiffItem(start: 4, length: 2, original: "go", replacement: "goes",
+                            type: "grammar", reason: "subject-verb")
+        var text = doc
+        let fake = ClosureDoc(pid: 0, canReadBack: true,
+                              read: { text },
+                              writeRange: { r, t in
+                                  text = (text as NSString).replacingCharacters(in: r, with: t)
+                                  return true
+                              },
+                              writeFull: { t in text = t; return true })
+        let out = M3Flow.accept(items: [item], only: 0, in: fake, stack: M3UndoStack.shared)
+        if out.ok, text == "\nHe goes to the office yesterday." {
+            SelfTest.ok("accept·\n 开头的正文按全文偏移写入")
+        } else {
+            SelfTest.bad("accept·\n 开头的正文按全文偏移写入", "ok=\(out.ok) detail=\(out.detail) text=\(text.debugDescription)")
+        }
+    }
+
     static func floatBallStateTests() {
         print("\n--- 浮动球三态（不许两态）---")
         let cases: [(Int?, Int, String)] = [

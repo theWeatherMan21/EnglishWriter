@@ -56,7 +56,12 @@ enum WebText {
 
     /// 现读一个块元素当前的文本（不要用构造时抓的快照：Mail 写回后快照是旧的）
     static func liveText(of el: AXUIElement) -> String? {
-        if let v = attrString(el, kAXValueAttribute as String) { return v }
+        // WebArea 的 kAXValue 恒为空字符串（不是 nil）→ 旧写法返回 ""，
+        // 上层拿到空文本就判「range 越界」（知澜 11-25：accept 改不了字，range 4+2 越界）。
+        if isWebBody(el) {
+            if let mk = AXMarker.fullText(of: el).text, !mk.isEmpty { return mk }
+        }
+        if let v = attrString(el, kAXValueAttribute as String), !v.isEmpty { return v }
         return nil
     }
 

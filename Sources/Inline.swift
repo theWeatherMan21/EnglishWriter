@@ -538,6 +538,7 @@ final class InlineController {
             let apply = { [weak self] in
                 // 切 App：立刻清线（否则旧 App 的线留在屏幕上飘）
                 self?.overlay.clear(reason: "host-switch")
+                self?.hideBall(.hideHostSwitch)
                 // EW_FORCE_PID 生效时不许被切 App 覆盖（无头调试旋钮，与 start() 同一口径）
                 if ProcessInfo.processInfo.environment["EW_FORCE_PID"] == nil {
                     self?.lastFocusPid = app.processIdentifier
@@ -697,6 +698,7 @@ final class InlineController {
                 guard let el = focusEl else {
                     if Date().timeIntervalSince(self.lastPollNilLog) > 10 {
                         self.lastPollNilLog = Date()
+                        self.hideBall(.hideWindowGone)
                         self.emit(CheckEvent(kind: "poll-nil", pid: self.lastFocusPid,
                                              app: appName(self.lastFocusPid), role: "-",
                                              textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
@@ -1257,6 +1259,7 @@ final class InlineController {
             if appName(pid) == "Mail" {
                 AppLog.info("gate", "skip-readonly 前状态：lock=\(composeTarget[pid] == nil ? "nil" : "存在") title=\(composeByTitle) signal=\(composeBySignal) reading=\(mailReading)")
             }
+            hideBall(.hideFocusLeft)
             emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: elRole,
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: reason, at: Date()))
@@ -1758,6 +1761,7 @@ final class InlineController {
                             elapsed: "-", err: "原始 \(newItems.count) 条 → 保留 \(kept.count)", at: Date()))
         }
         diag.lastRectCount = specs.count
+        if kept.isEmpty { hideBall(.hideNoItems) }
         // 绘制留痕：items/rects/耗时都要能事后核（卡片验收靠这一行）
         emit(CheckEvent(kind: specs.isEmpty ? "render-none" : "render", pid: pid, app: appName(pid), role: "web",
                         textLen: (lastText as NSString).length, sentenceLen: 0,
@@ -2779,6 +2783,7 @@ final class InlineController {
             return
         }
         let box = anchor.rect
+        ballShownAt = Date(); ballPid = pid
         logBall("show", reason: anchor.source, pid: pid, rect: box)
         let worst = items.map { CategoryPrefsSeverity($0.kind) }.max() ?? 0
         let sev: UnderlineKind = items.first(where: { CategoryPrefsSeverity($0.kind) == worst })?.kind ?? .grammar
@@ -2795,6 +2800,7 @@ final class InlineController {
             FloatBall.shared.hide()
             return
         }
+        ballShownAt = Date(); ballPid = pid
         logBall("show", reason: "unknown/\(anchor.source)", pid: pid, rect: anchor.rect)
         FloatBall.shared.update(.init(phase: .unknown, count: 0, severity: .grammar, pid: pid, anchor: anchor.rect))
     }
@@ -2813,6 +2819,37 @@ final class InlineController {
     /// 每个 pid 上一次算出来的有效锚点：焦点一丢就 hide 是错的
     /// （和 attach-el-fail 清线同一个病：这一轮没读到 ≠ 用户不需要）
     private var lastBallAnchor: [pid_t: CGRect] = [:]
+    private var ballShownAt: Date?
+    private var ballPid: pid_t = 0
+
+    /// 悬浮球去留（纯函数，可离屏断言）。知澜 11-25 规格：
+    /// 保留只有一种情形——有 items + 同一个宿主 + 窗口在 + 焦点在正文；其余四条任一命中立刻清，不等 TTL。
+    enum BallDecision: String {
+        case keep
+        case hideNoItems = "no-items"
+        case hideHostSwitch = "host-switch"
+        case hideWindowGone = "window-gone"
+        case hideFocusLeft = "focus-left"
+        static func decide(itemCount: Int, ballPid: pid_t, hostPid: pid_t,
+                           windowExists: Bool, focusInBody: Bool) -> BallDecision {
+            if itemCount <= 0 { return .hideNoItems }
+            if ballPid != 0 && hostPid != ballPid { return .hideHostSwitch }
+            if !windowExists { return .hideWindowGone }
+            if !focusInBody { return .hideFocusLeft }
+            return .keep
+        }
+    }
+
+    /// 清球：只在真的显示过时打日志，带与 show 的时间差
+    private func hideBall(_ decision: BallDecision) {
+        let pid = ballPid
+        let ms = ballShownAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
+        guard ballShownAt != nil || pid != 0 else { return }
+        ballShownAt = nil
+        ballPid = 0
+        logBall("hide", reason: "\(decision.rawValue) after=\(ms)ms", pid: pid, rect: nil)
+        FloatBall.shared.hide()
+    }
 
     /// 球的锚点：聚焦元素 → key window 可编辑框 → 传入容器 → 上次有效锚点
     /// 全都拿不到才返回 nil（调用方据此 hide 并记原因）

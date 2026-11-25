@@ -193,8 +193,30 @@ final class UnderlineOverlay: NSPanel {
     override var canBecomeMain: Bool { false }
 
     /// 画一批下划线。rects 是全局屏幕坐标（左上原点）。
-    func render(_ specs: [UnderlineSpec]) {
-        guard !specs.isEmpty else { clear(reason: "no-items"); return }
+    func render(_ incoming: [UnderlineSpec]) {
+        guard !incoming.isEmpty else { clear(reason: "no-items"); return }
+        // 硬闸（知澜 11-25）：pid 丢了、矩形为 0、或整条线不在任何屏幕里 —— 一律不画。
+        // 实测出现过 pid=0 / [-3977,4810] 这种飞出屏幕的 spec：宁可这条不画，也不许画到看不见的地方。
+        var specs: [UnderlineSpec] = []
+        var rejected: [String] = []
+        for s in incoming {
+            if s.ownerPid == 0 { rejected.append("no-pid@\(s.kind)"); continue }
+            if s.rect.width <= 0 || s.rect.height <= 0 { rejected.append("zero-rect@\(s.kind)"); continue }
+            let appKit = ScreenGeom.toAppKit(s.rect)
+            let onScreen = NSScreen.screens.contains { $0.frame.intersects(appKit) }
+            if !onScreen {
+                rejected.append("off-screen@\(s.kind)\(Int(s.rect.minX)),\(Int(s.rect.minY))")
+                continue
+            }
+            specs.append(s)
+        }
+        if !rejected.isEmpty {
+            CheckLog.append(.init(kind: "underline-reject", pid: incoming.first?.ownerPid ?? 0,
+                                  app: appName(incoming.first?.ownerPid ?? 0), role: "-",
+                                  textLen: 0, sentenceLen: 0, itemCount: incoming.count, rectCount: rejected.count,
+                                  elapsed: "-", err: rejected.prefix(6).joined(separator: " "), at: Date()))
+        }
+        guard !specs.isEmpty else { clear(reason: "all-rejected"); return }
         self.specs = specs
         var all = specs.map(\.rect)
         if let f = flash { all.append(f) }
