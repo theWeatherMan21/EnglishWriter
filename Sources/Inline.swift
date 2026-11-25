@@ -418,12 +418,14 @@ final class InlineController {
     private(set) var lastText: String = ""
     private(set) var lastFocusPid: pid_t = 0
     /// Mail 写窗锁定：attach-mail-body 命中就记 30 秒，期间不许把同一封判成阅读窗
-    private var composeTarget: [pid_t: (expiry: Date, window: AXUIElement)] = [:]
+    struct ComposeLock { var expiry: Date; var window: AXUIElement; var nilStreak: Int = 0 }
+    private var composeTarget: [pid_t: ComposeLock] = [:]
     /// 上次成功画线时的正文指纹与时刻：单轮 items=0 但指纹没变 → 保留旧线（治「一闪而过」）
     private var lastRenderFingerprint = ""
     private var lastRenderAt = Date.distantPast
     /// 本轮有 item 但坐标算不出（rects 为空）的条数，render-none 时写进日志
     private var rectFailed = 0
+    private var lastPollForcedAt = Date.distantPast
     static func fingerprint(_ t: String) -> String {
         var h: UInt64 = 0xcbf29ce484222325
         for b in t.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
@@ -663,7 +665,16 @@ final class InlineController {
                     t = AXInline.fullText(of: el)
                 }
                 guard let t else { return }
-                if t != self.lastText { self.scheduleCheck(delay: 0.2) }
+                if t != self.lastText {
+                    self.scheduleCheck(delay: 0.2)
+                } else if self.items.isEmpty, !t.isEmpty,
+                          Date().timeIntervalSince(self.lastPollForcedAt) > 3 {
+                    // 轮询看到正文但「文本没变」→ 以前直接不查；可屏幕上一条线都没有时，
+                    // 这就是「读到正文却从不送检」的死角（知澜 11-25 Mail 实况）。
+                    // 每 3 秒最多补查一次，避免变成忙轮询。
+                    self.lastPollForcedAt = Date()
+                    self.scheduleCheck(delay: 0.15)
+                }
             }
         }
     }
@@ -889,7 +900,7 @@ final class InlineController {
             mailPicked = true
             cand = cb.el
             let best = (el: cb.el, len: cb.len, hasField: true)
-            composeTarget[pid] = (Date().addingTimeInterval(30), cb.win)
+            composeTarget[pid] = ComposeLock(expiry: Date().addingTimeInterval(30), window: cb.win)
             role = attrString(cb.el, kAXRoleAttribute as String) ?? ""
             emit(CheckEvent(kind: "attach-mail-body", pid: pid, app: appName(pid), role: role,
                             textLen: cb.len, sentenceLen: cb.blocks,
@@ -1083,7 +1094,7 @@ final class InlineController {
             picked = "mail-compose-body"
             diag.lastPath = picked
             AppLog.info("check", "attach-mail-body win=\"\(cb.title)\" textLen=\(cb.len) 块\(cb.blocks) compose=true")
-            composeTarget[pid] = (Date().addingTimeInterval(30), cb.win)   // 锁定 30 秒
+            composeTarget[pid] = ComposeLock(expiry: Date().addingTimeInterval(30), window: cb.win)
         }
 
         // 选路证据：哪一级接上的，一眼可见（爹地问「Mail 为什么不画线」时直接看这行）
@@ -1116,15 +1127,32 @@ final class InlineController {
         // compose 锁定（30s）：attach-mail-body 命中过，就不许后续轮把同一封判成阅读窗。
         // 解锁：写窗消失（composeBody 取不到）或超时 —— 关窗再开新窗不会串（知澜要求立刻解）。
         var composeLocked = false
-        if let lock = composeTarget[pid] {
-            if Date() > lock.expiry || MailProbe.composeBody(pid: pid) == nil {
+        if var lock = composeTarget[pid] {
+            let cb = MailProbe.composeBody(pid: pid)
+            if Date() > lock.expiry {
                 composeTarget[pid] = nil
-                AppLog.info("gate", "compose-lock 解除：超时或写窗已关闭")
+                AppLog.info("gate", "compose-lock 解除：超时 30s")
+            } else if cb == nil {
+                // 单次取不到不解锁：Mail 的 AX 会短暂沉默，一 nil 就解锁 → 立刻掉进 reading-window
+                lock.nilStreak += 1
+                composeTarget[pid] = lock
+                if lock.nilStreak >= 3 {
+                    composeTarget[pid] = nil
+                    AppLog.info("gate", "compose-lock 解除：连续 3 次取不到写窗正文")
+                } else {
+                    composeLocked = true
+                    AppLog.info("gate", "compose-lock 保持（本轮取不到正文，第 \(lock.nilStreak) 次）")
+                }
             } else {
+                lock.nilStreak = 0
+                composeTarget[pid] = lock
                 composeLocked = true
-                if let cb = MailProbe.composeBody(pid: pid) { el = cb.el }
+                el = cb!.el
                 AppLog.info("gate", "compose-lock 生效（剩余 \(Int(lock.expiry.timeIntervalSinceNow))s）—— 不判 readonly")
             }
+        } else if appName(pid) == "Mail", composeByTitle || composeBySignal {
+            composeLocked = true
+            AppLog.info("gate", "compose-lock 隐式：标题/信号判为写信窗，不判 readonly")
         }
         if !composeLocked, !InlineGate.shouldCheck(editable: gateEditable,
                                    isWebBody: WebText.isWebBody(el),
@@ -1144,6 +1172,9 @@ final class InlineController {
                 reason = "reading-window"
             } else {
                 reason = "no-compose-signal(role=\(elRole) signal=\(composeBySignal) title=\(composeByTitle))"
+            }
+            if appName(pid) == "Mail" {
+                AppLog.info("gate", "skip-readonly 前状态：lock=\(composeTarget[pid] == nil ? "nil" : "存在") title=\(composeByTitle) signal=\(composeBySignal) reading=\(mailReading)")
             }
             emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: elRole,
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
