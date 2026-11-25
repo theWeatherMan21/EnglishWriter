@@ -1581,7 +1581,27 @@ final class InlineController {
         }
         blocks = blks
         webCheckRunning = true
-        lastText = blks.map(\.text).joined(separator: "\n")
+        // 必须和送检文本逐字一致（marker 模式会被逐行遮蔽，遮蔽后长度可能变），
+        // 否则 items 的 utf16Range 映到未遮蔽文本上会错位 → 位置算不出（11-25 实测 rects=0）。
+        // marker 单块模式：整篇带签名（多语种），不能整篇按语言门控一票否决 ——
+        // 改成逐行判定，非英文行用等长空格遮蔽（偏移不变，引擎看不到那些行）。
+        let markerMode = (blks.count == 1 && WebText.isWebBody(blks[0].element))
+        func maskForeignLines(_ text: String) -> String {
+            let ns = text as NSString
+            var out = ""
+            var loc = 0
+            while loc < ns.length {
+                let lineRange = ns.lineRange(for: NSRange(location: loc, length: 0))
+                let line = ns.substring(with: lineRange)
+                let keep = LanguageGate.cjkRatio(line) < 0.30 &&
+                    (LanguageGate.isEnglish(line) || line.trimmingCharacters(in: .whitespacesAndNewlines).count < 12)
+                out += keep ? line : String(repeating: " ", count: (line as NSString).length)
+                loc = lineRange.location + lineRange.length
+            }
+            return out
+        }
+        let maskedForEngine = markerMode ? blks.map { maskForeignLines($0.text) } : blks.map { $0.text }
+        lastText = maskedForEngine.joined(separator: "\n")
         diag.lastTextLen = (lastText as NSString).length
         diag.lastPath = "statictext(块\(blks.count))"
         diag.checks += 1
@@ -1610,25 +1630,10 @@ final class InlineController {
         var texts: [String] = []
         var idxs: [Int] = []
         let joinLimit = 8000
-        // marker 单块模式：整篇带签名（多语种），不能整篇按语言门控一票否决 ——
-        // 改成逐行判定，非英文行用等长空格遮蔽（偏移不变，引擎看不到那些行）。
-        let markerMode = (blks.count == 1 && WebText.isWebBody(blks[0].element))
-        func maskForeignLines(_ text: String) -> String {
-            let ns = text as NSString
-            var out = ""
-            var loc = 0
-            while loc < ns.length {
-                let lineRange = ns.lineRange(for: NSRange(location: loc, length: 0))
-                let line = ns.substring(with: lineRange)
-                let keep = LanguageGate.cjkRatio(line) < 0.30 &&
-                    (LanguageGate.isEnglish(line) || line.trimmingCharacters(in: .whitespacesAndNewlines).count < 12)
-                out += keep ? line : String(repeating: " ", count: (line as NSString).length)
-                loc = lineRange.location + lineRange.length
-            }
-            return out
-        }
+        var maskedTexts: [String] = []
         for (bi, b) in blks.enumerated() {
             let t = markerMode ? maskForeignLines(b.text) : b.text
+            maskedTexts.append(t)
             let blen = (t as NSString).length
             if blen < 12 || !t.contains(" ") { continue }
             guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }

@@ -74,6 +74,20 @@ enum AXMarker {
         return (nil, ms, how, "AXStringForTextMarkerRange 失败 err=\(e.rawValue)")
     }
 
+    /// 在元素里找第一个 AXWebArea（只读，深度 12）
+    static func firstWebArea(in el: AXUIElement, depth: Int = 12) -> AXUIElement? {
+        if depth <= 0 { return nil }
+        var r: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &r) == .success,
+           let role = r as? String, role == "AXWebArea" { return el }
+        var ch: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &ch) == .success,
+           let kids = ch as? [AXUIElement] {
+            for k in kids { if let f = firstWebArea(in: k, depth: depth - 1) { return f } }
+        }
+        return nil
+    }
+
     /// 第 index 个字符的 marker
     static func marker(at index: Int, in webArea: AXUIElement) -> CFTypeRef? {
         var out: CFTypeRef?
@@ -96,10 +110,14 @@ enum AXMarker {
         return nil
     }
 
+    /// 最近一次 bounds 失败的错误码（探针用）
+    static var lastBoundsErr: AXError = .success
+
     static func bounds(of range: CFTypeRef, in webArea: AXUIElement) -> CGRect? {
         var out: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(webArea, "AXBoundsForTextMarkerRange" as CFString, range, &out) == .success,
-              let v = out, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        let e = AXUIElementCopyParameterizedAttributeValue(webArea, "AXBoundsForTextMarkerRange" as CFString, range, &out)
+        lastBoundsErr = e
+        guard e == .success, let v = out, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
         var r = CGRect.zero
         return AXValueGetValue(v as! AXValue, .cgRect, &r) ? r : nil
     }
@@ -179,6 +197,9 @@ enum AXMarker {
                 let probeWord = "office"
                 let r = ns.range(of: probeWord)
                 if r.location != NSNotFound {
+                    // 直连验证：items 走的就是这条（NSRange → rects）
+                    let rr = rects(for: r, in: body)
+                    print("rects(\(probeWord)) = \(rr.map { String(format: "(%.0f,%.0f,%.0f,%.0f)", $0.origin.x, $0.origin.y, $0.size.width, $0.size.height) })")
                     let t1 = Date()
                     if let rg = rangeFor(start: r.location, end: r.location + r.length, in: body),
                        let box = bounds(of: rg, in: body) {
@@ -187,6 +208,32 @@ enum AXMarker {
                                      box.origin.x, box.origin.y, box.size.width, box.size.height, bms))
                     } else {
                         print("bounds \(probeWord) = 取不到（marker/range/bounds 有一环失败）")
+                    }
+                }
+            }
+            // 逐个窗口试一遍：验证「前台窗口给几何、被遮挡窗口不给」是不是硬限制
+            if let app = NSRunningApplication(processIdentifier: pid) {
+                _ = app
+                let axApp = AXUIElementCreateApplication(pid)
+                var wins: CFTypeRef?
+                let we = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &wins)
+                if we == .success, let arr = wins, CFGetTypeID(arr) == CFArrayGetTypeID() {
+                    let ws = (0..<CFArrayGetCount(arr as! CFArray)).map { CFArrayGetValueAtIndex(arr as! CFArray, $0) }
+                        .map { unsafeBitCast($0, to: AXUIElement.self) }
+                    for (i, w) in ws.enumerated() {
+                        var t: CFTypeRef?
+                        AXUIElementCopyAttributeValue(w, kAXTitleAttribute as CFString, &t)
+                        let title = (t as? String) ?? "?"
+                        if let area = firstWebArea(in: w),
+                           let txt = fullText(of: area).text, !txt.isEmpty,
+                           let rg = rangeFor(start: 0, end: min(4, (txt as NSString).length), in: area) {
+                            let box = bounds(of: rg, in: area)
+                            print(String(format: "  窗口[%d] %@ len=%d bounds=%@ err=%d", i, title, (txt as NSString).length,
+                                         box.map { String(format: "(%.0f,%.0f,%.0f,%.0f)", $0.origin.x, $0.origin.y, $0.size.width, $0.size.height) } ?? "nil",
+                                         lastBoundsErr.rawValue))
+                        } else {
+                            print("  窗口[\(i)] \(title) 无 WebArea/无文本")
+                        }
                     }
                 }
             }
