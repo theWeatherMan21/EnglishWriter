@@ -208,7 +208,8 @@ final class UnderlineOverlay: NSPanel {
         canvas.flashRect = flash?.offsetBy(dx: -box.minX, dy: -box.minY)
         canvas.needsDisplay = true
         let sig = specs.map { "\($0.itemID):\(Int($0.rect.minX)),\(Int($0.rect.minY))" }.joined(separator: "|")
-        if sig != lastDrawSig {
+        // 新进程第一笔必须无条件留痕：sig 从 nil 起，别让「签名没变」吃掉第一次证据（知澜 11-25）
+        if lastDrawSig == nil || lastDrawSig != sig {
             lastDrawSig = sig
             let brief = specs.prefix(4).map { "\($0.kind)@\(Int($0.rect.minX)),\(Int($0.rect.minY)),\(Int($0.rect.width)),\(Int($0.rect.height))" }.joined(separator: " ")
             CheckLog.append(.init(kind: "underline-draw", pid: specs.first?.ownerPid ?? 0,
@@ -249,7 +250,7 @@ final class UnderlineOverlay: NSPanel {
     /// 现在改成 60s 兜底 + 宿主切换立刻灭（见 alive 的 frontPid 判据）。
     // 线只活到「下一次确认」为止：3 秒内没有新结果就自灭（爹地 11-23 报「下划线滞留」）
     private let specTTL: TimeInterval = 8.0      // 知澜定 8 秒兜底：同文本没结果也不许秒灭
-    private var lastDrawSig = ""
+    private var lastDrawSig: String? = nil
     private var ttlTimer: Timer?
 
     /// 清掉所有超过 TTL 没被确认的线（滚走 / 窗口移走 / 切 App 的残影兜底）
@@ -302,7 +303,7 @@ final class UnderlineOverlay: NSPanel {
         orderOut(nil)
         silent = false          // 一次静默只对一次检查生效，别让后面的真机画线被静默掉
         if had > 0 {
-            lastDrawSig = ""
+            lastDrawSig = nil
             CheckLog.append(.init(kind: "underline-clear", pid: 0, app: "-", role: "-",
                                   textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                                   elapsed: "-", err: "reason=\(reason) 掉了\(had)条", at: Date()))

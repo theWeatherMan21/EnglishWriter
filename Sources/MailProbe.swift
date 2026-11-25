@@ -435,10 +435,17 @@ enum MailProbe {
             AXUIElementSetMessagingTimeout(appEl, WindowPolicy.timeout)
             var raw: CFTypeRef?
             if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &raw) == .success,
-               let wins = raw as? [AXUIElement], !wins.isEmpty {
-                let real = wins.filter { roleOf($0) == "AXWindow" }
-                if !real.isEmpty { return real }
-                if attempt == WindowPolicy.retries - 1 { return wins }   // 占位里也挂着 children
+               let arr = raw, CFGetTypeID(arr) == CFArrayGetTypeID() {
+                // 不能写 `as? [AXUIElement]`：CFArray 里是 CFTypeRef，Mail 忙时这个强转直接失败
+                // → windows 恒为 0（11-25 实测：osascript 数 4 个，这里读 0，还「两轮一致」）。
+                let wins = (0..<CFArrayGetCount(arr as! CFArray)).map {
+                    unsafeBitCast(CFArrayGetValueAtIndex(arr as! CFArray, $0), to: AXUIElement.self)
+                }
+                if !wins.isEmpty {
+                    let real = wins.filter { roleOf($0) == "AXWindow" }
+                    if !real.isEmpty { return real }
+                    if attempt == WindowPolicy.retries - 1 { return wins }
+                }
             }
             AXUIElementSetMessagingTimeout(appEl, WindowPolicy.timeout)
             if let kids = attr(appEl, kAXChildrenAttribute as String) as? [AXUIElement] {
@@ -595,7 +602,7 @@ extension MailProbe {
             let isCompose = isComposeWindow(window: w) || windowTitleLooksCompose(w)
             guard isCompose else { continue }
             let title = str(w, kAXTitleAttribute as String) ?? "?"
-            for node in descendants(w, depth: 14, budget: 900) where WebText.isWebBody(node) {
+            for node in webAreasFast(pid: pid, window: w) {
                 // 走 marker 通道（11-25 真机验证：一次调用 0ms 拿到全文）。
                 // 旧路 WebText.blocks 会遍历 2000+ 个 AX 节点（实测 AXChildren 1353ms×2027），
                 // 既慢又把 Mail 拖到读不出东西。marker 读不到才退回块遍历（兼容旧系统）。
@@ -617,6 +624,39 @@ extension MailProbe {
             }
         }
         return best.map { ($0.el, $0.win, $0.len, $0.title, $0.blocks, $0.list) }
+    }
+
+    /// 快速找 WebArea：① 焦点元素往上找（3~5 跳，一次写信几乎必中）
+    /// ② 退到窗口浅层 BFS（深度 5、预算 80 个节点）。
+    /// 旧写法 descendants(depth: 14, budget: 900) 每轮扫全树，实测 AXChildren 1072ms×1444（知澜 11-25）。
+    static func webAreasFast(pid: pid_t, window w: AXUIElement) -> [AXUIElement] {
+        var out: [AXUIElement] = []
+        let appEl = AXUIElementCreateApplication(pid)
+        if var cur = attr(appEl, kAXFocusedUIElementAttribute as String), CFGetTypeID(cur) == AXUIElementGetTypeID() {
+            var node = cur as! AXUIElement
+            for _ in 0..<12 {
+                if WebText.isWebBody(node) { out.append(node); break }
+                guard let p = attr(node, kAXParentAttribute as String), CFGetTypeID(p) == AXUIElementGetTypeID() else { break }
+                node = p as! AXUIElement
+            }
+        }
+        if out.isEmpty {
+            var queue: [(AXUIElement, Int)] = [(w, 0)]
+            var budget = 80
+            while !queue.isEmpty, budget > 0 {
+                let (n, d) = queue.removeFirst()
+                budget -= 1
+                if WebText.isWebBody(n) { out.append(n); break }
+                if d >= 5 { continue }
+                if let ch = attr(n, kAXChildrenAttribute as String), CFGetTypeID(ch) == CFArrayGetTypeID() {
+                    let arr = ch as! CFArray
+                    for i in 0..<CFArrayGetCount(arr) {
+                        queue.append((unsafeBitCast(CFArrayGetValueAtIndex(arr, i), to: AXUIElement.self), d + 1))
+                    }
+                }
+            }
+        }
+        return out
     }
 
     /// 当前焦点窗口（读不到就 nil）

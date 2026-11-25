@@ -1188,7 +1188,10 @@ final class InlineController {
         // 门控只管「这个 App 要不要看」，不在门控上按尺寸打分（11-23 退回）：
         // 面积刻度会把真正的写信窗也判成「不够大」；正文收窄交给
         // WebText.filterOutsideNavigation（按几何丢块，不误伤）。
-        let hasEditableWebField = WebText.isWebBody(el) && AXInline.textField(in: el) != nil
+        // Mail 写窗：composeBody 已经确认是可编辑正文，不用再扫一遍树找输入框
+        // （AXInline.textField 深度 8 全树扫，实测 AXChildren 1718 次/轮，知澜 11-25）。
+        let mailComposeKnown = (appName(pid) == "Mail") && MailProbe.composeBody(pid: pid) != nil
+        let hasEditableWebField = WebText.isWebBody(el) && (mailComposeKnown || AXInline.textField(in: el) != nil)
         // Mail 的阅读窗也有可编辑节点（搜索框），所以要问「前台窗口有没有发送按钮」。
         // 这条不按尺寸打分：小窗口的写信区会被面积阈值误杀（11-23 退回那条阈值）。
         // 两个独立判据只要有一个说是写信窗，就不按「阅读窗」处理：
@@ -1777,6 +1780,7 @@ final class InlineController {
             overlay.clear(reason: items.isEmpty ? "items=0 指纹变了/超时8s" : "坐标全读不到(\(rectFailed))")
             return
         }
+        diag.lastRectCount = specs.count
         overlay.render(specs)
         overlayPid = pid
         lastRenderFingerprint = Self.fingerprint(lastText)
@@ -2707,10 +2711,13 @@ final class InlineController {
     // MARK: 渲染
 
     private func apply(items newItems: [DiffItem], sentenceRange: NSRange, element el: AXUIElement, pid: pid_t) {
+        // 本轮真实画出的条数（不能读 overlay.specs.count —— 那是上一轮的残留，
+        // 知澜 11-25 抓到的「日志说画了、其实没画」）
+        var appliedRects = 0
         defer {
             emit(CheckEvent(kind: "render", pid: pid, app: appName(pid), role: roleOf(el),
                             textLen: (lastText as NSString).length, sentenceLen: sentenceRange.length,
-                            itemCount: items.count, rectCount: overlay.specs.count,
+                            itemCount: items.count, rectCount: appliedRects,
                             elapsed: diag.lastElapsed,
                             err: diag.lastError == "-"
                                 ? items.prefix(4).map { "\($0.kind.rawValue):\($0.original)→\($0.replacement)" }.joined(separator: " | ")
@@ -2743,6 +2750,8 @@ final class InlineController {
         itemBlock = Array(repeating: -1, count: cleaned.count)
         diag.lastRectCount = specs.count
         guard !specs.isEmpty else { diag.lastError = "算不出屏幕矩形"; return }
+        appliedRects = specs.count
+        diag.lastRectCount = specs.count
         overlay.render(specs)
         overlayPid = pid
         printRects(specs, items: cleaned)
