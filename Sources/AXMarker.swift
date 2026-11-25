@@ -66,6 +66,11 @@ enum AXMarker {
     /// 探针：--axmarker-probe [邮箱/窗口名无关，只找 Mail 写窗]
     static func probe(_ args: [String]) -> Int32 {
         print("--- AXTextMarker 通道探针（只读，不建窗/不激活/不敲键）---")
+        // 口径与 --probe-mail 一致：锁屏时 AX 树只剩骨架，不能报「没有窗口」误导人
+        if ScreenLock.isLocked {
+            print("SKIP screen-locked  --axmarker-probe：屏幕已锁，AX 树只剩骨架，本次不判定（不是失败）")
+            return 0
+        }
         print("符号：AXStringForTextMarkerRange=\(stringForRange != nil ? "有" : "无")"
               + "（本机已实测无此导出符号，改走参数化属性）")
         // Mail 没开窗口时，退到任何有 WebArea 的 App（只读，用来看这套 API 在不在本机）
