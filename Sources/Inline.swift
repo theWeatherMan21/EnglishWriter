@@ -939,15 +939,35 @@ final class InlineController {
             return
         }
         attachRetries[pid] = 0
-        if let old = observedElement, CFEqual(old, el) { return }
+        // 锁定期间不许用「只读元素」覆盖写窗正文：知澜 11-25 实测
+        // attach-mail-body textLen=232 块9 → 紧接着 attach-el textLen=0 把 target 顶掉 → 从不送检。
+        if let lock = composeTarget[pid], Date() <= lock.expiry, !WebText.isWebBody(el) {
+            emit(CheckEvent(kind: "attach-el-ignored", pid: pid, app: appName(pid),
+                            role: attrString(el, kAXRoleAttribute as String) ?? "?",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "compose-lock 生效，忽略非正文元素（正文按 MailProbe.composeBody 取）", at: Date()))
+            scheduleCheck(delay: 0.2)     // 照旧检查一轮，别把已读到的正文丢掉
+            return
+        }
+        if let old = observedElement, CFEqual(old, el) {
+            // 元素没变 = 已经在挂着了。以前这里直接 return，于是「窗口开了但用户没再敲键」
+            // 就永远不会触发检查 —— 11-25 实况：读到 232 字，之后一条 blocks= 都没有。
+            scheduleCheck(delay: 0.2)
+            return
+        }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for n in [kAXValueChangedNotification, kAXSelectedTextChangedNotification] {
             AXObserverAddNotification(observer, el, n as CFString, refcon)
         }
         observedElement = el
         emit(CheckEvent(kind: "attach-el", pid: pid, app: appName(pid),
-                        role: attrString(el, kAXRoleAttribute as String) ?? "?", textLen: 0, sentenceLen: 0,
-                        itemCount: 0, rectCount: 0, elapsed: "-", err: "-", at: Date()))
+                        role: attrString(el, kAXRoleAttribute as String) ?? "?",
+                        textLen: (AXInline.fullText(of: el) as NSString?)?.length ?? 0, sentenceLen: 0,
+                        itemCount: 0, rectCount: 0, elapsed: "-",
+                        err: mailPicked ? "mail-body 已挂，立刻检查一次" : "-", at: Date()))
+        // 挂上就查一次：AX 通知只在「用户打字」时来，窗口刚开/刚聚焦不会来。
+        // 不主动查 = 读到正文却不送检（知澜 11-25 抓到的断点）。
+        scheduleCheck(delay: mailPicked ? 0.1 : 0.25)
     }
 
     private func detachObserver() {
