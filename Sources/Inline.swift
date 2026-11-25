@@ -536,7 +536,10 @@ final class InlineController {
             let apply = { [weak self] in
                 // 切 App：立刻清线（否则旧 App 的线留在屏幕上飘）
                 self?.overlay.clear(reason: "host-switch")
-                self?.lastFocusPid = app.processIdentifier
+                // EW_FORCE_PID 生效时不许被切 App 覆盖（无头调试旋钮，与 start() 同一口径）
+                if ProcessInfo.processInfo.environment["EW_FORCE_PID"] == nil {
+                    self?.lastFocusPid = app.processIdentifier
+                }
                 self?.attachObserver(pid: app.processIdentifier)
                 self?.scheduleQuickCheck(after: 0.08)   // 清完马上重画，不是留空白
             }
@@ -545,7 +548,13 @@ final class InlineController {
         // 启动即对齐前台 App：以前 lastFocusPid 只在「切 App 通知」里赋值，
         // 开机/重启后如果用户不再切 App，轮询永远对着 pid=0 空转 → 一条检查都没有
         // （11-25 实测：新装 pid 起来 1 分钟零检查）。
-        if let front = NSWorkspace.shared.frontmostApplication,
+        // 无头调试旋钮（EW_FORCE_PID=7016）：把检查目标固定到某进程，不激活、不建窗。
+        // 只影响检查对象，不改判定逻辑；不设这个 env 时行为与原来完全一致。
+        if let s = ProcessInfo.processInfo.environment["EW_FORCE_PID"], let p = pid_t(s), p > 0 {
+            lastFocusPid = p
+            attachObserver(pid: p)
+            AppLog.info("check", "EW_FORCE_PID=\(p) app=\(appName(p)) —— 强制检查目标")
+        } else if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
             attachObserver(pid: front.processIdentifier)
@@ -560,7 +569,8 @@ final class InlineController {
                 self.checkNow()
             }
         }
-        if let front = NSWorkspace.shared.frontmostApplication,
+        if ProcessInfo.processInfo.environment["EW_FORCE_PID"] == nil,
+           let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
             attachObserver(pid: front.processIdentifier)
@@ -857,7 +867,8 @@ final class InlineController {
                 self.checkNow()
             }
         }
-        if let front = NSWorkspace.shared.frontmostApplication,
+        if ProcessInfo.processInfo.environment["EW_FORCE_PID"] == nil,
+           let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             lastFocusPid = front.processIdentifier
             attachObserver(pid: front.processIdentifier)
@@ -1510,7 +1521,14 @@ final class InlineController {
         // 预读块直接用：composeBody 已经读过一遍（2.5s 预算），不再遍历第二次 ——
         // 同一份正文读两遍，任何一遍失败就整片消失，这是今天六次静默失败的共同结构。
         var visible: [WebText.Block]
-        if let pre = preBlocks, !pre.isEmpty {
+        // Mail 写窗：marker 一次取全文，整篇当一个块（偏移天然全局，画线走 marker bounds）。
+        // 旧路是 255 个叶子逐节点遍历 + 每块算 frame，11-25 实测 0 块、满屏 abandon。
+        if trusted, let mk = AXMarker.fullText(of: body).text, !mk.isEmpty {
+            emit(CheckEvent(kind: "axmarker-read", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: mk.count, sentenceLen: 0, itemCount: 1, rectCount: 0,
+                            elapsed: "-", err: "marker 全文 → 单块送检", at: Date()))
+            visible = [WebText.Block(element: body, text: mk)]
+        } else if let pre = preBlocks, !pre.isEmpty {
             emit(CheckEvent(kind: "blocks-prefetched", pid: pid, app: appName(pid), role: "AXWebArea",
                             textLen: 0, sentenceLen: 0, itemCount: pre.count, rectCount: 0,
                             elapsed: "-", err: "沿用 composeBody 预读的 \(pre.count) 块", at: Date()))
@@ -1585,12 +1603,29 @@ final class InlineController {
         var texts: [String] = []
         var idxs: [Int] = []
         let joinLimit = 8000
+        // marker 单块模式：整篇带签名（多语种），不能整篇按语言门控一票否决 ——
+        // 改成逐行判定，非英文行用等长空格遮蔽（偏移不变，引擎看不到那些行）。
+        let markerMode = (blks.count == 1 && WebText.isWebBody(blks[0].element))
+        func maskForeignLines(_ text: String) -> String {
+            let ns = text as NSString
+            var out = ""
+            var loc = 0
+            while loc < ns.length {
+                let lineRange = ns.lineRange(for: NSRange(location: loc, length: 0))
+                let line = ns.substring(with: lineRange)
+                let keep = LanguageGate.cjkRatio(line) < 0.30 &&
+                    (LanguageGate.isEnglish(line) || line.trimmingCharacters(in: .whitespacesAndNewlines).count < 12)
+                out += keep ? line : String(repeating: " ", count: (line as NSString).length)
+                loc = lineRange.location + lineRange.length
+            }
+            return out
+        }
         for (bi, b) in blks.enumerated() {
-            let t = b.text
+            let t = markerMode ? maskForeignLines(b.text) : b.text
             let blen = (t as NSString).length
             if blen < 12 || !t.contains(" ") { continue }
             guard t.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 else { continue }
-            if !LanguageGate.isEnglish(t) { cjkSkipped += 1; continue }
+            if !markerMode, !LanguageGate.isEnglish(t) { cjkSkipped += 1; continue }
             let lowered = t.lowercased()
             if sigMarkers.contains(where: { lowered.hasPrefix($0.lowercased()) }) { continue }
             texts.append(t); idxs.append(bi)
@@ -1680,7 +1715,9 @@ final class InlineController {
                                                           key: { "\($0.1)|\($0.0.original.lowercased())" }) {
             let b = blks[bi]
             if IgnoreStore.shared.isIgnored(original: it.original, replacement: it.replacement) { continue }
-            let rects = WebText.lineRects(for: it.utf16Range, in: b)
+            let rects: [CGRect] = (blks.count == 1 && WebText.isWebBody(b.element))
+                ? AXMarker.rects(for: it.utf16Range, in: b.element)
+                : WebText.lineRects(for: it.utf16Range, in: b)
             guard !rects.isEmpty else { rectFailed += 1; continue }   // 有 item 但坐标读不到：别静默
             let id = kept.count
             kept.append(it)

@@ -104,6 +104,24 @@ enum AXMarker {
         return AXValueGetValue(v as! AXValue, .cgRect, &r) ? r : nil
     }
 
+    /// 一个字符区间 → 屏幕矩形数组（Mail 画线用；一条 item 通常 1 个矩形）
+    static func rects(for range: NSRange, in webArea: AXUIElement) -> [CGRect] {
+        guard range.length > 0,
+              let rg = rangeFor(start: range.location, end: range.location + range.length, in: webArea),
+              let box = bounds(of: rg, in: webArea), box.width > 0, box.height > 0 else {
+            // 整段算不出（跨行/跨段）→ 逐字符并集，最多 40 个字符
+            var union: CGRect?
+            for i in range.location..<min(range.location + range.length, range.location + 40) {
+                if let rgi = rangeFor(start: i, end: i + 1, in: webArea),
+                   let b = bounds(of: rgi, in: webArea), b.width > 0 {
+                    union = union.map { $0.union(b) } ?? b
+                }
+            }
+            return union.map { [$0] } ?? []
+        }
+        return [box]
+    }
+
     /// 探针：--axmarker-probe [邮箱/窗口名无关，只找 Mail 写窗]
     static func probe(_ args: [String]) -> Int32 {
         print("--- AXTextMarker 通道探针（只读，不建窗/不激活/不敲键）---")

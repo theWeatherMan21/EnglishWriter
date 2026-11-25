@@ -571,7 +571,22 @@ extension MailProbe {
     /// 而 Mail 的收件人/主题是原生 AXTextField、不在 WebArea 里 → hasField 恒 false →
     /// 退化成「取最长」，于是一定选到那封 3007 字带引用历史的长信（11-25 实况）。
     /// 顺序：焦点窗口 > 最近有输入的写窗 > 最长。
+    // composeBody 每次都要在窗口里找 WebArea（descendants 深度 14），Mail 忙时一轮要 1.3s+，
+    // 而 attach/轮询/fastpath 一秒内会调多次 → 三条同时抓 AXChildren，互相把对方拖死
+    // （11-25 实测：AXChildren 1347ms × 2115 次，fastpath 每次 composeBody 都超时返回 nil）。
+    // 2 秒内复用同一结果：窗口/正文在这段时间里不会变，变了文本指纹会兜住。
+    private static var composeCache: (pid: pid_t, at: Date, value: (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, blockList: [WebText.Block]))?
+
     static func composeBody(pid: pid_t) -> (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, blockList: [WebText.Block])? {
+        if let c = composeCache, c.pid == pid, Date().timeIntervalSince(c.at) < 2.0 {
+            return c.value
+        }
+        let v = composeBodyUncached(pid: pid)
+        if let v { composeCache = (pid, Date(), v) } else { composeCache = nil }
+        return v
+    }
+
+    private static func composeBodyUncached(pid: pid_t) -> (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, blockList: [WebText.Block])? {
         let stable = stableWindows(pid)
         guard !stable.wins.isEmpty else { return nil }
         let focusedWin = focusedWindow(pid: pid)
@@ -581,10 +596,19 @@ extension MailProbe {
             guard isCompose else { continue }
             let title = str(w, kAXTitleAttribute as String) ?? "?"
             for node in descendants(w, depth: 14, budget: 900) where WebText.isWebBody(node) {
-                // 预算放宽到 2.5s：WebText.blocks 默认 deadline 0.6s，配 150ms 单次 AX 超时，
-                // 4 次 AXChildren 就吃光 → 返回 0 块（知澜 11-25 抓到的静默 0 块根因）。
-                let blks = WebText.blocks(of: node, deadline: 2.5)
-                let len = blks.reduce(0) { $0 + ($1.text as NSString).length }
+                // 走 marker 通道（11-25 真机验证：一次调用 0ms 拿到全文）。
+                // 旧路 WebText.blocks 会遍历 2000+ 个 AX 节点（实测 AXChildren 1353ms×2027），
+                // 既慢又把 Mail 拖到读不出东西。marker 读不到才退回块遍历（兼容旧系统）。
+                let markerText = AXMarker.fullText(of: node).text
+                let blks: [WebText.Block]
+                let len: Int
+                if let mt = markerText, !mt.isEmpty {
+                    len = (mt as NSString).length
+                    blks = [WebText.Block(element: node, text: mt)]
+                } else {
+                    blks = WebText.blocks(of: node, deadline: 2.5)
+                    len = blks.reduce(0) { $0 + ($1.text as NSString).length }
+                }
                 if len < 8 { continue }
                 var score = len
                 if let f = focusedWin, CFEqual(f, w) { score += 5_000_000 }
