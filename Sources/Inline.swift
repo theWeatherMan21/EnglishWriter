@@ -1894,6 +1894,22 @@ final class InlineController {
                                                       text: t, in: block, pid: self?.currentPid ?? 0) ?? false
                               })
         }
+        if let el = currentElement, WebText.isWebBody(el) {
+            // WebArea 走 writeWebBlock（Mail 那里已经强制键盘逐字键入），
+            // 绝不走 layeredWrite 的 AX 写回：Mail 明确回「该输入框不接受 AX 写入」（知澜 11-25）。
+            let pid = currentPid
+            let synthetic = WebText.Block(element: el, text: lastText)
+            return ClosureDoc(pid: pid, canReadBack: true,
+                              read: { WebText.liveText(of: el) ?? self.lastText },
+                              writeRange: { [weak self] r, t in
+                                  self?.writeWebBlock(range: r, text: t, in: synthetic, pid: pid) ?? false
+                              },
+                              writeFull: { [weak self] t in
+                                  let n = (self?.lastText as NSString?)?.length ?? 0
+                                  return self?.writeWebBlock(range: NSRange(location: 0, length: n), text: t,
+                                                             in: synthetic, pid: pid) ?? false
+                              })
+        }
         if let el = currentElement {
             let pid = currentPid
             let readable = !(AXInline.fullText(of: el) ?? "").isEmpty
