@@ -227,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let args = realShotArgs {
             if args.contains("--axcheck") || args.contains("--axwatch") || args.contains("--axaccept")
                 || args.contains("--axprobe-chrome") || args.contains("--passive") || args.contains("--probe-mail")
-                || args.contains("--mail-selftest") {
+                || args.contains("--mail-selftest") || args.contains("--axmarker-probe") {
                 // A 层：AXValue 直写 → checkNow；B 层：只监听真人键入。两都不建窗口/不激活/不敲键/不截屏
                 Task { @MainActor in
                     if args.contains("--axwatch") { await AXCheck.watch(args) }
@@ -235,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else if args.contains("--axprobe-chrome") { await ChromeProbe.run(args) }
                     else if args.contains("--passive") { await Passive.run(args) }
                     else if args.contains("--mail-selftest") { exit(MailSelfTest.run(args)) }
+                    else if args.contains("--axmarker-probe") { exit(AXMarker.probe(args)) }
                     else if args.contains("--probe-mail"), args.contains("--wait-english") {
                         let ok = await MailProbe.waitForEnglish(args); exit(ok ? 0 : 1)
                     }
@@ -649,7 +650,7 @@ application.setActivationPolicy(.accessory)
 // 真机验收器：--realshot <outDir> …，由 App 自己发起（TCC 授权只认这个二进制）
 if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--axprobe")
     || argv.contains("--axcheck") || argv.contains("--axwatch") || argv.contains("--axaccept") || argv.contains("--passive")
-    || argv.contains("--probe-mail")
+    || argv.contains("--probe-mail") || argv.contains("--axmarker-probe")
     || argv.contains("--mail-selftest")
     || argv.contains("--axprobe-chrome") {
     appDelegate.realShotArgs = argv
@@ -658,7 +659,7 @@ if argv.contains("--realshot") || argv.contains("--axdump") || argv.contains("--
 // 两个实例同时跑 = 两个全局点击监听抢同一批点击（11-19 实测：第一次被空 specs 的实例接住，
 // 第二次谁都没接到）。所以：常驻模式用一个文件锁，抢不到锁就退出。
 let cliFlags = ["--selftest", "--mail-selftest", "--kpi", "--e2e-report", "--keywin", "--quality", "--realshot", "--axdump", "--axprobe",
-                "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome",
+                "--axcheck", "--axwatch", "--axaccept", "--probe-mail", "--passive", "--axprobe-chrome", "--axmarker-probe",
                 "--sidebar-snapshot", "--settings-snapshot", "--ball-snapshot", "--status-probe"]
 let isCLIMode = argv.contains { cliFlags.contains($0) }
 if !isCLIMode {
