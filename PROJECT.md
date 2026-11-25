@@ -282,3 +282,61 @@ accept(itemID: 0) → ok
 
 **已知引擎边界**：LanguageTool 对 `I send this to your email,` 在 `level=picky` 下 **0 条**（`send→sent` 需要时间状语类上下文才报）。
 所以「这一封没画线」不等于漏检 —— 先 `curl /v2/check` 复核原文，再判我们的链路。
+
+## 10. Mail 看线链：八版复盘与方向修正（2026-11-25）
+
+### 10.1 一句话结论
+
+Mail 写信窗「读出正文 → 送检 → 画线」这条链，**从未在真机上通过一次**。
+11-25 一天改到第八版，每修一层露出下一层；最终指向的不是某一行代码，而是**方法本身错了**：
+我们逐节点遍历 AX 树（255 个叶子、每节点 2–3 次跨进程调用）在规格上就不该做。
+
+### 10.2 八版链条（每层断点 + 形态）
+
+| 版本 | 修的点 | 下一层暴露的问题 |
+|---|---|---|
+| `54915d4` | specTTL 3s→8s、composeBody 选窗、skip-readonly 分因 | 选了写窗但从不触发检查 |
+| `52f500b` | 挂 AXObserver 即查一次；锁定期间不许只读元素顶掉 target | 有正文但被 reading-window 判死 |
+| `7712b26` | 单次 nil 不解锁；隐式锁定；web-poll 补查 | no-editable-region 又拦一道 |
+| `36f5dfb` | 五道门合并成 Mail 单通道 fastpath | fastpath 之后无 blocks= |
+| `bf1f3ca`/`f052180` | 可见块=0 兜底；blocks deadline 2.5s；窗口帧兜底 | 依然 0 块 |
+| `ad93275` | abandon 不丢结果（回填）；标量 80ms→300ms | App 0% CPU 躺平 |
+| `0c67d02` | frame 读不到不许当「不在窗口内」；fastpath 复用预读块 | fastpath 一条都没进 |
+| `80c13c9`/`6a66d46` | 入口留痕；启动对齐前台 App；轮询 Mail 先问写窗；poll-skip 留痕 | 入口终于可见，但链仍不通 |
+
+### 10.3 三类反复出现的 bug 形态（写进规范的）
+
+1. **同一份数据被读两遍**：composeBody 读一遍（宽预算）、checkWeb 再读一遍（紧预算），
+   谁先超时谁否决。→ 规范：**读过一次就传值，不许二次遍历**。
+2. **超时当失败、失败就丢弃**：`abandon attr` 丢结果、`blocks` 撞 deadline 返回空数组且零日志。
+   → 规范：**超时只能降级或回填，不许丢结果；任何提前 return 必须有日志**。
+3. **静默门控**：locked / loginwindow / 可见块=0 / 焦点读不到，全是一行不打的 return。
+   → 规范：**每个 guard 早退都要留一行，带判定量**（poll-skip / no-blocks / poll-nil 即此产物）。
+
+### 10.4 方向修正：AXTextMarker（2026-11-25 晚）
+
+WKWebView（Mail 正文）的 `kAXValue` 为空，正文是 AXStaticText 叶子；macOS 没有批量取子树的 AX API。
+WebKit 为此给了专用通道：
+
+```
+AXTextMarkerRangeForUIElement            属性 → range
+AXUIElementCopyParameterizedAttributeValue(webArea, "AXStringForTextMarkerRange", range, &out)   → 整篇纯文本
+AXUIElementCopyParameterizedAttributeValue(webArea, "AXBoundsForTextMarkerRange", range, &out)   → 一段的屏幕矩形
+AXSelectedTextMarkerRange                属性 → 设选区（写回用）
+```
+
+**本机实测（macOS 27.3）**：`dlsym("AXStringForTextMarkerRange") = 0x0`（C 小程序独立复核），
+该函数已不是导出符号 → **必须走参数化属性**，不能照抄开源项目的函数式调用。
+
+探针：`--axmarker-probe`（只读/不建窗/不激活/不敲键）会打印含 Marker 的参数化属性名，
+再打 `axmarker-read len=… ms=… 预览=…`。
+
+**状态：等一次真机跑**。验证时屏幕锁着（`SKIP screen-locked`，Mail 有 5 个窗口但 AX 树只剩骨架），
+按既有口径锁屏结论不作数。解锁后跑一条命令即可定方向。
+
+### 10.5 下一步（严格顺序，不许跳）
+
+1. 解锁后跑 `--axmarker-probe`：拿到 len / ms / Marker 属性名列表
+2. 只有 (1) 通过，才把「读正文 / 算位置 / 设选区」整条换成 marker；主链一次换完，不再逐门修
+3. 判据：`axmarker-read len=232` → `引擎回传 items=1` → `underline-draw n=1`
+4. 连续三次真机都有线，才对爹地说「看线可用了」
