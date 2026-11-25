@@ -90,7 +90,18 @@ enum MailProbe {
     ///   recipient 有收件人字段（To / 收件人 / Cc）
     /// 两个都留是因为不同 macOS 版本 Mail 的工具栏暴露方式不一样；
     /// 阅读窗两个都不命中，所以不会误判成写信。
+    private static var composeSigCache: (pid: pid_t, at: Date, value: (Bool, String))?
+
     static func composeSignal(pid: pid_t) -> (isCompose: Bool, reason: String) {
+        if let c = composeSigCache, c.pid == pid, Date().timeIntervalSince(c.at) < 2.0 {
+            return (c.value.0, c.value.1 + "（缓存）")
+        }
+        let v = composeSignalUncached(pid: pid)
+        composeSigCache = (pid, Date(), v)
+        return v
+    }
+
+    private static func composeSignalUncached(pid: pid_t) -> (isCompose: Bool, reason: String) {
         guard pid > 0 else { return (false, "pid=0") }
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.15)
@@ -680,11 +691,19 @@ extension MailProbe {
     }
 
     /// 单个窗口是不是写信窗（标题像写信，或里面有发送按钮）
+    /// 知澜 11-25：Mail 被我们打到 97.6% CPU、每轮 1458 次 AXChildren，
+    /// 根因就是这句话每一轮都把窗口树重扫一遍。现在：① 标题能判就不扫 ② 扫也有预算 ③ 结果按窗口缓存 2 秒。
+    private static var composeWinCache: [CFHashCode: (at: Date, ok: Bool)] = [:]
+
     static func isComposeWindow(window: AXUIElement) -> Bool {
         if windowTitleLooksCompose(window) { return true }
+        let key = CFHash(window)
+        if let c = composeWinCache[key], Date().timeIntervalSince(c.at) < 2.0 { return c.ok }
         var found = false
+        var budget = 60
         func walk(_ el: AXUIElement, _ depth: Int) {
-            if found || depth > 6 { return }
+            if found || depth > 6 || budget <= 0 { return }
+            budget -= 1
             if roleOf(el) == "AXButton",
                let t = attr(el, kAXTitleAttribute as String) as? String,
                ["Send", "发送", "Send Now"].contains(where: { t.localizedCaseInsensitiveContains($0) }) {
@@ -693,6 +712,8 @@ extension MailProbe {
             if let kids = attrChildren(el) as? [AXUIElement] { for k in kids { walk(k, depth + 1) } }
         }
         walk(window, 0)
+        composeWinCache[key] = (Date(), found)
+        if composeWinCache.count > 24 { composeWinCache.removeAll() }
         return found
     }
 }
