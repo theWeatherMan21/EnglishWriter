@@ -566,6 +566,41 @@ extension MailProbe {
     /// 在多个写信窗里挑出「正文包含指定文本」的那一个。
     /// 为什么必须按内容挑：爹地同时开着一封真实回复（模板正文），
     /// 只按「第一个写信窗」选目标会挑到他的真邮件——绝对不允许。
+    /// 不按内容、只按「这是不是写信窗」挑正文（App 自己检查时用）。
+    /// 为什么不能用 AXInline.bestWebBody：它的打分是 (hasField ? 1e6 : 0) + len，
+    /// 而 Mail 的收件人/主题是原生 AXTextField、不在 WebArea 里 → hasField 恒 false →
+    /// 退化成「取最长」，于是一定选到那封 3007 字带引用历史的长信（11-25 实况）。
+    /// 顺序：焦点窗口 > 最近有输入的写窗 > 最长。
+    static func composeBody(pid: pid_t) -> (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int)? {
+        let stable = stableWindows(pid)
+        guard !stable.wins.isEmpty else { return nil }
+        let focusedWin = focusedWindow(pid: pid)
+        var best: (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, score: Int)?
+        for w in stable.wins {
+            let isCompose = isComposeWindow(window: w) || windowTitleLooksCompose(w)
+            guard isCompose else { continue }
+            let title = str(w, kAXTitleAttribute as String) ?? "?"
+            for node in descendants(w, depth: 14, budget: 900) where WebText.isWebBody(node) {
+                let blks = WebText.blocks(of: node)
+                let len = blks.reduce(0) { $0 + ($1.text as NSString).length }
+                if len < 8 { continue }
+                var score = len
+                if let f = focusedWin, CFEqual(f, w) { score += 5_000_000 }
+                if let best, score <= best.score { continue }
+                best = (node, w, len, title, blks.count, score)
+            }
+        }
+        return best.map { ($0.el, $0.win, $0.len, $0.title, $0.blocks) }
+    }
+
+    /// 当前焦点窗口（读不到就 nil）
+    static func focusedWindow(pid: pid_t) -> AXUIElement? {
+        let appEl = AXUIElementCreateApplication(pid)
+        guard let v = attr(appEl, kAXFocusedWindowAttribute as String),
+              CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
+        return (v as! AXUIElement)
+    }
+
     static func composeWindow(pid: pid_t, containing needle: String) -> (window: AXUIElement, body: AXUIElement, text: String)? {
         let needleLower = needle.lowercased()
         for w in stableWindows(pid).wins {

@@ -417,6 +417,18 @@ final class InlineController {
     private(set) var items: [DiffItem] = []
     private(set) var lastText: String = ""
     private(set) var lastFocusPid: pid_t = 0
+    /// Mail 写窗锁定：attach-mail-body 命中就记 30 秒，期间不许把同一封判成阅读窗
+    private var composeTarget: [pid_t: (expiry: Date, window: AXUIElement)] = [:]
+    /// 上次成功画线时的正文指纹与时刻：单轮 items=0 但指纹没变 → 保留旧线（治「一闪而过」）
+    private var lastRenderFingerprint = ""
+    private var lastRenderAt = Date.distantPast
+    /// 本轮有 item 但坐标算不出（rects 为空）的条数，render-none 时写进日志
+    private var rectFailed = 0
+    static func fingerprint(_ t: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in t.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+        return String(h, radix: 16)
+    }
     /// 最近一次检查的落点：卡片接受/忽略要往这里写回
     private(set) var currentElement: AXUIElement?
     private(set) var currentPid: pid_t = 0
@@ -496,13 +508,13 @@ final class InlineController {
         // 滚动一起手就清线，80ms 后按新位置重画 —— 不用等 1s 复验（知澜给的全局滚动事件方案）
         scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
             Task { @MainActor in
-                self?.overlay.clear()
+                self?.overlay.clear(reason: "scroll")
                 self?.scheduleQuickCheck(after: 0.08)
             }
         }
         scrollMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
             Task { @MainActor in
-                self?.overlay.clear()
+                self?.overlay.clear(reason: "scroll")
                 self?.scheduleQuickCheck(after: 0.08)
             }
             return e
@@ -519,7 +531,7 @@ final class InlineController {
             // 共 8 份崩溃报告都是这一处，切 App 时随机崩）。手动判定线程 + 派发即可。
             let apply = { [weak self] in
                 // 切 App：立刻清线（否则旧 App 的线留在屏幕上飘）
-                self?.overlay.clear()
+                self?.overlay.clear(reason: "host-switch")
                 self?.lastFocusPid = app.processIdentifier
                 self?.attachObserver(pid: app.processIdentifier)
                 self?.scheduleQuickCheck(after: 0.08)   // 清完马上重画，不是留空白
@@ -873,15 +885,16 @@ final class InlineController {
         // 知澜 11-24 实测：后台走通用 attach 路径 → 取到前台窗口正文（textLen=0、不检查），
         // 而 CLI 走 MailProbe 能读到「可见块[6字] Dear,」——两个口径必须合一。
         var mailPicked = false
-        if appName(pid) == "Mail", let best = AXInline.bestWebBody(pid: pid), WebText.isWebBody(best.el) {
+        if appName(pid) == "Mail", let cb = MailProbe.composeBody(pid: pid), WebText.isWebBody(cb.el) {
             mailPicked = true
-            cand = best.el
-            role = attrString(best.el, kAXRoleAttribute as String) ?? ""
-            let bodyBlocks = WebText.blocks(of: best.el)
+            cand = cb.el
+            let best = (el: cb.el, len: cb.len, hasField: true)
+            composeTarget[pid] = (Date().addingTimeInterval(30), cb.win)
+            role = attrString(cb.el, kAXRoleAttribute as String) ?? ""
             emit(CheckEvent(kind: "attach-mail-body", pid: pid, app: appName(pid), role: role,
-                            textLen: best.len, sentenceLen: bodyBlocks.count,
+                            textLen: cb.len, sentenceLen: cb.blocks,
                             itemCount: 0, rectCount: 0, elapsed: "-",
-                            err: "\(best.hasField ? "mail-compose-with-field" : "mail-compose-longest") 块\(bodyBlocks.count)", at: Date()))
+                            err: "win=\"\(cb.title)\" 块\(cb.blocks) compose=true", at: Date()))
         }
         if !mailPicked, cand == nil || !textRole || !readable {
             // 顺序很关键（知澜 11-19 抓到的反例）：
@@ -1045,11 +1058,12 @@ final class InlineController {
         // 只在「调用方没指定元素」时才自选正文。
         // 指定了就必须用指定的那个：--accept-now 按 --expect 挑好窗口后，
         // 这里再抢一次就等于把检查跑回爹地的真邮件上（11-24 实况，知澜当场拦住）。
-        if explicit == nil, appName(pid) == "Mail", MailProbe.isComposeWindow(pid: pid),
-           let best = AXInline.bestWebBody(pid: pid) {
-            el = best.el
+        if explicit == nil, appName(pid) == "Mail", let cb = MailProbe.composeBody(pid: pid) {
+            el = cb.el
             picked = "mail-compose-body"
             diag.lastPath = picked
+            AppLog.info("check", "attach-mail-body win=\"\(cb.title)\" textLen=\(cb.len) 块\(cb.blocks) compose=true")
+            composeTarget[pid] = (Date().addingTimeInterval(30), cb.win)   // 锁定 30 秒
         }
 
         // 选路证据：哪一级接上的，一眼可见（爹地问「Mail 为什么不画线」时直接看这行）
@@ -1079,7 +1093,20 @@ final class InlineController {
         let inEditableWindow = WebText.isWebBody(el) && AXInline.webAreaIsInEditableWindow(el, pid: pid)
         let gateEditable = AXInline.isEditable(el)
         AppLog.info("gate", "editable=\(gateEditable) web=\(WebText.isWebBody(el)) mailReading=\(mailReading) signal=\(composeBySignal) title=\(composeByTitle) field=\(hasEditableWebField)")
-        if !InlineGate.shouldCheck(editable: gateEditable,
+        // compose 锁定（30s）：attach-mail-body 命中过，就不许后续轮把同一封判成阅读窗。
+        // 解锁：写窗消失（composeBody 取不到）或超时 —— 关窗再开新窗不会串（知澜要求立刻解）。
+        var composeLocked = false
+        if let lock = composeTarget[pid] {
+            if Date() > lock.expiry || MailProbe.composeBody(pid: pid) == nil {
+                composeTarget[pid] = nil
+                AppLog.info("gate", "compose-lock 解除：超时或写窗已关闭")
+            } else {
+                composeLocked = true
+                if let cb = MailProbe.composeBody(pid: pid) { el = cb.el }
+                AppLog.info("gate", "compose-lock 生效（剩余 \(Int(lock.expiry.timeIntervalSinceNow))s）—— 不判 readonly")
+            }
+        }
+        if !composeLocked, !InlineGate.shouldCheck(editable: gateEditable,
                                    isWebBody: WebText.isWebBody(el),
                                    isMailBody: isMailBody,
                                    hasEditableWebField: hasEditableWebField,
@@ -1087,13 +1114,20 @@ final class InlineController {
                                    inEditableWindow: inEditableWindow,
                                    mailReading: mailReading,
                                    composeWindow: composeBySignal || composeByTitle) {
-            // 证据必须能自证：是不是真的有可编辑控件被误判成只读？
+            // 证据必须能自证：skip-readonly 现在只说 readonly，看不出是「没有可编辑元素」
+            // 还是「判成阅读窗」（知澜 11-25 要求分因）。
             let elRole = attrString(el, kAXRoleAttribute as String) ?? "?"
-            let kind = AXInline.isEditable(el) ? "editable-but-unreadable"
-                     : (WebText.isWebBody(el) ? "readonly-web" : "readonly")
+            let reason: String
+            if !gateEditable, !WebText.isWebBody(el) {
+                reason = "no-editable(role=\(elRole))"
+            } else if mailReading {
+                reason = "reading-window"
+            } else {
+                reason = "no-compose-signal(role=\(elRole) signal=\(composeBySignal) title=\(composeByTitle))"
+            }
             emit(CheckEvent(kind: "skip-readonly", pid: pid, app: appName(pid), role: elRole,
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
-                            elapsed: "-", err: kind, at: Date()))
+                            elapsed: "-", err: reason, at: Date()))
             // 不清线：这一轮读到的元素只读（点回邮件列表、焦点落到 AXTable），
             // 不代表用户不需要看正文上的线。线的存活只由「宿主换了」和 TTL 决定
             // —— 11-23 实测：render 出 10 条线后 5 秒，用户点进正文触发 skip-readonly，
@@ -1491,12 +1525,13 @@ final class InlineController {
             guard ns.substring(with: it.utf16Range) == it.original else { continue }   // 偏移对不上一律不画
             cands.append((it, bi))
         }
+        rectFailed = 0
         for (it, bi) in WebText.ItemFilter.dedupeAndCap(cands, item: { $0.0 }, max: maxItems,
                                                           key: { "\($0.1)|\($0.0.original.lowercased())" }) {
             let b = blks[bi]
             if IgnoreStore.shared.isIgnored(original: it.original, replacement: it.replacement) { continue }
             let rects = WebText.lineRects(for: it.utf16Range, in: b)
-            guard !rects.isEmpty else { continue }
+            guard !rects.isEmpty else { rectFailed += 1; continue }   // 有 item 但坐标读不到：别静默
             let id = kept.count
             kept.append(it)
             keptMap.append(bi)
@@ -1517,12 +1552,27 @@ final class InlineController {
                         textLen: (lastText as NSString).length, sentenceLen: 0,
                         itemCount: kept.count, rectCount: specs.count,
                         elapsed: diag.lastElapsed, err: diag.lastError, at: Date()))
-        guard !specs.isEmpty else {
-            overlay.clear()
+        if specs.isEmpty {
+            // 知澜 11-25：单轮 items=0 是常态（63% 是只读窗 + 引擎常回 0），
+            // 一空就清线 = 屏幕上「一闪而过」。判据换成正文指纹 + 8 秒兜底：
+            //   指纹没变、线还在 → 保留（underline-keep）；指纹变了或超 8 秒 → 才清。
+            let fp = Self.fingerprint(lastText)
+            if !overlay.currentRects().isEmpty, fp == lastRenderFingerprint,
+               Date().timeIntervalSince(lastRenderAt) <= 8 {
+                emit(CheckEvent(kind: "underline-keep", pid: pid, app: appName(pid), role: "web",
+                                textLen: (lastText as NSString).length, sentenceLen: 0,
+                                itemCount: items.count, rectCount: overlay.currentRects().count,
+                                elapsed: diag.lastElapsed,
+                                err: "本轮 0 条但指纹未变（坐标失败 \(rectFailed)）→ 保留旧线", at: Date()))
+                return
+            }
+            overlay.clear(reason: items.isEmpty ? "items=0 指纹变了/超时8s" : "坐标全读不到(\(rectFailed))")
             return
         }
         overlay.render(specs)
         overlayPid = pid
+        lastRenderFingerprint = Self.fingerprint(lastText)
+        lastRenderAt = Date()
         printRects(specs, items: kept)
     }
 

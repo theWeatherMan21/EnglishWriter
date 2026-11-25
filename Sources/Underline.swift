@@ -194,7 +194,7 @@ final class UnderlineOverlay: NSPanel {
 
     /// 画一批下划线。rects 是全局屏幕坐标（左上原点）。
     func render(_ specs: [UnderlineSpec]) {
-        guard !specs.isEmpty else { clear(); return }
+        guard !specs.isEmpty else { clear(reason: "no-items"); return }
         self.specs = specs
         var all = specs.map(\.rect)
         if let f = flash { all.append(f) }
@@ -207,6 +207,15 @@ final class UnderlineOverlay: NSPanel {
         }
         canvas.flashRect = flash?.offsetBy(dx: -box.minX, dy: -box.minY)
         canvas.needsDisplay = true
+        let sig = specs.map { "\($0.itemID):\(Int($0.rect.minX)),\(Int($0.rect.minY))" }.joined(separator: "|")
+        if sig != lastDrawSig {
+            lastDrawSig = sig
+            let brief = specs.prefix(4).map { "\($0.kind)@\(Int($0.rect.minX)),\(Int($0.rect.minY)),\(Int($0.rect.width)),\(Int($0.rect.height))" }.joined(separator: " ")
+            CheckLog.append(.init(kind: "underline-draw", pid: specs.first?.ownerPid ?? 0,
+                                  app: appName(specs.first?.ownerPid ?? 0), role: "-",
+                                  textLen: 0, sentenceLen: 0, itemCount: specs.count, rectCount: specs.count,
+                                  elapsed: "-", err: "n=\(specs.count) ttl=\(Int(specTTL))s [\(brief)]", at: Date()))
+        }
         if !silent && !Self.globallySilent {
             Audit.show()
             orderFrontRegardless()
@@ -239,7 +248,8 @@ final class UnderlineOverlay: NSPanel {
     /// 线会在 2 秒后自己消失（11-19 实测：render rect=3，19 秒后点击时 rectCount=0）。
     /// 现在改成 60s 兜底 + 宿主切换立刻灭（见 alive 的 frontPid 判据）。
     // 线只活到「下一次确认」为止：3 秒内没有新结果就自灭（爹地 11-23 报「下划线滞留」）
-    private let specTTL: TimeInterval = 3.0
+    private let specTTL: TimeInterval = 8.0      // 知澜定 8 秒兜底：同文本没结果也不许秒灭
+    private var lastDrawSig = ""
     private var ttlTimer: Timer?
 
     /// 清掉所有超过 TTL 没被确认的线（滚走 / 窗口移走 / 切 App 的残影兜底）
@@ -284,12 +294,19 @@ final class UnderlineOverlay: NSPanel {
         }
     }
 
-    func clear() {
+    func clear(reason: String = "unspecified") {
+        let had = specs.count
         flash = nil
         specs = []
         canvas.specs = []
         orderOut(nil)
         silent = false          // 一次静默只对一次检查生效，别让后面的真机画线被静默掉
+        if had > 0 {
+            lastDrawSig = ""
+            CheckLog.append(.init(kind: "underline-clear", pid: 0, app: "-", role: "-",
+                                  textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                                  elapsed: "-", err: "reason=\(reason) 掉了\(had)条", at: Date()))
+        }
     }
 
     /// 当前下划线矩形（全局坐标），M3 悬停命中测试用
