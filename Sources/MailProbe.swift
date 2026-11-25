@@ -441,6 +441,12 @@ enum MailProbe {
     }
 
     static func windows(_ pid: pid_t) -> [AXUIElement] {
+        // 知澜 11-25：这行每轮被问 4 次、Mail 忙时每次 200~400ms → 每 10 秒两次 1.4s 卡死。
+        // 窗口集合是低频变化，2 秒缓存即可。
+        return WindowCache.snapshot(pid: pid).all.isEmpty ? windowsUncached(pid) : WindowCache.snapshot(pid: pid).all
+    }
+
+    private static func windowsUncached(_ pid: pid_t) -> [AXUIElement] {
         let appEl = AXUIElementCreateApplication(pid)
         for attempt in 0..<WindowPolicy.retries {
             AXUIElementSetMessagingTimeout(appEl, WindowPolicy.timeout)
@@ -640,7 +646,25 @@ extension MailProbe {
     /// 快速找 WebArea：① 焦点元素往上找（3~5 跳，一次写信几乎必中）
     /// ② 退到窗口浅层 BFS（深度 5、预算 80 个节点）。
     /// 旧写法 descendants(depth: 14, budget: 900) 每轮扫全树，实测 AXChildren 1072ms×1444（知澜 11-25）。
+    /// WebArea 指针按窗口缓存 5 秒：窗口里的正文区不会每秒换一个，
+    /// 但 Mail 的邮件列表 WebArea 每次 AXChildren 都可能要几十到几百毫秒（知澜 11-25：
+    /// AXChildren=1514ms×131，Mail CPU 90%）。
+    private static var webAreaCache: [CFHashCode: (at: Date, els: [AXUIElement])] = [:]
+
     static func webAreasFast(pid: pid_t, window w: AXUIElement) -> [AXUIElement] {
+        let key = CFHash(w)
+        if let c = webAreaCache[key], Date().timeIntervalSince(c.at) < 5.0, !c.els.isEmpty {
+            return c.els
+        }
+        let els = webAreasFastUncached(pid: pid, window: w)
+        if !els.isEmpty {
+            webAreaCache[key] = (Date(), els)
+            if webAreaCache.count > 24 { webAreaCache.removeAll() }
+        }
+        return els
+    }
+
+    private static func webAreasFastUncached(pid: pid_t, window w: AXUIElement) -> [AXUIElement] {
         var out: [AXUIElement] = []
         let appEl = AXUIElementCreateApplication(pid)
         if var cur = attr(appEl, kAXFocusedUIElementAttribute as String), CFGetTypeID(cur) == AXUIElementGetTypeID() {
@@ -653,7 +677,7 @@ extension MailProbe {
         }
         if out.isEmpty {
             var queue: [(AXUIElement, Int)] = [(w, 0)]
-            var budget = 80
+            var budget = 40
             while !queue.isEmpty, budget > 0 {
                 let (n, d) = queue.removeFirst()
                 budget -= 1
@@ -698,11 +722,13 @@ extension MailProbe {
     static func isComposeWindow(window: AXUIElement) -> Bool {
         if windowTitleLooksCompose(window) { return true }
         let key = CFHash(window)
-        if let c = composeWinCache[key], Date().timeIntervalSince(c.at) < 2.0 { return c.ok }
+        // 命中缓存：肯定的结果 2 秒、否定的结果 15 秒（收件箱窗口永远是否定，
+        // 每 2 秒重扫一遍邮件列表就是 AXChildren 700+ 次的原因，知澜 11-25 抓到 1500ms 尖峰）
+        if let c = composeWinCache[key], Date().timeIntervalSince(c.at) < (c.ok ? 2.0 : 15.0) { return c.ok }
         var found = false
-        var budget = 60
+        var budget = 12
         func walk(_ el: AXUIElement, _ depth: Int) {
-            if found || depth > 6 || budget <= 0 { return }
+            if found || depth > 4 || budget <= 0 { return }
             budget -= 1
             if roleOf(el) == "AXButton",
                let t = attr(el, kAXTitleAttribute as String) as? String,

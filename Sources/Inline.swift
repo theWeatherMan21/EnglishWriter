@@ -58,10 +58,27 @@ enum AXInline {
             || role == kAXComboBoxRole as String
     }
 
+    /// 一步取全文。**WebArea 不扫子树**：Mail 的正文/列表 WebArea 深度 3 里就有上千个节点，
+    /// 实测 sample 里 AXInline.fullText → descendants 占满主线程（AXChildren 1500ms×2671，Mail CPU 87%）。
+    private static var fullTextCache: [CFHashCode: (at: Date, text: String?)] = [:]
+
     static func fullText(of el: AXUIElement) -> String? {
+        let key = CFHash(el)
+        if let c = fullTextCache[key], Date().timeIntervalSince(c.at) < 1.0 { return c.text }
+        let result = fullTextUncached(el)
+        fullTextCache[key] = (Date(), result)
+        if fullTextCache.count > 64 { fullTextCache.removeAll() }
+        return result
+    }
+
+    private static func fullTextUncached(_ el: AXUIElement) -> String? {
+        if WebText.isWebBody(el) { return AXMarker.fullText(of: el).text }
         if let v = attrString(el, kAXValueAttribute as String), !v.isEmpty { return v }
-        // Web 输入框常见：value 在子节点上
+        // Web 输入框常见：value 在子节点上（限 40 个节点，别在列表页里扫穿）
+        var budget = 40
         for child in descendants(el, depth: 3) {
+            if budget <= 0 { break }
+            budget -= 1
             if let v = attrString(child, kAXValueAttribute as String), !v.isEmpty { return v }
         }
         return nil
@@ -115,19 +132,10 @@ enum AXInline {
     static func keyWindowEditable(pid: pid_t) -> AXUIElement? {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 1.0)
-        var win: AXUIElement?
-        for key in [kAXFocusedWindowAttribute as String, kAXMainWindowAttribute as String] {
-            if let v = attr(appEl, key) {
-                win = (v as! AXUIElement)
-                break
-            }
-        }
-        // App 没被激活时 focused/main window 都可能取不到（真机 TextEdit 实测），
-        // 退到 AXWindows[0]：仍是「当前这台 App 的窗口」，不跨 App、不猜。
-        if win == nil, let ws = attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement],
-           let first = ws.first {
-            win = first
-        }
+        // 窗口级属性走 2s 缓存：Mail 忙时这三个属性单个 400ms（知澜 11-25）
+        let snap = WindowCache.snapshot(pid: pid)
+        var win: AXUIElement? = snap.focused ?? snap.main
+        if win == nil, let first = snap.all.first { win = first }
         guard let w = win else { return nil }
         var queue: [AXUIElement] = [w]
         var steps = 0
@@ -537,6 +545,7 @@ final class InlineController {
             // 共 8 份崩溃报告都是这一处，切 App 时随机崩）。手动判定线程 + 派发即可。
             let apply = { [weak self] in
                 // 切 App：立刻清线（否则旧 App 的线留在屏幕上飘）
+                WindowCache.invalidate()
                 self?.overlay.clear(reason: "host-switch")
                 self?.hideBall(.hideHostSwitch)
                 // EW_FORCE_PID 生效时不许被切 App 覆盖（无头调试旋钮，与 start() 同一口径）
