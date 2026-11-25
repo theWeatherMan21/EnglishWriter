@@ -1448,7 +1448,12 @@ final class InlineController {
         }
         // 只查看得见的块：AXWebArea 代表整个文档，全量读出来能到 1477 块，
         // 一块一个 /v2/check 等于自己 DDoS 自己的引擎。
-        let win = WebText.windowFrame(of: body)
+        var win = WebText.windowFrame(of: body)
+        if win.width <= 1 || win.height <= 1,
+           let scr = NSScreen.main?.frame {
+            // 窗口帧读不到（AX 沉默/超时）→ 用主屏帧兜底，总比 0 帧把可见块全丢掉好
+            win = scr
+        }
         var visible = WebText.visibleBlocks(of: target, inWindow: win)
         // 再按正文区筛一遍：线只允许落在「你在写的地方」
         let frames = visible.map { WebText.frame($0.element) }
@@ -1462,9 +1467,22 @@ final class InlineController {
                             textLen: 0, sentenceLen: 0, itemCount: filtered.dropped, rectCount: visible.count,
                             elapsed: "-", err: "丢掉正文区外的 \(filtered.dropped) 块（左栏/列表/页脚）", at: Date()))
         }
-        let blks = Array(visible.prefix(webMaxBlocks))
+        var blks = Array(visible.prefix(webMaxBlocks))
+        if blks.isEmpty, trusted {
+            // 写窗正文已经由 composeBody 收窄过：可见块算不出来（窗口帧读不到/几何为 0）时
+            // 退回「这块 WebArea 的全部块」，不许静默 0 块 —— 11-25 实测：
+            // fastpath 之后一条日志都没有，就是因为这里默默 return。
+            let all = WebText.blocks(of: body)
+            emit(CheckEvent(kind: "visible-empty-fallback", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: all.count, rectCount: 0,
+                            elapsed: "-", err: "可见块=0（窗口帧=\(Int(win.width))x\(Int(win.height))）→ 改用全部块 \(all.count)", at: Date()))
+            blks = Array(all.prefix(webMaxBlocks))
+        }
         guard !blks.isEmpty else {
             diag.lastError = "Web 正文里没有可读文本块"
+            emit(CheckEvent(kind: "no-blocks", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "可见块=0 全部块=0（trusted=\(trusted) 窗口帧=\(Int(win.width))x\(Int(win.height))）", at: Date()))
             overlay.clear(); items = []; blocks = []; itemBlock = []
             return
         }
