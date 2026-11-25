@@ -28,7 +28,15 @@ enum WebText {
         let until = Date().addingTimeInterval(deadline)
         func walk(_ el: AXUIElement, depth: Int) {
             guard depth > 0, budget > 0 else { return }
-            if Date() > until { budget = 0; return }
+            if Date() > until {
+                // 静默超时骗了我们两轮（11-25）：这里必须留痕，否则「0 块」查不到原因
+                CheckLog.append(.init(kind: "blocks-timeout", pid: 0, app: "-", role: "-",
+                                      textLen: 0, sentenceLen: 0, itemCount: out.count, rectCount: 0,
+                                      elapsed: "-", err: "deadline=\(deadline)s 用尽，已取 \(out.count) 块（剩余预算 \(budget) 节点）",
+                                      at: Date()))
+                budget = 0
+                return
+            }
             for c in attrChildrenFast(el) {
                 budget -= 1
                 if budget <= 0 { return }
@@ -232,8 +240,9 @@ enum WebText {
     /// 一个网页读出来 1477 块；旧代码把每一块单独送 /v2/check，
     /// 再叠上每秒一次的全量轮询 → 数千并发请求把 JVM 打到 370% CPU、单请求 15.8s。
     /// 屏外块用户看不见，检查它没有任何价值，只会烧 CPU。
-    static func visibleBlocks(of body: AXUIElement, inWindow window: CGRect? = nil) -> [Block] {
-        let all = blocks(of: body)
+    static func visibleBlocks(of body: AXUIElement, inWindow window: CGRect? = nil,
+                              deadline: TimeInterval = 0.6) -> [Block] {
+        let all = blocks(of: body, nodeBudget: 4000, deadline: deadline)
         let win = window ?? windowFrame(of: body)
         guard win.width > 0, win.height > 0 else { return all }
         let padded = win.insetBy(dx: -2, dy: -2)

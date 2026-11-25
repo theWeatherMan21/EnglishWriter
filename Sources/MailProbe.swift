@@ -571,26 +571,28 @@ extension MailProbe {
     /// 而 Mail 的收件人/主题是原生 AXTextField、不在 WebArea 里 → hasField 恒 false →
     /// 退化成「取最长」，于是一定选到那封 3007 字带引用历史的长信（11-25 实况）。
     /// 顺序：焦点窗口 > 最近有输入的写窗 > 最长。
-    static func composeBody(pid: pid_t) -> (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int)? {
+    static func composeBody(pid: pid_t) -> (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, blockList: [WebText.Block])? {
         let stable = stableWindows(pid)
         guard !stable.wins.isEmpty else { return nil }
         let focusedWin = focusedWindow(pid: pid)
-        var best: (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, score: Int)?
+        var best: (el: AXUIElement, win: AXUIElement, len: Int, title: String, blocks: Int, list: [WebText.Block], score: Int)?
         for w in stable.wins {
             let isCompose = isComposeWindow(window: w) || windowTitleLooksCompose(w)
             guard isCompose else { continue }
             let title = str(w, kAXTitleAttribute as String) ?? "?"
             for node in descendants(w, depth: 14, budget: 900) where WebText.isWebBody(node) {
-                let blks = WebText.blocks(of: node)
+                // 预算放宽到 2.5s：WebText.blocks 默认 deadline 0.6s，配 150ms 单次 AX 超时，
+                // 4 次 AXChildren 就吃光 → 返回 0 块（知澜 11-25 抓到的静默 0 块根因）。
+                let blks = WebText.blocks(of: node, deadline: 2.5)
                 let len = blks.reduce(0) { $0 + ($1.text as NSString).length }
                 if len < 8 { continue }
                 var score = len
                 if let f = focusedWin, CFEqual(f, w) { score += 5_000_000 }
                 if let best, score <= best.score { continue }
-                best = (node, w, len, title, blks.count, score)
+                best = (node, w, len, title, blks.count, blks, score)
             }
         }
-        return best.map { ($0.el, $0.win, $0.len, $0.title, $0.blocks) }
+        return best.map { ($0.el, $0.win, $0.len, $0.title, $0.blocks, $0.list) }
     }
 
     /// 当前焦点窗口（读不到就 nil）

@@ -1418,7 +1418,7 @@ final class InlineController {
     /// 此时不许 no-editable-region 的整页回落、也不许左栏 20% 过滤介入 ——
     /// 那两道门是给「整个 WebArea（含左栏/列表）」用的，对已经收窄过的写窗正文只会帮倒忙
     /// （知澜 11-25 实况：composeBody 读到 240 字，转头被 no-editable-region + 左侧过滤清空）。
-    private func checkWeb(pid: pid_t, body: AXUIElement, trusted: Bool = false) {
+    private func checkWeb(pid: pid_t, body: AXUIElement, trusted: Bool = false, preBlocks: [WebText.Block]? = nil) {
         if isBrowserHost(pid: pid) {
             emit(CheckEvent(kind: "skip-browser", pid: pid, app: appName(pid), role: "AXWebArea",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
@@ -1454,7 +1454,8 @@ final class InlineController {
             // 窗口帧读不到（AX 沉默/超时）→ 用主屏帧兜底，总比 0 帧把可见块全丢掉好
             win = scr
         }
-        var visible = WebText.visibleBlocks(of: target, inWindow: win)
+        // trusted 用更长预算：默认 0.6s 配 150ms 单次 AX 超时，4 次 AXChildren 就吃光 → 0 块（11-25 根因）
+        var visible = WebText.visibleBlocks(of: target, inWindow: win, deadline: trusted ? 2.5 : 0.6)
         // 再按正文区筛一遍：线只允许落在「你在写的地方」
         let frames = visible.map { WebText.frame($0.element) }
         let filtered = trusted ? (keep: Array(frames.indices), dropped: 0)
@@ -1472,7 +1473,7 @@ final class InlineController {
             // 写窗正文已经由 composeBody 收窄过：可见块算不出来（窗口帧读不到/几何为 0）时
             // 退回「这块 WebArea 的全部块」，不许静默 0 块 —— 11-25 实测：
             // fastpath 之后一条日志都没有，就是因为这里默默 return。
-            let all = WebText.blocks(of: body)
+            let all = WebText.blocks(of: body, nodeBudget: 4000, deadline: 2.5)
             emit(CheckEvent(kind: "visible-empty-fallback", pid: pid, app: appName(pid), role: "AXWebArea",
                             textLen: 0, sentenceLen: 0, itemCount: all.count, rectCount: 0,
                             elapsed: "-", err: "可见块=0（窗口帧=\(Int(win.width))x\(Int(win.height))）→ 改用全部块 \(all.count)", at: Date()))
