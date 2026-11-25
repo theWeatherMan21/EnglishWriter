@@ -1506,6 +1506,16 @@ final class InlineController {
             overlay.clear(); items = []; blocks = []; itemBlock = []
             return
         }
+        // Mail 阅读窗直接跳过：editableRegion / WebText.blocks 会逐个节点读 AXPosition+AXSize，
+        // 收件箱列表 840 个节点 → 每轮 AXSize 420ms×839 + AXPosition 385ms×840（知澜 11-25 抓到 1501ms 尖峰）。
+        // 正文区判定已经由 composeBody（标题+信号，带缓存）负责，这里不再重复扫树。
+        if appName(pid) == "Mail", MailProbe.composeBody(pid: pid) == nil {
+            emit(CheckEvent(kind: "skip-mail-reading", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "不是写信窗（阅读/列表），不扫树", at: Date()))
+            overlay.clear(reason: "no-items"); items = []; blocks = []; itemBlock = []
+            return
+        }
         // 闸门：上一次块检查还没跑完 → 只记一笔并把「跑完再补一次」标记上。
         // 没有这道闸，1s 轮询会让几十秒的检查无限叠加（11-23 实测：370% CPU、单请求 15.8s）。
         if webCheckRunning {
