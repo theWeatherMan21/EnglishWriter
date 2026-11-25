@@ -428,6 +428,8 @@ final class InlineController {
     private var lastPollForcedAt = Date.distantPast
     private var lastPollNilLog = Date.distantPast
     private var lastPollSkipLog = Date.distantPast
+    private var lastMarkerLogged = ""
+    private var lastMarkerLoggedAt = Date.distantPast
     static func fingerprint(_ t: String) -> String {
         var h: UInt64 = 0xcbf29ce484222325
         for b in t.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
@@ -1524,9 +1526,14 @@ final class InlineController {
         // Mail 写窗：marker 一次取全文，整篇当一个块（偏移天然全局，画线走 marker bounds）。
         // 旧路是 255 个叶子逐节点遍历 + 每块算 frame，11-25 实测 0 块、满屏 abandon。
         if trusted, let mk = AXMarker.fullText(of: body).text, !mk.isEmpty {
-            emit(CheckEvent(kind: "axmarker-read", pid: pid, app: appName(pid), role: "AXWebArea",
-                            textLen: mk.count, sentenceLen: 0, itemCount: 1, rectCount: 0,
-                            elapsed: "-", err: "marker 全文 → 单块送检", at: Date()))
+            // 每秒一条会刷屏（知澜 11-25 指出「axmarker-read 反复出现」）；文本没变就 30 秒一条
+            if mk != lastMarkerLogged || Date().timeIntervalSince(lastMarkerLoggedAt) > 30 {
+                lastMarkerLogged = mk
+                lastMarkerLoggedAt = Date()
+                emit(CheckEvent(kind: "axmarker-read", pid: pid, app: appName(pid), role: "AXWebArea",
+                                textLen: mk.count, sentenceLen: 0, itemCount: 1, rectCount: 0,
+                                elapsed: "-", err: "marker 全文 → 单块送检", at: Date()))
+            }
             visible = [WebText.Block(element: body, text: mk)]
         } else if let pre = preBlocks, !pre.isEmpty {
             emit(CheckEvent(kind: "blocks-prefetched", pid: pid, app: appName(pid), role: "AXWebArea",
@@ -1718,7 +1725,16 @@ final class InlineController {
             let rects: [CGRect] = (blks.count == 1 && WebText.isWebBody(b.element))
                 ? AXMarker.rects(for: it.utf16Range, in: b.element)
                 : WebText.lineRects(for: it.utf16Range, in: b)
-            guard !rects.isEmpty else { rectFailed += 1; continue }   // 有 item 但坐标读不到：别静默
+            guard !rects.isEmpty else {
+                rectFailed += 1
+                // 后台窗口算不出位置要能自证：AXBoundsForTextMarkerRange 对被遮挡的窗口返回空。
+                let front = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+                emit(CheckEvent(kind: "rects-fail", pid: pid, app: appName(pid), role: "web",
+                                textLen: 0, sentenceLen: 0, itemCount: kept.count + 1, rectCount: 0,
+                                elapsed: "-", err: "\(it.original) offset=\(it.start) len=\(it.length) 算不出矩形（frontmost=\(front == pid ? "本 App" : appName(front))）",
+                                at: Date()))
+                continue
+            }
             let id = kept.count
             kept.append(it)
             keptMap.append(bi)

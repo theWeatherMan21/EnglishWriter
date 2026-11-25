@@ -340,3 +340,40 @@ AXSelectedTextMarkerRange                属性 → 设选区（写回用）
 2. 只有 (1) 通过，才把「读正文 / 算位置 / 设选区」整条换成 marker；主链一次换完，不再逐门修
 3. 判据：`axmarker-read len=232` → `引擎回传 items=1` → `underline-draw n=1`
 4. 连续三次真机都有线，才对爹地说「看线可用了」
+
+## 11 · AXTextMarker 通道（11-25 真机打通）
+
+**一句话**：Mail 正文不走 AX 树遍历，走 WebKit 的 marker 参数化属性；一次调用拿全文，一次调用拿矩形。
+
+### 11.1 真机证据（13:54:11，Mail 写窗 win=New Message）
+```
+axmarker-read   textLen=251
+m3              blocks=1 送检块=1 批次字符=253 预览=⏎He go to the office yesterday.
+m3              引擎回传 items=4 → 映射后 4（缩写过滤后 1）
+render          items=1 rects=1
+underline-draw  n=1 ttl=8s [grammar@115,424,18,16]
+```
+同窗口 marker 探针：`bounds office = (174,424,37,16)` —— 与 115,424 相邻，位置自洽。
+
+### 11.2 本机 API 形态（macOS 27.3，实测）
+| 需要 | 本机可用形态 | 不可用 |
+|---|---|---|
+| 全文 | 参数化 `AXTextMarkerRangeForUIElement`（参数=元素）+ 参数化 `AXStringForTextMarkerRange` | 函数符号 `AXStringForTextMarkerRange`（dlsym 0x0） |
+| 首尾 | 普通属性 `AXStartTextMarker` / `AXEndTextMarker` | — |
+| 拼 range | 参数化 `AXTextMarkerRangeForTextMarkers`（[start,end]） | — |
+| 位置 | 参数化 `AXBoundsForTextMarkerRange` | — |
+| 按字符定位 | 参数化 `AXTextMarkerForIndex`（index→marker） | — |
+
+WebArea 暴露 36 个含 Marker 的参数化属性；**`AXTextMarkerRangeForUIElement` 不是普通属性**（第一版按属性取，取不到 → SKIP）。
+
+### 11.3 代码落点
+- `MailProbe.composeBody`：`AXMarker.fullText` 取正文（0ms），marker 失败才退回 `WebText.blocks`；2 秒缓存（attach/轮询/fastpath 三路并发抓 AX 时否则互相拖死：实测 AXChildren 1347ms×2115）。
+- `checkWeb(trusted)`：marker 全文当一个块（偏移天然全局）。
+- `applyWeb`：单块 + 元素是 WebArea → `AXMarker.rects`。
+- 语言门控：marker 单块逐行判定，非英文行等长空格遮蔽（偏移不变）——解开「送检块=0 跳过中文=1」假门。
+- 调试旋钮 `EW_FORCE_PID=<pid>`：把检查目标钉到某 pid，不动前台即可验证；不设时行为不变。
+
+### 11.4 已知边界（11-25 实测）
+- **窗口在后台时 `AXBoundsForTextMarkerRange` 返回空** → `items=1 rects=0`：前台 Mail → rects=1（14:33:22）；同一文本后台 → rects=0（14:31:58）。不是代码分支差异，是系统对遮挡窗口不给几何。**结论：线只在宿主 App 前台时可见；切走后不画（后台不抢画、也不清别人的线）。**
+- 前端引擎偶发 8.5s（14:33:32 elapsed=8516ms），非 AX 侧，单列观察。
+- 旧块遍历路径保留为 fallback（旧系统 / 非 WebArea）。
