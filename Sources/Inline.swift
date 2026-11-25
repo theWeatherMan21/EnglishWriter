@@ -541,6 +541,15 @@ final class InlineController {
             }
             if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
         }
+        // 启动即对齐前台 App：以前 lastFocusPid 只在「切 App 通知」里赋值，
+        // 开机/重启后如果用户不再切 App，轮询永远对着 pid=0 空转 → 一条检查都没有
+        // （11-25 实测：新装 pid 起来 1 分钟零检查）。
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            lastFocusPid = front.processIdentifier
+            attachObserver(pid: front.processIdentifier)
+            scheduleQuickCheck(after: 0.4)
+        }
         startPolling()
         // 定期复验：有线挂着就每秒重跑一次检查，把 stamp 刷新到当下。
         // 没有这一步，2s 自灭会把「一直没改动的正确线」也灭掉。
@@ -649,10 +658,14 @@ final class InlineController {
                 // 焦点读不到不再是「静默 return」：Mail 下改看写窗正文；都取不到也要留痕（限流）。
                 // 11-25 实况：AXPosition/焦点读超时 → 每秒静默 return → App 0% CPU、一分钟零日志，
                 // 比报错还难查。
-                var focusEl = AXInline.focusedElement(pid: self.lastFocusPid)
-                if focusEl == nil, appName(self.lastFocusPid) == "Mail",
+                // Mail 一律先问写窗正文（知澜 11-25：轮询自己找焦点 → 读到阅读窗 29 字，
+                // 而 attach 那条路读到写窗 232 字，两条路各选一个窗口）。
+                var focusEl: AXUIElement?
+                if appName(self.lastFocusPid) == "Mail",
                    let cb = MailProbe.composeBody(pid: self.lastFocusPid), WebText.isWebBody(cb.el) {
                     focusEl = cb.el
+                } else {
+                    focusEl = AXInline.focusedElement(pid: self.lastFocusPid)
                 }
                 guard let el = focusEl else {
                     if Date().timeIntervalSince(self.lastPollNilLog) > 10 {
@@ -1050,7 +1063,12 @@ final class InlineController {
     }
 
     private func checkNowCore(for pid: pid_t, element explicit: AXUIElement? = nil) {
-        guard enabled else { return }
+        // 入口无条件留痕（知澜 11-25）：fastpath 一条没进，先证明「到底进没进来」再谈别的。
+        AppLog.info("check", "checknow-enter pid=\(pid) app=\(appName(pid)) explicit=\(explicit == nil ? "nil" : "有") enabled=\(enabled)")
+        guard enabled else {
+            AppLog.info("check", "checknow-exit 原因=disabled")
+            return
+        }
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
         guard pid > 0 else { return }
         // App 排除：命中的 App 一个请求都不发（只记一条 skip，便于事后核「确实没查」）
