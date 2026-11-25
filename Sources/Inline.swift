@@ -265,6 +265,8 @@ enum AXInline {
     /// WebArea 里的真输入控件：网页里的 textarea/input 在 AX 树里是 AXTextArea/AXTextField，
     /// AXValue 直接有内容（Chromium 真机实测）。有它就优先用它 —— 整页静态文本当正文会查错地方。
     static func textField(in body: AXUIElement) -> AXUIElement? {
+        let before = AXInline.lastScanTruncated
+        defer { _ = before }
         var best: (el: AXUIElement, len: Int)?
         for el in descendants(body, depth: 10) {
             let role = roleOf(el)
@@ -293,6 +295,7 @@ enum AXInline {
         let needle = (attrString(el, kAXValueAttribute as String) as NSString?)?
             .substring(with: ns) ?? ""
         guard !needle.isEmpty else { return nil }
+        if AXInline.lastScanTruncated { return nil }   // 截断的一轮：不许用不完整的块算偏移
         for leaf in descendants(el, depth: 6) {
             guard let v = attrString(leaf, kAXValueAttribute as String) as NSString?,
                   v.length > 0 else { continue }
@@ -377,34 +380,56 @@ enum AXInline {
     /// 修好一条另一条顶上（AXSize 420ms×839 就是这么来的）。收口到这里之后：
     ///   ① 单次扫描最多 80 个节点   ② 每秒全局配额 240 个节点（超了就返回空，本轮不扫）
     ///   ③ 同一元素 1.5 秒内结果复用 —— 一轮里被 6 条路问也只扫一次
-    private static var scanCache: [CFHashCode: (at: Date, depth: Int, els: [AXUIElement])] = [:]
+    /// 缓存键 = 元素指针（不是 CFHash：哈希会碰撞，撞上就拿到别人的元素数组）
+    /// + 轮次令牌（不是墙上 1.5 秒：同一秒里用户改一个字，旧块集合配新全文 = 偏移错位）
+    private struct ScanEntry { let round: Int; let depth: Int; let els: [AXUIElement] }
+    private static var scanCache: [UnsafeMutableRawPointer: ScanEntry] = [:]
+    private static var scanRound = 0
     private static var scanWindowStart = Date.distantPast
     private static var scanNodesThisWindow = 0
     private static let scanSecondsQuota = 240
+    /// 上一次扫描是否被截断（80 节点 / 配额）。**截断的那一轮，调用方不许拿它算偏移或送检。**
+    private(set) static var lastScanTruncated = false
+
+    /// 每一轮检查开始时调一次：让缓存天然失效，不需要猜时间
+    static func beginScanRound() {
+        scanRound += 1
+        lastScanTruncated = false
+        if scanCache.count > 64 { scanCache.removeAll() }
+    }
 
     static func descendants(_ el: AXUIElement, depth: Int) -> [AXUIElement] {
         guard depth > 0 else { return [] }
-        let key = CFHash(el)
-        if let c = scanCache[key], c.depth >= depth, Date().timeIntervalSince(c.at) < 1.5 {
-            return Array(c.els.prefix(min(c.els.count, 80)))
+        let key = Unmanaged.passUnretained(el).toOpaque()
+        if let c = scanCache[key], c.round == scanRound, c.depth >= depth {
+            return c.els
         }
         if Date().timeIntervalSince(scanWindowStart) > 1.0 {
             scanWindowStart = Date(); scanNodesThisWindow = 0
         }
-        guard scanNodesThisWindow < scanSecondsQuota else { return [] }   // 配额用光：本轮不扫
+        guard scanNodesThisWindow < scanSecondsQuota else {
+            lastScanTruncated = true
+            AppLog.info("ax", "scan truncated=true reason=quota n=0 depth=\(depth)")
+            return []
+        }
         var out: [AXUIElement] = []
         var queue: [(AXUIElement, Int)] = [(el, depth)]
+        var truncated = false
         while !queue.isEmpty, out.count < 80, scanNodesThisWindow < scanSecondsQuota {
             let (node, d) = queue.removeFirst()
             guard d > 0 else { continue }
             for c in attrChildrenFast(node) {
                 out.append(c); scanNodesThisWindow += 1
-                if out.count >= 80 || scanNodesThisWindow >= scanSecondsQuota { break }
+                if out.count >= 80 || scanNodesThisWindow >= scanSecondsQuota { truncated = true; break }
                 queue.append((c, d - 1))
             }
         }
-        if scanCache.count > 64 { scanCache.removeAll() }
-        scanCache[key] = (Date(), depth, out)
+        if !truncated, !queue.isEmpty { truncated = true }   // 队列里还有没扫的 = 同样算截断
+        if truncated {
+            lastScanTruncated = true
+            AppLog.info("ax", "scan truncated=true n=\(out.count) depth=\(depth) round=\(scanRound)")
+        }
+        scanCache[key] = ScanEntry(round: scanRound, depth: depth, els: out)
         return out
     }
 }
@@ -1129,6 +1154,7 @@ final class InlineController {
     }
 
     private func checkNowCore(for pid: pid_t, element explicit: AXUIElement? = nil) {
+        AXInline.beginScanRound()
         // 入口无条件留痕（知澜 11-25）：fastpath 一条没进，先证明「到底进没进来」再谈别的。
         AppLog.info("check", "checknow-enter pid=\(pid) app=\(appName(pid)) explicit=\(explicit == nil ? "nil" : "有") enabled=\(enabled)")
         guard enabled else {
@@ -1695,6 +1721,13 @@ final class InlineController {
             texts.append(t); idxs.append(bi)
         }
         let batch = BlockBatch.join(texts, blockIndexes: idxs, charLimit: joinLimit)
+        // 截断的一轮不送检：块集合不完整 + item 偏移按整篇算 = 一定错位（知澜 11-25）
+        if !markerMode, AXInline.lastScanTruncated {
+            emit(CheckEvent(kind: "skip-scan-truncated", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: (lastText as NSString).length, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "本轮的块遍历被预算截断，送检会偏移错位 → 这轮不查", at: Date()))
+            return
+        }
         AppLog.info("m3", "blocks=\(blks.count) 送检块=\(texts.count) 跳过中文=\(cjkSkipped) 批次字符=\((batch.text as NSString).length) 预览=\(String(batch.text.prefix(90)).replacingOccurrences(of: "\n", with: "⏎"))")
         if batch.isEmpty {
             // 全是中文 / 噪声块：一个请求都不发
