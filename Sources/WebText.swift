@@ -21,7 +21,10 @@ enum WebText {
     /// 加了节点预算与截止时间：Mail 一个窗口能挂 2000+ 个 AX 节点，每个节点都是一次跨进程 IPC。
     /// 无界遍历（11-23 之前）在 Mail 卡顿时会把常驻检查拖住，连累宿主。
     /// 按文档顺序取，预算用完就停 —— 拿到的是「靠前的块」，也就是用户正在看的那一段。
-    static func blocks(of body: AXUIElement, nodeBudget: Int = 1500,
+    /// nodeBudget 默认从 1500 降到 400（知澜 11-25）：这一路会逐节点读 AXPosition/AXSize，
+    /// 1500 个节点在 Mail 列表页上就是 840 次位置查询 → 一轮 1.5 秒。
+    /// 需要更长的正文，调用方显式传预算（checkWeb 传 4000 是有意的）。
+    static func blocks(of body: AXUIElement, nodeBudget: Int = 400,
                        deadline: TimeInterval = 0.6) -> [Block] {
         var out: [Block] = []
         var budget = nodeBudget

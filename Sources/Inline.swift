@@ -371,13 +371,40 @@ enum AXInline {
         return lineRects(for: NSRange(location: 0, length: ns.length), in: el)
     }
 
+    /// **唯一**的树遍历入口。所有调用方（6 处）都从这里走，所以预算是硬的、有缓存的。
+    ///
+    /// 知澜 11-25：Inline.swift 里原来有 6 处各自 descendants(depth 3/6/8/8/10/12)，
+    /// 修好一条另一条顶上（AXSize 420ms×839 就是这么来的）。收口到这里之后：
+    ///   ① 单次扫描最多 80 个节点   ② 每秒全局配额 240 个节点（超了就返回空，本轮不扫）
+    ///   ③ 同一元素 1.5 秒内结果复用 —— 一轮里被 6 条路问也只扫一次
+    private static var scanCache: [CFHashCode: (at: Date, depth: Int, els: [AXUIElement])] = [:]
+    private static var scanWindowStart = Date.distantPast
+    private static var scanNodesThisWindow = 0
+    private static let scanSecondsQuota = 240
+
     static func descendants(_ el: AXUIElement, depth: Int) -> [AXUIElement] {
         guard depth > 0 else { return [] }
-        var out: [AXUIElement] = []
-        for c in attrChildrenFast(el) {
-            out.append(c)
-            out.append(contentsOf: descendants(c, depth: depth - 1))
+        let key = CFHash(el)
+        if let c = scanCache[key], c.depth >= depth, Date().timeIntervalSince(c.at) < 1.5 {
+            return Array(c.els.prefix(min(c.els.count, 80)))
         }
+        if Date().timeIntervalSince(scanWindowStart) > 1.0 {
+            scanWindowStart = Date(); scanNodesThisWindow = 0
+        }
+        guard scanNodesThisWindow < scanSecondsQuota else { return [] }   // 配额用光：本轮不扫
+        var out: [AXUIElement] = []
+        var queue: [(AXUIElement, Int)] = [(el, depth)]
+        while !queue.isEmpty, out.count < 80, scanNodesThisWindow < scanSecondsQuota {
+            let (node, d) = queue.removeFirst()
+            guard d > 0 else { continue }
+            for c in attrChildrenFast(node) {
+                out.append(c); scanNodesThisWindow += 1
+                if out.count >= 80 || scanNodesThisWindow >= scanSecondsQuota { break }
+                queue.append((c, d - 1))
+            }
+        }
+        if scanCache.count > 64 { scanCache.removeAll() }
+        scanCache[key] = (Date(), depth, out)
         return out
     }
 }
