@@ -382,8 +382,28 @@ private let axWorkerQueue = DispatchQueue(label: "com.wanyi.ew.ax", qos: .userIn
 func axMainWaitMs(for name: String) -> Int {
     switch name {
     case "AXChildren", "AXChildrenInNavigationOrder", "AXRows", "AXVisibleChildren": return 250
-    case "AXValue", "AXSelectedText", "AXSelectedTextRange", "AXPlaceholderValue": return 150
-    default: return 80
+    case "AXValue", "AXSelectedText", "AXSelectedTextRange", "AXPlaceholderValue": return 200
+    // 标量属性以前给 80ms —— Mail 稍微忙一下就必超，超了还把结果丢掉（11-25 实况：
+    // 每轮 abandon attr=AXPosition，App 整整一分钟 0% CPU、一条日志都没有）。
+    // 300ms 对正常 <10ms 的属性没有代价，对延误的回包是救命的。
+    default: return 300
+    }
+}
+
+/// 迟到结果的回填缓存：主线程等不到就先走，worker 跑完后把结果存这里，
+/// 下一轮同一个 (元素, 属性) 直接命中。以前超时 = 丢弃，等于每轮都从零开始。
+final class AXLateCache: @unchecked Sendable {
+    static let shared = AXLateCache()
+    private let lock = NSLock()
+    private var map: [String: (value: CFTypeRef?, at: Date)] = [:]
+    func store(_ key: String, _ v: CFTypeRef?) {
+        lock.lock(); map[key] = (v, Date()); lock.unlock()
+    }
+    func take(_ key: String, maxAge: TimeInterval = 2.0) -> (hit: Bool, value: CFTypeRef?) {
+        lock.lock(); defer { lock.unlock() }
+        guard let e = map[key], Date().timeIntervalSince(e.at) <= maxAge else { return (false, nil) }
+        map.removeValue(forKey: key)
+        return (true, e.value)
     }
 }
 
@@ -401,15 +421,22 @@ func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
     }
     let box = AXBox()
     let sem = DispatchSemaphore(value: 0)
+    let lateKey = "\(CFHash(el))|\(name)"
+    if case let (hit, v) = AXLateCache.shared.take(lateKey), hit {
+        AXRoundStats.shared.add(name, 0)
+        return v
+    }
     AXUIElementSetMessagingTimeout(el, axTimeout(for: name, defaultTimeout: 0.2))
     axWorkerQueue.async {
         box.error = AXUIElementCopyAttributeValue(el, name as CFString, &box.value)
+        // 先回填再放行：主线程万一已经走了，结果也不丢
+        if box.error == .success { AXLateCache.shared.store(lateKey, box.value) }
         sem.signal()
     }
     let waitMs = axMainWaitMs(for: name)
     if sem.wait(timeout: .now() + .milliseconds(waitMs)) == .timedOut {
         AXRoundStats.shared.add(name, waitMs)
-        AppLog.info("ax", "abandon attr=\(name) 主线程等了 \(waitMs)ms 没回 —— 本轮当读不到（worker 继续跑完丢弃）")
+        AppLog.info("ax", "abandon attr=\(name) 主线程等了 \(waitMs)ms 没回 —— worker 继续跑，结果回填下一轮直接用")
         return nil
     }
     let out = box.value

@@ -426,6 +426,7 @@ final class InlineController {
     /// 本轮有 item 但坐标算不出（rects 为空）的条数，render-none 时写进日志
     private var rectFailed = 0
     private var lastPollForcedAt = Date.distantPast
+    private var lastPollNilLog = Date.distantPast
     static func fingerprint(_ t: String) -> String {
         var h: UInt64 = 0xcbf29ce484222325
         for b in t.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
@@ -645,7 +646,25 @@ final class InlineController {
                 guard ScreenLock.shouldPoll(locked: ScreenLock.isLocked, enabled: self.enabled,
                                             pid: self.lastFocusPid,
                                             appName: appName(self.lastFocusPid)) else { return }
-                guard let el = AXInline.focusedElement(pid: self.lastFocusPid) else { return }
+                // 焦点读不到不再是「静默 return」：Mail 下改看写窗正文；都取不到也要留痕（限流）。
+                // 11-25 实况：AXPosition/焦点读超时 → 每秒静默 return → App 0% CPU、一分钟零日志，
+                // 比报错还难查。
+                var focusEl = AXInline.focusedElement(pid: self.lastFocusPid)
+                if focusEl == nil, appName(self.lastFocusPid) == "Mail",
+                   let cb = MailProbe.composeBody(pid: self.lastFocusPid), WebText.isWebBody(cb.el) {
+                    focusEl = cb.el
+                }
+                guard let el = focusEl else {
+                    if Date().timeIntervalSince(self.lastPollNilLog) > 10 {
+                        self.lastPollNilLog = Date()
+                        self.emit(CheckEvent(kind: "poll-nil", pid: self.lastFocusPid,
+                                             app: appName(self.lastFocusPid), role: "-",
+                                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                                             elapsed: "-", err: "焦点读不到且 Mail 写窗正文也取不到（10 秒限流一条）",
+                                             at: Date()))
+                    }
+                    return
+                }
                 // Web 正文的 AXValue 是空的，直接读它等于永远「没变化」——这就是 Mail 里一直没反应的根因之一
                 let t: String?
                 if WebText.isWebBody(el) {
