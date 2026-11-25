@@ -1035,6 +1035,19 @@ final class InlineController {
         guard AXPermission.granted() else { diag.lastError = "无辅助功能权限"; return }
         guard pid > 0 else { return }
         // App 排除：命中的 App 一个请求都不发（只记一条 skip，便于事后核「确实没查」）
+        // Mail 快速通道（知澜 11-25 结构改法）：composeBody 命中 = 写窗正文，直接送检并返回。
+        // 不再让 skip-readonly / fallback-el / no-editable-region 逐个否决 —— 这条链上
+        // 五道门各管一段，任何一道说不就全断（实测：每修一道，下一道顶上来）。
+        if appName(pid) == "Mail", let cb = MailProbe.composeBody(pid: pid), WebText.isWebBody(cb.el) {
+            composeTarget[pid] = ComposeLock(expiry: Date().addingTimeInterval(30), window: cb.win)
+            emit(CheckEvent(kind: "attach-mail-body", pid: pid, app: appName(pid),
+                            role: attrString(cb.el, kAXRoleAttribute as String) ?? "AXWebArea",
+                            textLen: cb.len, sentenceLen: cb.blocks, itemCount: 0, rectCount: 0,
+                            elapsed: "-", err: "win=\"\(cb.title)\" 块\(cb.blocks) compose=true fastpath",
+                            at: Date()))
+            checkWeb(pid: pid, body: cb.el, trusted: true)
+            return
+        }
         if Self.excludedGate(pid: pid) {
             emit(CheckEvent(kind: "skip-excluded", pid: pid, app: appName(pid), role: "",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
@@ -1401,7 +1414,11 @@ final class InlineController {
         return Self.browserBundleIDs.contains(bid)
     }
 
-    private func checkWeb(pid: pid_t, body: AXUIElement) {
+    /// trusted=true：调用方已经确认真的是「写窗正文」（MailProbe.composeBody）。
+    /// 此时不许 no-editable-region 的整页回落、也不许左栏 20% 过滤介入 ——
+    /// 那两道门是给「整个 WebArea（含左栏/列表）」用的，对已经收窄过的写窗正文只会帮倒忙
+    /// （知澜 11-25 实况：composeBody 读到 240 字，转头被 no-editable-region + 左侧过滤清空）。
+    private func checkWeb(pid: pid_t, body: AXUIElement, trusted: Bool = false) {
         if isBrowserHost(pid: pid) {
             emit(CheckEvent(kind: "skip-browser", pid: pid, app: appName(pid), role: "AXWebArea",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
@@ -1422,9 +1439,9 @@ final class InlineController {
         // Mail 窗口是一个 AXWebArea，左栏 Inbox/Drafts、邮件列表、正文全是它的子孙。
         // 不收窄的后果（爹地 11-23 真机）：线画满整个窗口（左栏也画），
         // 写回偏移按「整篇（含左栏）」算 → 位置对不上 → 点接受没反应。
-        let region = WebText.editableRegion(of: body)
+        let region = trusted ? body : WebText.editableRegion(of: body)
         let target = region ?? body
-        if region == nil {
+        if region == nil, !trusted {
             emit(CheckEvent(kind: "no-editable-region", pid: pid, app: appName(pid), role: "AXWebArea",
                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "没找到可编辑正文区，退回整页并按左侧 20% 过滤", at: Date()))
@@ -1435,9 +1452,10 @@ final class InlineController {
         var visible = WebText.visibleBlocks(of: target, inWindow: win)
         // 再按正文区筛一遍：线只允许落在「你在写的地方」
         let frames = visible.map { WebText.frame($0.element) }
-        let filtered = WebText.filterOutsideNavigation(frames: frames,
-                                                       window: win,
-                                                       editableFrame: region.map { WebText.frame($0) })
+        let filtered = trusted ? (keep: Array(frames.indices), dropped: 0)
+                               : WebText.filterOutsideNavigation(frames: frames,
+                                                                 window: win,
+                                                                 editableFrame: region.map { WebText.frame($0) })
         if filtered.dropped > 0 {
             visible = filtered.keep.map { visible[$0] }
             emit(CheckEvent(kind: "drop-outside", pid: pid, app: appName(pid), role: "AXWebArea",
