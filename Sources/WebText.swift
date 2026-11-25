@@ -249,6 +249,15 @@ enum WebText {
         return all.filter { b in
             let own = frame(b.element)
             if own.width > 0, own.height > 0 { return padded.intersects(own) }
+            // frame 读不到 ≠ 块不在窗口里（知澜 11-25）：AXPosition 一超时就返回 zero，
+            // 以前当「不在窗口内」丢掉 → 整片正文消失。现在保留，交给下游按文本位置算线。
+            if own.width <= 0 || own.height <= 0 {
+                if WebText.lineRects(for: NSRange(location: 0, length: (b.text as NSString).length), in: b).isEmpty {
+                    return true        // 位置彻底读不到：宁可留着（最坏线略偏），不许整片丢
+                }
+                return WebText.lineRects(for: NSRange(location: 0, length: (b.text as NSString).length), in: b)
+                    .contains { padded.intersects($0) }
+            }
             // AXFrame 全 0（WebKit 常见）→ 退回 AXBoundsForRange 判一次
             let ns = NSRange(location: 0, length: (b.text as NSString).length)
             return lineRects(for: ns, in: b).contains { padded.intersects($0) }

@@ -1064,7 +1064,7 @@ final class InlineController {
                             textLen: cb.len, sentenceLen: cb.blocks, itemCount: 0, rectCount: 0,
                             elapsed: "-", err: "win=\"\(cb.title)\" 块\(cb.blocks) compose=true fastpath",
                             at: Date()))
-            checkWeb(pid: pid, body: cb.el, trusted: true)
+            checkWeb(pid: pid, body: cb.el, trusted: true, preBlocks: cb.blockList)
             return
         }
         if Self.excludedGate(pid: pid) {
@@ -1474,7 +1474,17 @@ final class InlineController {
             win = scr
         }
         // trusted 用更长预算：默认 0.6s 配 150ms 单次 AX 超时，4 次 AXChildren 就吃光 → 0 块（11-25 根因）
-        var visible = WebText.visibleBlocks(of: target, inWindow: win, deadline: trusted ? 2.5 : 0.6)
+        // 预读块直接用：composeBody 已经读过一遍（2.5s 预算），不再遍历第二次 ——
+        // 同一份正文读两遍，任何一遍失败就整片消失，这是今天六次静默失败的共同结构。
+        var visible: [WebText.Block]
+        if let pre = preBlocks, !pre.isEmpty {
+            emit(CheckEvent(kind: "blocks-prefetched", pid: pid, app: appName(pid), role: "AXWebArea",
+                            textLen: 0, sentenceLen: 0, itemCount: pre.count, rectCount: 0,
+                            elapsed: "-", err: "沿用 composeBody 预读的 \(pre.count) 块", at: Date()))
+            visible = pre
+        } else {
+            visible = WebText.visibleBlocks(of: target, inWindow: win, deadline: trusted ? 2.5 : 0.6)
+        }
         // 再按正文区筛一遍：线只允许落在「你在写的地方」
         let frames = visible.map { WebText.frame($0.element) }
         let filtered = trusted ? (keep: Array(frames.indices), dropped: 0)
