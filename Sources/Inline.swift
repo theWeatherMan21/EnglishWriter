@@ -427,6 +427,7 @@ final class InlineController {
     private var rectFailed = 0
     private var lastPollForcedAt = Date.distantPast
     private var lastPollNilLog = Date.distantPast
+    private var lastPollSkipLog = Date.distantPast
     static func fingerprint(_ t: String) -> String {
         var h: UInt64 = 0xcbf29ce484222325
         for b in t.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
@@ -652,9 +653,23 @@ final class InlineController {
             Task { @MainActor in
                 guard let self else { return }
                 // 锁屏 / 登录窗 / 未启用：都不轮询（纯函数 ScreenLock.shouldPoll 负责判定）
-                guard ScreenLock.shouldPoll(locked: ScreenLock.isLocked, enabled: self.enabled,
-                                            pid: self.lastFocusPid,
-                                            appName: appName(self.lastFocusPid)) else { return }
+                // 但「被跳过」也必须留痕（知澜 11-25：只看到 1 条 checknow-enter 就再无日志，
+                // 分不清「轮询死了」还是「被门控跳过」）。10 秒限流一条，带四个判定量。
+                let lockedNow = ScreenLock.isLocked
+                if !ScreenLock.shouldPoll(locked: lockedNow, enabled: self.enabled,
+                                          pid: self.lastFocusPid,
+                                          appName: appName(self.lastFocusPid)) {
+                    if Date().timeIntervalSince(self.lastPollSkipLog) > 10 {
+                        self.lastPollSkipLog = Date()
+                        self.emit(CheckEvent(kind: "poll-skip", pid: self.lastFocusPid,
+                                             app: appName(self.lastFocusPid), role: "-",
+                                             textLen: 0, sentenceLen: 0, itemCount: 0, rectCount: 0,
+                                             elapsed: "-",
+                                             err: "locked=\(lockedNow) enabled=\(self.enabled) pid=\(self.lastFocusPid) app=\(appName(self.lastFocusPid)) 轮询存活但被门控跳过（10 秒限流）",
+                                             at: Date()))
+                    }
+                    return
+                }
                 // 焦点读不到不再是「静默 return」：Mail 下改看写窗正文；都取不到也要留痕（限流）。
                 // 11-25 实况：AXPosition/焦点读超时 → 每秒静默 return → App 0% CPU、一分钟零日志，
                 // 比报错还难查。
